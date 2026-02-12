@@ -76,12 +76,15 @@ storyboard-gen/
 ```
 some-project/
 ├── project.yaml           # Storyboard definition (THE key file)
+├── .env                   # API credentials (not committed)
 ├── references/            # Character/style reference images
-│   ├── boy.png
-│   └── mum.png
+│   ├── boy.jpg            # jpg, png, or other image formats
+│   └── brow_man.png
+├── audio.m4a              # Optional voice-over/soundtrack for assembly
 └── output/                # Generated assets (created by tool)
     ├── stills/
     ├── clips/
+    ├── intermediate/      # Ken Burns output from stills
     └── final/
 ```
 
@@ -128,25 +131,60 @@ GCS_OUTPUT_BUCKET=gs://your-bucket-name/
 ```yaml
 title: "Project Title"
 aspect_ratio: "9:16"  # 9:16, 16:9, 4:3, 1:1
+
 style_prefix: >
-  Description of the visual style applied to all prompts.
+  Detailed visual style description applied to all scene prompts.
+  Be specific: art style, colour palette, lighting, setting details.
+  This is prepended to every scene prompt for consistency.
 
 characters:
-  character_id:
-    description: "Physical description for prompt consistency"
-    reference: "references/filename.png"  # optional
+  boy:
+    description: >
+      Physical description for prompt consistency. Include clothing,
+      hair, distinguishing features. Be detailed enough that the AI
+      renders the same character across scenes.
+    reference: "references/boy.jpg"    # optional path to reference image
+
+  mum:
+    description: >
+      Another character description. Reference can be null if no
+      reference image is available.
+    reference: null
 
 scenes:
+  # Comments can organise scenes into stanzas/acts/sections
+  # === ACT 1 ===
+
   - number: 1
-    title: "Scene title"
-    camera: "WIDE"       # WIDE, CLOSE, WINDOW, or custom
-    type: still           # still or clip
-    duration: 8           # seconds
-    ken_burns: "zoom_in"  # zoom_in, zoom_out, pan_ltr, pan_rtl, static, null
+    title: "Opening shot"
+    camera: "WIDE"         # WIDE, CLOSE, WINDOW, or custom string
+    type: still             # still (Imagen) or clip (Veo)
+    duration: 8             # seconds — match to voice-over timing
+    ken_burns: "zoom_in"    # zoom_in, zoom_out, pan_ltr, pan_rtl, static, null
+    characters: [boy, mum]  # optional — character IDs for reference images
     prompt: >
-      Scene description for the AI model.
-    characters: [character_id1, character_id2]  # optional, for reference
+      Detailed scene description for the AI model. Include character
+      positions, expressions, actions, background details, lighting,
+      mood. The more specific, the better the output.
+
+  - number: 2
+    title: "Action sequence"
+    camera: "CLOSE"
+    type: clip              # Veo generates video — use for motion
+    duration: 7
+    characters: [boy]
+    prompt: >
+      Clips don't use ken_burns (it's for stills only). Describe
+      the motion/action you want in the video.
 ```
+
+### Schema notes
+
+- `duration` should match voice-over timing (stanza breaks)
+- `camera` is advisory — it's included in prompts for the AI, not enforced
+- `ken_burns` only applies to stills; clips are already video
+- `characters` links to character definitions for reference image lookup
+- Scene 1 should be generated first and used as style reference for subsequent scenes
 
 ## TDD approach
 

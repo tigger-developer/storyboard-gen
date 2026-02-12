@@ -150,7 +150,7 @@ def get_env_config() -> dict:
     Looks for .env in the current directory first, then falls back
     to environment variables.
     """
-    load_dotenv()
+    load_dotenv(Path.cwd() / ".env")
 
     use_vertex = os.environ.get("USE_VERTEX", "false").lower() == "true"
 

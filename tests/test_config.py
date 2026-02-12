@@ -1,11 +1,10 @@
 # ABOUTME: Tests for storyboard_gen.config.
 # ABOUTME: Validates YAML loading, parsing, and error handling.
 
-
 import pytest
 import yaml
 
-from storyboard_gen.config import ConfigError, load_project
+from storyboard_gen.config import ConfigError, get_env_config, load_project
 
 
 class TestLoadProject:
@@ -165,3 +164,47 @@ class TestProjectScenes:
         # Assert
         scene1 = project.get_scene(1)
         assert scene1.characters == ["hero"]
+
+
+class TestGetEnvConfig:
+    def test_get_env_config_reads_dotenv_from_cwd(self, tmp_path, monkeypatch):
+        # Arrange: create .env in a temp dir and chdir to it
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "USE_VERTEX=true\n"
+            "GOOGLE_CLOUD_PROJECT=test-project\n"
+            "GOOGLE_CLOUD_LOCATION=us-central1\n"
+            "GCS_OUTPUT_BUCKET=gs://test-bucket/\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        # Clear any existing env vars so only .env is used
+        monkeypatch.delenv("USE_VERTEX", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
+        monkeypatch.delenv("GCS_OUTPUT_BUCKET", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+        # Act
+        config = get_env_config()
+
+        # Assert
+        assert config["use_vertex"] is True
+        assert config["project"] == "test-project"
+        assert config["location"] == "us-central1"
+        assert config["gcs_bucket"] == "gs://test-bucket/"
+
+    def test_get_env_config_defaults_without_dotenv(self, tmp_path, monkeypatch):
+        # Arrange: chdir to a dir with no .env
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("USE_VERTEX", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
+        monkeypatch.delenv("GCS_OUTPUT_BUCKET", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+        # Act
+        config = get_env_config()
+
+        # Assert
+        assert config["use_vertex"] is False
+        assert config["project"] is None
