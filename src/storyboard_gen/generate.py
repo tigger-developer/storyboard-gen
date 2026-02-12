@@ -13,7 +13,36 @@ from storyboard_gen.models import Project, Scene
 logger = logging.getLogger(__name__)
 
 IMAGEN_MODEL = "imagen-4.0-generate-001"
+IMAGEN_CAPABILITY_MODEL = "imagen-3.0-capability-001"
 VEO_MODEL = "veo-3.1-fast-generate-001"
+
+
+def _build_subject_references(
+    project: Project, scene: Scene
+) -> list[types.SubjectReferenceImage]:
+    """Build SubjectReferenceImage list from scene's character references.
+
+    Only includes characters that have a reference image file on disk.
+    Each reference gets a sequential reference_id starting at 1.
+    """
+    ref_images = []
+    ref_id = 1
+    for char_id in scene.characters:
+        char = project.characters.get(char_id)
+        if char and char.reference and char.reference.exists():
+            ref_images.append(
+                types.SubjectReferenceImage(
+                    reference_id=ref_id,
+                    reference_image=types.Image.from_file(location=str(char.reference)),
+                    config=types.SubjectReferenceConfig(
+                        subject_type="SUBJECT_TYPE_PERSON",
+                        subject_description=char.description.strip(),
+                    ),
+                )
+            )
+            logger.info("Reference [%d] for '%s': %s", ref_id, char_id, char.reference)
+            ref_id += 1
+    return ref_images
 
 
 def generate_still(
@@ -23,6 +52,10 @@ def generate_still(
     client: object | None = None,
 ) -> Path:
     """Generate a still image for a scene.
+
+    When character reference images are available, uses edit_image with
+    SubjectReferenceImage on imagen-3.0-capability-001 for character
+    consistency. Falls back to generate_images on imagen-4.0 otherwise.
 
     Args:
         scene: The scene to generate.
@@ -52,14 +85,32 @@ def generate_still(
     logger.info("Generating still for scene %d: %s", scene.number, scene.title)
     logger.debug("Prompt: %s", full_prompt)
 
-    response = client.models.generate_images(
-        model=IMAGEN_MODEL,
-        prompt=full_prompt,
-        config=types.GenerateImagesConfig(
-            number_of_images=1,
-            aspect_ratio=project.aspect_ratio,
-        ),
-    )
+    ref_images = _build_subject_references(project, scene)
+
+    if ref_images:
+        logger.info(
+            "Using edit_image with %d reference(s) on %s",
+            len(ref_images),
+            IMAGEN_CAPABILITY_MODEL,
+        )
+        response = client.models.edit_image(
+            model=IMAGEN_CAPABILITY_MODEL,
+            prompt=full_prompt,
+            reference_images=ref_images,
+            config=types.EditImageConfig(
+                number_of_images=1,
+                aspect_ratio=project.aspect_ratio,
+            ),
+        )
+    else:
+        response = client.models.generate_images(
+            model=IMAGEN_MODEL,
+            prompt=full_prompt,
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio=project.aspect_ratio,
+            ),
+        )
 
     if not response.generated_images:
         raise RuntimeError(f"No image generated for scene {scene.number}")
