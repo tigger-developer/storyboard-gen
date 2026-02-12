@@ -150,6 +150,53 @@ class TestGenerateStill:
         # Assert
         assert (output_dir / "stills").is_dir()
 
+    def test_generate_still_archives_existing_image(self, tmp_path):
+        # Arrange — pre-existing still on disk
+        project = _make_project()
+        scene = project.get_scene(1)
+
+        stills_dir = tmp_path / "stills"
+        stills_dir.mkdir(parents=True)
+        existing = stills_dir / "scene_01.png"
+        existing.write_bytes(b"old-image")
+
+        mock_response = MagicMock()
+        mock_response.generated_images = [MagicMock()]
+        mock_response.generated_images[0].image.image_bytes = b"new-image"
+
+        mock_client = MagicMock()
+        mock_client.models.generate_images.return_value = mock_response
+
+        # Act
+        result = generate_still(scene, project, tmp_path, client=mock_client)
+
+        # Assert — new image written
+        assert result.read_bytes() == b"new-image"
+        # Assert — old image archived
+        archive_dir = stills_dir / "archive"
+        assert archive_dir.is_dir()
+        archived = list(archive_dir.glob("scene_01_*.png"))
+        assert len(archived) == 1
+        assert archived[0].read_bytes() == b"old-image"
+
+    def test_generate_still_does_not_archive_when_no_existing_image(self, tmp_path):
+        # Arrange — no pre-existing still
+        project = _make_project()
+        scene = project.get_scene(1)
+
+        mock_response = MagicMock()
+        mock_response.generated_images = [MagicMock()]
+        mock_response.generated_images[0].image.image_bytes = b"new-image"
+
+        mock_client = MagicMock()
+        mock_client.models.generate_images.return_value = mock_response
+
+        # Act
+        generate_still(scene, project, tmp_path, client=mock_client)
+
+        # Assert — no archive directory created
+        assert not (tmp_path / "stills" / "archive").exists()
+
 
 class TestGenerateStillWithReferences:
     def _make_single_char_project(self, tmp_path):

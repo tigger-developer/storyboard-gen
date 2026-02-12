@@ -4,6 +4,7 @@
 import io
 import logging
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from google.genai import types
@@ -172,6 +173,17 @@ def generate_still(
         image_bytes = buf.getvalue()
 
     output_path = stills_dir / f"scene_{scene.number:02d}.png"
+
+    # Archive existing image before overwriting.
+    if output_path.exists():
+        archive_dir = stills_dir / "archive"
+        archive_dir.mkdir(exist_ok=True)
+        timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+        stem = output_path.stem
+        archive_path = archive_dir / f"{stem}_{timestamp}{output_path.suffix}"
+        output_path.rename(archive_path)
+        logger.info("Archived previous still -> %s", archive_path)
+
     output_path.write_bytes(image_bytes)
 
     logger.info("Saved scene %d (%s) -> %s", scene.number, scene.title, output_path)
