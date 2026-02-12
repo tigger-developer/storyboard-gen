@@ -39,7 +39,7 @@ storyboard-gen list                     # List all scenes with status
 storyboard-gen/
 ├── CLAUDE.md              # This file
 ├── LICENSE                # MIT, Copyright Taḋg Paul
-├── Makefile               # Build, test, install entry points
+├── Makefile               # Build, test, install, release entry points
 ├── README.md              # Project overview and quickstart
 ├── requirements.txt       # Python dependencies
 ├── setup.py               # Package installation
@@ -49,6 +49,8 @@ storyboard-gen/
 ├── docs/
 │   ├── VISION.md          # Project vision and goals
 │   └── architecture.md    # Technical architecture
+├── scripts/
+│   └── release.sh         # Release automation (version, tag, Homebrew)
 ├── src/
 │   └── storyboard_gen/
 │       ├── __init__.py
@@ -157,4 +159,7 @@ Tests first. The generate module should be testable with mocked API responses (e
 - `make lint` — ruff check + format check
 - `make lint-fix` — auto-fix
 - `make clean` — remove build artefacts
+- `make release [VERSION=x.y.z]` — full release: test, tag, GitHub release, Homebrew update
+- `make formula` — update Homebrew formula SHA256 for current version
+- `make brew-upgrade` — upgrade local Homebrew install
 - `make sync` — git add/commit/pull/push

@@ -4,13 +4,25 @@ A CLI tool that generates video stills and clips from a YAML storyboard definiti
 
 ## Quickstart
 
+### Install via Homebrew (recommended)
+
 ```bash
-# Install
-git clone <repo-url> && cd storyboard-gen
+brew install tigger04/tap/storyboard-gen
+```
+
+### Install from source
+
+```bash
+git clone https://github.com/tigger04/storyboard-gen.git
+cd storyboard-gen
 make install
 source .venv/bin/activate
+```
 
-# Authenticate (Vertex AI)
+### Set up credentials
+
+```bash
+# Authenticate with Google Cloud
 gcloud auth application-default login
 
 # Create a project directory
@@ -18,25 +30,27 @@ mkdir -p ~/Movies/social/my-project/references
 cd ~/Movies/social/my-project
 
 # Create .env with your credentials
-cp /path/to/storyboard-gen/.env.example .env
-# Edit .env with your GCP project details
+cat > .env <<EOF
+USE_VERTEX=true
+GOOGLE_CLOUD_PROJECT=your-project-id
+GOOGLE_CLOUD_LOCATION=us-central1
+GCS_OUTPUT_BUCKET=gs://your-bucket-name/
+EOF
+```
 
+### Use it
+
+```bash
 # Create project.yaml (see docs/VISION.md for schema)
 # Add reference images to references/
 
-# Validate
-storyboard-gen validate
-
-# List scenes
-storyboard-gen list
-
-# Generate
-storyboard-gen generate --scene 1        # Single scene
-storyboard-gen generate --all-stills     # All stills
-storyboard-gen generate --all            # Everything
-
-# Assemble (applies Ken Burns to stills, concatenates all)
-storyboard-gen assemble
+storyboard-gen validate                # Check project.yaml
+storyboard-gen list                    # List all scenes
+storyboard-gen generate --scene 1      # Generate one scene
+storyboard-gen generate --all-stills   # All stills
+storyboard-gen generate --all          # Everything
+storyboard-gen assemble                # Assemble final video
+storyboard-gen --version               # Show version
 ```
 
 ## Dependencies
@@ -52,10 +66,25 @@ storyboard-gen assemble
 |----------|---------|
 | `src/storyboard_gen/` | Tool source code |
 | `tests/` | Test suite |
+| `scripts/release.sh` | Release automation |
 | `docs/VISION.md` | Project vision and goals |
 | `docs/architecture.md` | Technical architecture |
 | `CLAUDE.md` | Claude Code configuration |
-| `Makefile` | Build, test, lint targets |
+| `Makefile` | Build, test, lint, release targets |
+
+## Makefile targets
+
+| Target | Description |
+|--------|-------------|
+| `make install` | Create venv, install deps |
+| `make test` | Run all tests |
+| `make lint` | Ruff check + format check |
+| `make lint-fix` | Auto-fix lint issues |
+| `make clean` | Remove build artefacts |
+| `make release [VERSION=x.y.z]` | Full release: test, tag, GitHub release, Homebrew update |
+| `make formula` | Update Homebrew formula SHA256 for current version |
+| `make brew-upgrade` | Upgrade local Homebrew install |
+| `make sync` | Git add/commit/pull/push |
 
 ## Per-project layout
 
