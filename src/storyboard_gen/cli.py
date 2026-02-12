@@ -5,6 +5,7 @@ import argparse
 import logging
 from pathlib import Path
 
+from storyboard_gen import __version__
 from storyboard_gen.config import ConfigError, load_project
 from storyboard_gen.generate import generate_clip, generate_still
 from storyboard_gen.ken_burns import apply_ken_burns
@@ -20,6 +21,16 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Exit code (0 for success, 1 for error).
     """
+    if argv is None:
+        import sys
+
+        argv = sys.argv[1:]
+
+    # Handle --version / -V before argparse requires a subcommand
+    if argv in (["-V"], ["--version"]):
+        print(f"storyboard-gen {__version__}")
+        return 0
+
     parser = argparse.ArgumentParser(
         prog="storyboard-gen",
         description="Generate video assets from a YAML storyboard",

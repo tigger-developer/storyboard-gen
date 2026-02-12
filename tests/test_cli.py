@@ -3,7 +3,7 @@
 
 import os
 
-
+import storyboard_gen
 from storyboard_gen.cli import main
 
 
@@ -57,3 +57,23 @@ class TestCliList:
         # Assert
         output = capsys.readouterr().out
         assert "15s" in output  # 5 + 4 + 6
+
+
+class TestCliVersion:
+    def test_version_flag_prints_version(self, capsys):
+        # Arrange & Act
+        exit_code = main(["--version"])
+
+        # Assert
+        assert exit_code == 0
+        output = capsys.readouterr().out
+        assert storyboard_gen.__version__ in output
+
+    def test_version_short_flag_prints_version(self, capsys):
+        # Arrange & Act
+        exit_code = main(["-V"])
+
+        # Assert
+        assert exit_code == 0
+        output = capsys.readouterr().out
+        assert storyboard_gen.__version__ in output
