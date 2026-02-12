@@ -1,5 +1,5 @@
 # ABOUTME: Build entry points for storyboard-gen.
-# ABOUTME: Provides install, test, lint, and sync targets.
+# ABOUTME: Provides install, test, lint, release, and Homebrew targets.
 
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
@@ -10,9 +10,14 @@ PIP := $(VENV)/bin/pip
 RUFF := $(VENV)/bin/ruff
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help install test lint lint-fix clean sync release
+VERSION_FILE := src/storyboard_gen/__init__.py
+CURRENT_VERSION := $(shell grep '__version__' $(VERSION_FILE) 2>/dev/null | sed 's/.*"\(.*\)".*/\1/')
+
+.PHONY: help install test lint lint-fix clean sync release formula brew-upgrade
 
 help: ## Show this help
+	@echo "storyboard-gen v$(CURRENT_VERSION)"
+	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
@@ -42,17 +47,26 @@ clean: ## Remove build artefacts
 	find . -type d -name __pycache__ -print0 | xargs -0 rm -rf
 	find . -type f -name '*.pyc' -delete
 
-release: ## Increment version and tag. Usage: make release [VERSION=x.y.z]
-	@current=$$($(PYTHON) -c "import storyboard_gen; print(storyboard_gen.__version__)"); \
-	if [ -z "$(VERSION)" ]; then \
-		new=$$(echo "$$current" | awk -F. '{printf "%d.%d.%d", $$1, $$2, $$3+1}'); \
-	else \
-		new="$(VERSION)"; \
-	fi; \
-	echo "Releasing $$current -> $$new"; \
-	sed -i.bak "s/version=\"$$current\"/version=\"$$new\"/" setup.py && rm -f setup.py.bak; \
-	sed -i.bak "s/__version__ = \"$$current\"/__version__ = \"$$new\"/" src/storyboard_gen/__init__.py && rm -f src/storyboard_gen/__init__.py.bak; \
-	git add --all && git commit -m "release: v$$new" && git tag "v$$new"
+release: ## Release new version. Usage: make release [VERSION=x.y.z]
+	@scripts/release.sh $(VERSION)
+
+formula: ## Update Homebrew formula SHA256 for current version
+	@version="$(CURRENT_VERSION)"; \
+	url="https://github.com/tigger04/storyboard-gen/archive/refs/tags/v$${version}.tar.gz"; \
+	sha256=$$(curl -sL "$${url}" | shasum -a 256 | cut -d' ' -f1); \
+	echo "v$${version} SHA256: $${sha256}"; \
+	python3 -c " \
+import re; from pathlib import Path; \
+f = Path('../homebrew-tap/Formula/storyboard-gen.rb'); \
+c = f.read_text(); \
+c = re.sub(r'sha256 \"[a-f0-9]+\"', 'sha256 \"$${sha256}\"', c); \
+c = re.sub(r'url \".*\.tar\.gz\"', 'url \"$${url}\"', c); \
+f.write_text(c); \
+print('Updated formula')"
+
+brew-upgrade: ## Upgrade local Homebrew install
+	brew update
+	brew upgrade tigger04/tap/storyboard-gen
 
 sync: ## Git sync: add, commit, pull, push
 	@read -r -p "Commit message: " msg; \
