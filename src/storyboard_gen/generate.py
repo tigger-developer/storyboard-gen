@@ -153,6 +153,25 @@ def generate_still(
             ),
         )
 
+    # edit_image may return empty results (safety filter). Fall back to
+    # generate_images on Imagen 4 without references.
+    if ref_images and not response.generated_images:
+        logger.warning(
+            "Scene %d: edit_image returned no images (likely safety filter). "
+            "Retrying with generate_images on %s without references.",
+            scene.number,
+            IMAGEN_MODEL,
+        )
+        response = client.models.generate_images(
+            model=IMAGEN_MODEL,
+            prompt=full_prompt,
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio=project.aspect_ratio,
+            ),
+        )
+        ref_images = []  # no crop needed for fallback
+
     if not response.generated_images:
         raise RuntimeError(f"No image generated for scene {scene.number}")
 

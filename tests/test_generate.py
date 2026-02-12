@@ -266,6 +266,36 @@ class TestGenerateStillWithReferences:
         mock_client.models.generate_images.assert_called_once()
         mock_client.models.edit_image.assert_not_called()
 
+    def test_generate_still_falls_back_when_edit_image_returns_no_images(
+        self, tmp_path
+    ):
+        # Arrange — edit_image returns empty (safety filter), should retry
+        # with generate_images on Imagen 4
+        project = self._make_single_char_project(tmp_path)
+        scene = project.get_scene(1)
+
+        empty_response = MagicMock()
+        empty_response.generated_images = []
+
+        fallback_response = MagicMock()
+        fallback_response.generated_images = [MagicMock()]
+        fallback_response.generated_images[0].image.image_bytes = b"fallback-img"
+
+        mock_client = MagicMock()
+        mock_client.models.edit_image.return_value = empty_response
+        mock_client.models.generate_images.return_value = fallback_response
+
+        output_dir = tmp_path / "output"
+
+        # Act
+        result = generate_still(scene, project, output_dir, client=mock_client)
+
+        # Assert — tried edit_image first, then fell back to generate_images
+        mock_client.models.edit_image.assert_called_once()
+        mock_client.models.generate_images.assert_called_once()
+        assert result.exists()
+        assert result.read_bytes() == b"fallback-img"
+
     def test_generate_still_falls_back_to_generate_images_without_refs(self, tmp_path):
         # Arrange — project with characters but no reference files on disk
         chars = {
