@@ -5,7 +5,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="storyboard-gen",
-    version="0.3.1",
+    version="0.4.0",
     description="Generate video stills and clips from a YAML storyboard using Google AI APIs",
     author="Taḋg Paul O'Brien",
     license="MIT",
