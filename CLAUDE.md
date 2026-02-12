@@ -22,6 +22,7 @@ The tool is installed once and run from within any project directory. A project 
 ```bash
 # From within a project directory (e.g. ~/Movies/social/pout/)
 storyboard-gen generate --scene 1       # Generate one scene
+storyboard-gen generate --scene 1 11    # Generate specific scenes in order
 storyboard-gen generate --all-stills    # Generate all stills
 storyboard-gen generate --all-clips     # Generate all video clips
 storyboard-gen generate --all           # Generate everything

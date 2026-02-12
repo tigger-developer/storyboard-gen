@@ -50,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     gen_group = gen_parser.add_mutually_exclusive_group(required=True)
     gen_group.add_argument(
-        "--scene", type=int, help="Generate a single scene by number"
+        "--scene", type=int, nargs="+", metavar="N", help="Generate scene(s) by number"
     )
     gen_group.add_argument(
         "--all-stills", action="store_true", help="Generate all stills"
@@ -139,11 +139,12 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     output_dir = Path.cwd() / "output"
 
     if args.scene:
-        scene = project.get_scene(args.scene)
-        if scene.scene_type == "still":
-            generate_still(scene, project, output_dir)
-        else:
-            generate_clip(scene, project, output_dir)
+        for scene_num in args.scene:
+            scene = project.get_scene(scene_num)
+            if scene.scene_type == "still":
+                generate_still(scene, project, output_dir)
+            else:
+                generate_clip(scene, project, output_dir)
     elif args.all_stills:
         stills = project.get_stills()
         print(f"Generating {len(stills)} stills...")
