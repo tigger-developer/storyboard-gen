@@ -3,7 +3,6 @@
 
 import argparse
 import logging
-import sys
 from pathlib import Path
 
 from storyboard_gen.config import ConfigError, load_project
@@ -26,7 +25,8 @@ def main(argv: list[str] | None = None) -> int:
         description="Generate video assets from a YAML storyboard",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Enable debug logging",
     )
@@ -34,11 +34,19 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # generate subcommand
-    gen_parser = subparsers.add_parser("generate", help="Generate images and video clips")
+    gen_parser = subparsers.add_parser(
+        "generate", help="Generate images and video clips"
+    )
     gen_group = gen_parser.add_mutually_exclusive_group(required=True)
-    gen_group.add_argument("--scene", type=int, help="Generate a single scene by number")
-    gen_group.add_argument("--all-stills", action="store_true", help="Generate all stills")
-    gen_group.add_argument("--all-clips", action="store_true", help="Generate all video clips")
+    gen_group.add_argument(
+        "--scene", type=int, help="Generate a single scene by number"
+    )
+    gen_group.add_argument(
+        "--all-stills", action="store_true", help="Generate all stills"
+    )
+    gen_group.add_argument(
+        "--all-clips", action="store_true", help="Generate all video clips"
+    )
     gen_group.add_argument("--all", action="store_true", help="Generate everything")
 
     # assemble subcommand
@@ -92,7 +100,9 @@ def _cmd_validate() -> int:
     print(f"Project: {project.title}")
     print(f"Aspect ratio: {project.aspect_ratio}")
     print(f"Characters: {len(project.characters)}")
-    print(f"Scenes: {len(project.scenes)} ({len(project.get_stills())} stills, {len(project.get_clips())} clips)")
+    print(
+        f"Scenes: {len(project.scenes)} ({len(project.get_stills())} stills, {len(project.get_clips())} clips)"
+    )
     print("Valid.")
     return 0
 
@@ -104,7 +114,9 @@ def _cmd_list() -> int:
     print("-" * 60)
     for scene in project.scenes:
         kb = scene.ken_burns or "-"
-        print(f"{scene.number:>3}  {scene.scene_type:<6}  {scene.duration:>3}s  {kb:<10}  {scene.title}")
+        print(
+            f"{scene.number:>3}  {scene.scene_type:<6}  {scene.duration:>3}s  {kb:<10}  {scene.title}"
+        )
     total = sum(s.duration for s in project.scenes)
     print(f"\nTotal duration: ~{total}s")
     return 0

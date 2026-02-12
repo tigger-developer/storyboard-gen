@@ -9,7 +9,9 @@ from storyboard_gen.models import Character, Project, Scene
 class TestCharacter:
     def test_character_creation_with_all_fields(self):
         # Arrange & Act
-        char = Character(id="hero", description="A brave lad", reference=Path("ref.png"))
+        char = Character(
+            id="hero", description="A brave lad", reference=Path("ref.png")
+        )
 
         # Assert
         assert char.id == "hero"
@@ -38,7 +40,9 @@ class TestCharacter:
 class TestScene:
     def test_scene_creation_with_defaults(self):
         # Arrange & Act
-        scene = Scene(number=1, title="Test", scene_type="still", prompt="A thing.", duration=5)
+        scene = Scene(
+            number=1, title="Test", scene_type="still", prompt="A thing.", duration=5
+        )
 
         # Assert
         assert scene.number == 1
@@ -145,15 +149,24 @@ class TestProject:
         ref_path.write_bytes(b"fake")
         chars = {
             "hero": Character(id="hero", description="Hero", reference=ref_path),
-            "ghost": Character(id="ghost", description="Ghost", reference=tmp_path / "nope.png"),
+            "ghost": Character(
+                id="ghost", description="Ghost", reference=tmp_path / "nope.png"
+            ),
         }
         scene = Scene(
-            number=1, title="T", scene_type="still",
-            prompt="P", duration=5, characters=["hero", "ghost"],
+            number=1,
+            title="T",
+            scene_type="still",
+            prompt="P",
+            duration=5,
+            characters=["hero", "ghost"],
         )
         project = Project(
-            title="T", aspect_ratio="9:16", style_prefix="",
-            characters=chars, scenes=[scene],
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="",
+            characters=chars,
+            scenes=[scene],
         )
 
         # Act

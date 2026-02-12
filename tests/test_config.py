@@ -1,7 +1,6 @@
 # ABOUTME: Tests for storyboard_gen.config.
 # ABOUTME: Validates YAML loading, parsing, and error handling.
 
-from pathlib import Path
 
 import pytest
 import yaml
@@ -44,7 +43,9 @@ class TestLoadProject:
 
     def test_load_yaml_without_title_raises_config_error(self, tmp_path):
         # Arrange
-        data = {"scenes": [{"number": 1, "type": "still", "prompt": "x", "duration": 3}]}
+        data = {
+            "scenes": [{"number": 1, "type": "still", "prompt": "x", "duration": 3}]
+        }
         (tmp_path / "project.yaml").write_text(yaml.dump(data))
 
         # Act & Assert
@@ -77,7 +78,9 @@ class TestLoadProject:
         # Arrange
         data = {
             "title": "Bad Type",
-            "scenes": [{"number": 1, "type": "animation", "prompt": "x", "duration": 3}],
+            "scenes": [
+                {"number": 1, "type": "animation", "prompt": "x", "duration": 3}
+            ],
         }
         (tmp_path / "project.yaml").write_text(yaml.dump(data))
 
@@ -90,7 +93,13 @@ class TestLoadProject:
         data = {
             "title": "Bad KB",
             "scenes": [
-                {"number": 1, "type": "still", "prompt": "x", "duration": 3, "ken_burns": "spin"},
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "ken_burns": "spin",
+                },
             ],
         }
         (tmp_path / "project.yaml").write_text(yaml.dump(data))
@@ -104,7 +113,13 @@ class TestLoadProject:
         data = {
             "title": "Bad Char",
             "scenes": [
-                {"number": 1, "type": "still", "prompt": "x", "duration": 3, "characters": ["nobody"]},
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "characters": ["nobody"],
+                },
             ],
         }
         (tmp_path / "project.yaml").write_text(yaml.dump(data))
@@ -115,7 +130,9 @@ class TestLoadProject:
 
 
 class TestProjectCharacters:
-    def test_character_reference_path_resolved_relative_to_project_dir(self, sample_project_dir):
+    def test_character_reference_path_resolved_relative_to_project_dir(
+        self, sample_project_dir
+    ):
         # Act
         project = load_project(sample_project_dir)
 

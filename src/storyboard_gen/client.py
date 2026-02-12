@@ -22,9 +22,7 @@ def create_client() -> Client:
         if not config["project"]:
             raise ValueError("GOOGLE_CLOUD_PROJECT must be set when USE_VERTEX=true")
         if not config["location"]:
-            raise ValueError(
-                "GOOGLE_CLOUD_LOCATION must be set when USE_VERTEX=true"
-            )
+            raise ValueError("GOOGLE_CLOUD_LOCATION must be set when USE_VERTEX=true")
         return Client(
             vertexai=True,
             project=config["project"],

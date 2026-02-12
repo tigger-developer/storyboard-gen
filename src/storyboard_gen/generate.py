@@ -38,7 +38,9 @@ def generate_still(
         RuntimeError: If the API returns no images.
     """
     if scene.scene_type != "still":
-        raise ValueError(f"Scene {scene.number} is type '{scene.scene_type}', not 'still'")
+        raise ValueError(
+            f"Scene {scene.number} is type '{scene.scene_type}', not 'still'"
+        )
 
     if client is None:
         client = create_client()
@@ -99,7 +101,9 @@ def generate_clip(
         RuntimeError: If generation fails or times out.
     """
     if scene.scene_type != "clip":
-        raise ValueError(f"Scene {scene.number} is type '{scene.scene_type}', not 'clip'")
+        raise ValueError(
+            f"Scene {scene.number} is type '{scene.scene_type}', not 'clip'"
+        )
 
     if client is None:
         client = create_client()
@@ -144,9 +148,7 @@ def generate_clip(
         # GCS download handled by the SDK or gsutil
         _download_gcs(video.video.uri, output_path)
     else:
-        raise RuntimeError(
-            f"Scene {scene.number}: unexpected video response format"
-        )
+        raise RuntimeError(f"Scene {scene.number}: unexpected video response format")
 
     logger.info("Saved scene %d (%s) -> %s", scene.number, scene.title, output_path)
     return output_path

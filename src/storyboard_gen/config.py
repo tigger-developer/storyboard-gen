@@ -76,9 +76,7 @@ def _parse_project(data: dict, project_dir: Path) -> Project:
     )
 
 
-def _parse_characters(
-    raw: dict, project_dir: Path
-) -> dict[str, Character]:
+def _parse_characters(raw: dict, project_dir: Path) -> dict[str, Character]:
     """Parse the characters section of project.yaml."""
     characters = {}
     for char_id, char_data in raw.items():
@@ -99,9 +97,7 @@ def _parse_characters(
     return characters
 
 
-def _parse_scenes(
-    raw: list, characters: dict[str, Character]
-) -> list[Scene]:
+def _parse_scenes(raw: list, characters: dict[str, Character]) -> list[Scene]:
     """Parse the scenes section of project.yaml."""
     if not raw:
         raise ConfigError("project.yaml must have at least one scene")

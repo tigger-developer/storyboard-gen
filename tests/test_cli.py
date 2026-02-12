@@ -3,7 +3,6 @@
 
 import os
 
-import pytest
 
 from storyboard_gen.cli import main
 

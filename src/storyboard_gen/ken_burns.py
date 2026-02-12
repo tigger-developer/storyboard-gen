@@ -91,23 +91,30 @@ def apply_ken_burns(
     output_path = intermediate_dir / f"scene_{scene.number:02d}.mp4"
 
     filter_template = KEN_BURNS_FILTERS[effect]
-    vf = filter_template.format(
-        frames=frames, width=width, height=height, fps=fps
-    )
+    vf = filter_template.format(frames=frames, width=width, height=height, fps=fps)
 
     cmd = [
-        "ffmpeg", "-y",
-        "-i", str(image_path),
-        "-vf", vf,
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-t", str(scene.duration),
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(image_path),
+        "-vf",
+        vf,
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-t",
+        str(scene.duration),
         str(output_path),
     ]
 
     logger.info(
         "Applying %s to scene %d (%ds at %dfps)",
-        effect, scene.number, scene.duration, fps,
+        effect,
+        scene.number,
+        scene.duration,
+        fps,
     )
     logger.debug("FFmpeg command: %s", " ".join(cmd))
 

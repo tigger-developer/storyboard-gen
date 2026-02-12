@@ -39,7 +39,7 @@ lint-fix: ## Auto-fix lint issues
 
 clean: ## Remove build artefacts
 	rm -rf build/ dist/ *.egg-info src/*.egg-info
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name __pycache__ -print0 | xargs -0 rm -rf
 	find . -type f -name '*.pyc' -delete
 
 release: ## Increment version and tag. Usage: make release [VERSION=x.y.z]

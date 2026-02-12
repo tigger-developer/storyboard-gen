@@ -59,11 +59,16 @@ def assemble(
         concat_path = concat_file.name
 
     cmd = [
-        "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", concat_path,
-        "-c", "copy",
+        "ffmpeg",
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        concat_path,
+        "-c",
+        "copy",
         str(output_path),
     ]
 

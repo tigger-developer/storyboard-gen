@@ -1,13 +1,12 @@
 # ABOUTME: Tests for storyboard_gen.generate.
 # ABOUTME: Mocks external Google GenAI API calls (acceptable per TESTING.md).
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from storyboard_gen.generate import generate_still
-from storyboard_gen.models import Character, Project, Scene
+from storyboard_gen.models import Project, Scene
 
 
 def _make_project() -> Project:
@@ -18,8 +17,16 @@ def _make_project() -> Project:
         style_prefix="Test style.",
         characters={},
         scenes=[
-            Scene(number=1, title="Still", scene_type="still", prompt="A thing.", duration=5),
-            Scene(number=2, title="Clip", scene_type="clip", prompt="Action.", duration=6),
+            Scene(
+                number=1,
+                title="Still",
+                scene_type="still",
+                prompt="A thing.",
+                duration=5,
+            ),
+            Scene(
+                number=2, title="Clip", scene_type="clip", prompt="Action.", duration=6
+            ),
         ],
     )
 

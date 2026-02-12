@@ -1,7 +1,6 @@
 # ABOUTME: Shared test fixtures for storyboard-gen.
 # ABOUTME: Provides sample project.yaml data and temporary directories.
 
-import textwrap
 from pathlib import Path
 
 import pytest
