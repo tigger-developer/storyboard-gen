@@ -1,12 +1,26 @@
 # ABOUTME: Tests for storyboard_gen.generate.
 # ABOUTME: Mocks external Google GenAI API calls (acceptable per TESTING.md).
 
+import io
 from unittest.mock import MagicMock
 
 import pytest
+from PIL import Image as PILImage
 
-from storyboard_gen.generate import IMAGEN_CAPABILITY_MODEL, generate_still
+from storyboard_gen.generate import (
+    IMAGEN_CAPABILITY_MODEL,
+    crop_to_aspect_ratio,
+    generate_still,
+)
 from storyboard_gen.models import Character, Project, Scene
+
+
+def _make_png_bytes(width: int = 100, height: int = 100) -> bytes:
+    """Create valid PNG bytes for testing."""
+    img = PILImage.new("RGB", (width, height), color="red")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def _make_project() -> Project:
@@ -138,8 +152,8 @@ class TestGenerateStill:
 
 
 class TestGenerateStillWithReferences:
-    def _make_project_with_refs(self, tmp_path):
-        """Create a project with character reference images on disk."""
+    def _make_single_char_project(self, tmp_path):
+        """Create a project with one character scene and reference on disk."""
         ref_path = tmp_path / "references" / "hero.png"
         ref_path.parent.mkdir(parents=True, exist_ok=True)
         ref_path.write_bytes(b"fake-png-data")
@@ -148,18 +162,15 @@ class TestGenerateStillWithReferences:
             "hero": Character(
                 id="hero", description="A boy with red hair", reference=ref_path
             ),
-            "sidekick": Character(
-                id="sidekick", description="A tall woman", reference=None
-            ),
         }
         scenes = [
             Scene(
                 number=1,
-                title="With ref",
+                title="Solo hero",
                 scene_type="still",
                 prompt="Hero stands on a hill.",
                 duration=5,
-                characters=["hero", "sidekick"],
+                characters=["hero"],
             ),
         ]
         return Project(
@@ -170,14 +181,15 @@ class TestGenerateStillWithReferences:
             scenes=scenes,
         )
 
-    def test_generate_still_uses_edit_image_when_references_exist(self, tmp_path):
+    def test_generate_still_uses_edit_image_for_single_ref_scene(self, tmp_path):
         # Arrange
-        project = self._make_project_with_refs(tmp_path)
+        project = self._make_single_char_project(tmp_path)
         scene = project.get_scene(1)
 
+        png_bytes = _make_png_bytes()
         mock_response = MagicMock()
         mock_response.generated_images = [MagicMock()]
-        mock_response.generated_images[0].image.image_bytes = b"ref-img"
+        mock_response.generated_images[0].image.image_bytes = png_bytes
 
         mock_client = MagicMock()
         mock_client.models.edit_image.return_value = mock_response
@@ -190,16 +202,16 @@ class TestGenerateStillWithReferences:
         # Assert — edit_image was called, not generate_images
         mock_client.models.edit_image.assert_called_once()
         mock_client.models.generate_images.assert_not_called()
-        assert result.read_bytes() == b"ref-img"
+        assert result.exists()
 
-    def test_generate_still_passes_subject_reference_images(self, tmp_path):
+    def test_generate_still_passes_subject_reference_for_single_char(self, tmp_path):
         # Arrange
-        project = self._make_project_with_refs(tmp_path)
+        project = self._make_single_char_project(tmp_path)
         scene = project.get_scene(1)
 
         mock_response = MagicMock()
         mock_response.generated_images = [MagicMock()]
-        mock_response.generated_images[0].image.image_bytes = b"x"
+        mock_response.generated_images[0].image.image_bytes = _make_png_bytes()
 
         mock_client = MagicMock()
         mock_client.models.edit_image.return_value = mock_response
@@ -211,8 +223,48 @@ class TestGenerateStillWithReferences:
         call_args = mock_client.models.edit_image.call_args
         assert call_args.kwargs["model"] == IMAGEN_CAPABILITY_MODEL
         ref_images = call_args.kwargs["reference_images"]
-        # Only hero has a reference file on disk; sidekick has None
         assert len(ref_images) == 1
+
+    def test_generate_still_uses_generate_images_for_multi_char_scene(self, tmp_path):
+        # Arrange — multi-character scene should NOT use edit_image
+        # to avoid reference bleeding across characters
+        ref_path = tmp_path / "references" / "hero.png"
+        ref_path.parent.mkdir(parents=True, exist_ok=True)
+        ref_path.write_bytes(b"fake-png-data")
+
+        chars = {
+            "hero": Character(id="hero", description="A boy", reference=ref_path),
+            "sidekick": Character(id="sidekick", description="A woman", reference=None),
+        }
+        scene = Scene(
+            number=1,
+            title="Group shot",
+            scene_type="still",
+            prompt="Two people.",
+            duration=5,
+            characters=["hero", "sidekick"],
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters=chars,
+            scenes=[scene],
+        )
+
+        mock_response = MagicMock()
+        mock_response.generated_images = [MagicMock()]
+        mock_response.generated_images[0].image.image_bytes = b"x"
+
+        mock_client = MagicMock()
+        mock_client.models.generate_images.return_value = mock_response
+
+        # Act
+        generate_still(scene, project, tmp_path / "output", client=mock_client)
+
+        # Assert — falls back to generate_images for multi-character scenes
+        mock_client.models.generate_images.assert_called_once()
+        mock_client.models.edit_image.assert_not_called()
 
     def test_generate_still_falls_back_to_generate_images_without_refs(self, tmp_path):
         # Arrange — project with characters but no reference files on disk
@@ -248,3 +300,45 @@ class TestGenerateStillWithReferences:
         # Assert — falls back to generate_images
         mock_client.models.generate_images.assert_called_once()
         mock_client.models.edit_image.assert_not_called()
+
+
+class TestCropToAspectRatio:
+    def test_crop_landscape_to_portrait(self):
+        # Arrange — 1920x1080 landscape image
+        from PIL import Image as PILImage
+
+        img = PILImage.new("RGB", (1920, 1080), color="red")
+
+        # Act — crop to 9:16
+        result = crop_to_aspect_ratio(img, "9:16")
+
+        # Assert — should be portrait, centred crop
+        w, h = result.size
+        assert abs(w / h - 9 / 16) < 0.01
+
+    def test_crop_preserves_correct_aspect_already(self):
+        # Arrange — already 9:16
+        from PIL import Image as PILImage
+
+        img = PILImage.new("RGB", (1080, 1920), color="blue")
+
+        # Act
+        result = crop_to_aspect_ratio(img, "9:16")
+
+        # Assert — unchanged
+        assert result.size == (1080, 1920)
+
+    def test_crop_square_to_portrait(self):
+        # Arrange — 1024x1024 square
+        from PIL import Image as PILImage
+
+        img = PILImage.new("RGB", (1024, 1024), color="green")
+
+        # Act
+        result = crop_to_aspect_ratio(img, "9:16")
+
+        # Assert — cropped to portrait
+        w, h = result.size
+        assert abs(w / h - 9 / 16) < 0.01
+        # Width should be reduced, height stays
+        assert h == 1024

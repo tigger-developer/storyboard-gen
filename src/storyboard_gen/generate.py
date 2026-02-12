@@ -1,11 +1,13 @@
 # ABOUTME: Image and video generation for storyboard-gen.
 # ABOUTME: Calls Imagen for stills and Veo for clips via Google GenAI SDK.
 
+import io
 import logging
 import time
 from pathlib import Path
 
 from google.genai import types
+from PIL import Image as PILImage
 
 from storyboard_gen.client import create_client
 from storyboard_gen.models import Project, Scene
@@ -43,6 +45,42 @@ def _build_subject_references(
             logger.info("Reference [%d] for '%s': %s", ref_id, char_id, char.reference)
             ref_id += 1
     return ref_images
+
+
+def crop_to_aspect_ratio(img: PILImage.Image, aspect_ratio: str) -> PILImage.Image:
+    """Centre-crop an image to the target aspect ratio.
+
+    The edit_image API sometimes ignores the requested aspect ratio,
+    returning landscape when portrait was requested. This function
+    crops the image to match, preserving the larger dimension where
+    possible.
+
+    Args:
+        img: Source PIL Image.
+        aspect_ratio: Target ratio as "W:H" string (e.g. "9:16").
+
+    Returns:
+        Cropped PIL Image matching the target aspect ratio.
+    """
+    target_w, target_h = (int(x) for x in aspect_ratio.split(":"))
+    target_ratio = target_w / target_h
+
+    src_w, src_h = img.size
+    src_ratio = src_w / src_h
+
+    if abs(src_ratio - target_ratio) < 0.01:
+        return img
+
+    if src_ratio > target_ratio:
+        # Too wide — crop width, keep height
+        new_w = int(src_h * target_ratio)
+        left = (src_w - new_w) // 2
+        return img.crop((left, 0, left + new_w, src_h))
+    else:
+        # Too tall — crop height, keep width
+        new_h = int(src_w / target_ratio)
+        top = (src_h - new_h) // 2
+        return img.crop((0, top, src_w, top + new_h))
 
 
 def generate_still(
@@ -85,7 +123,10 @@ def generate_still(
     logger.info("Generating still for scene %d: %s", scene.number, scene.title)
     logger.debug("Prompt: %s", full_prompt)
 
-    ref_images = _build_subject_references(project, scene)
+    # Only use subject references for single-character scenes to avoid
+    # reference bleeding (one character's traits applied to another).
+    use_references = len(scene.characters) == 1
+    ref_images = _build_subject_references(project, scene) if use_references else []
 
     if ref_images:
         logger.info(
@@ -116,6 +157,15 @@ def generate_still(
         raise RuntimeError(f"No image generated for scene {scene.number}")
 
     image_bytes = response.generated_images[0].image.image_bytes
+
+    # edit_image may ignore aspect_ratio — crop to match if needed.
+    if ref_images:
+        img = PILImage.open(io.BytesIO(image_bytes))
+        img = crop_to_aspect_ratio(img, project.aspect_ratio)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        image_bytes = buf.getvalue()
+
     output_path = stills_dir / f"scene_{scene.number:02d}.png"
     output_path.write_bytes(image_bytes)
 
