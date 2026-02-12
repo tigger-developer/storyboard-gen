@@ -108,9 +108,9 @@ some-project/
 ```
 # Vertex AI backend
 USE_VERTEX=true
-GOOGLE_CLOUD_PROJECT=scratchpad-486917
+GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=us-central1
-GCS_OUTPUT_BUCKET=gs://tigger-acme-video-output/
+GCS_OUTPUT_BUCKET=gs://your-bucket-name/
 
 # OR Gemini Developer API backend
 # GEMINI_API_KEY=your-api-key
