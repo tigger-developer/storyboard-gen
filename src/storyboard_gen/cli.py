@@ -12,6 +12,30 @@ from storyboard_gen.ken_burns import apply_ken_burns
 from storyboard_gen.assemble import assemble
 
 
+HELP_EPILOG = """\
+workflow:
+  1. storyboard-gen init [directory]    Scaffold a new project
+  2. Edit project.yaml                  Define scenes, characters, style
+  3. Edit .env                          Configure API credentials
+  4. storyboard-gen generate --all      Generate stills and clips
+  5. storyboard-gen assemble            Assemble final video
+
+providers:
+  Google    Imagen (stills) + Veo (clips) — default provider
+  FAL.ai    Flux models (stills only)
+  Replicate Flux models (stills only)
+  Configure in project.yaml 'providers' section or per-scene overrides.
+
+project layout:
+  project.yaml    Storyboard definition (scenes, characters, style)
+  .env            API credentials (not committed)
+  references/     Character/style reference images
+  output/         Generated stills, clips, and assembled video
+
+Use 'storyboard-gen <command> --help' for command-specific options.
+"""
+
+
 def main(argv: list[str] | None = None) -> int:
     """Main entry point for storyboard-gen CLI.
 
@@ -33,7 +57,13 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(
         prog="storyboard-gen",
-        description="Generate video assets from a YAML storyboard",
+        description=(
+            "Generate AI video storyboards. Define scenes in project.yaml, "
+            "generate stills and video clips via AI providers, apply Ken Burns "
+            "effects, and assemble everything into a final video."
+        ),
+        epilog=HELP_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "-v",
@@ -46,7 +76,17 @@ def main(argv: list[str] | None = None) -> int:
 
     # generate subcommand
     gen_parser = subparsers.add_parser(
-        "generate", help="Generate images and video clips"
+        "generate",
+        help="Generate stills and video clips from scene prompts",
+        description="Generate AI stills (images) and video clips for scenes defined in project.yaml.",
+        epilog=(
+            "examples:\n"
+            "  storyboard-gen generate --scene 1        Generate scene 1\n"
+            "  storyboard-gen generate --scene 1 5 3    Generate scenes 1, 5, 3 in that order\n"
+            "  storyboard-gen generate --all-stills     Generate all still scenes\n"
+            "  storyboard-gen generate --all            Generate all stills and clips"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     gen_group = gen_parser.add_mutually_exclusive_group(required=True)
     gen_group.add_argument(
@@ -61,7 +101,22 @@ def main(argv: list[str] | None = None) -> int:
     gen_group.add_argument("--all", action="store_true", help="Generate everything")
 
     # assemble subcommand
-    asm_parser = subparsers.add_parser("assemble", help="Assemble final video")
+    asm_parser = subparsers.add_parser(
+        "assemble",
+        help="Apply Ken Burns effects and assemble final video",
+        description=(
+            "Apply Ken Burns effects (zoom, pan) to generated stills, then "
+            "concatenate all stills and clips into a final video. Optionally "
+            "overlays audio from audio.m4a in the project directory."
+        ),
+        epilog=(
+            "examples:\n"
+            "  storyboard-gen assemble                  Assemble with audio\n"
+            "  storyboard-gen assemble --preview        Assemble without audio\n"
+            "  storyboard-gen assemble --output out.mp4 Custom output filename"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     asm_parser.add_argument(
         "--preview", action="store_true", help="Assemble without audio"
     )
@@ -70,13 +125,34 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # validate subcommand
-    subparsers.add_parser("validate", help="Validate project.yaml")
+    subparsers.add_parser(
+        "validate",
+        help="Validate project.yaml and show summary",
+        description="Parse and validate project.yaml, reporting any errors. Shows project summary on success.",
+    )
 
     # list subcommand
-    subparsers.add_parser("list", help="List all scenes")
+    subparsers.add_parser(
+        "list",
+        help="List all scenes with type, duration, and Ken Burns effect",
+        description="Display a table of all scenes with their type, duration, Ken Burns effect, and title.",
+    )
 
     # init subcommand
-    init_parser = subparsers.add_parser("init", help="Create a new project")
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Scaffold a new project with template files",
+        description=(
+            "Create a new storyboard project directory with template "
+            "project.yaml, .env, .gitignore, and references/ directory."
+        ),
+        epilog=(
+            "examples:\n"
+            "  storyboard-gen init                  Scaffold in current directory\n"
+            "  storyboard-gen init ~/Movies/my-vid  Scaffold in a named directory"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     init_parser.add_argument(
         "directory",
         nargs="?",
