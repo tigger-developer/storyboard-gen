@@ -84,7 +84,7 @@ def apply_ken_burns(
         raise ValueError(f"Unsupported aspect ratio: {aspect_ratio}")
 
     width, height = ASPECT_DIMENSIONS[aspect_ratio]
-    frames = scene.duration * fps
+    frames = int(scene.duration * fps)
 
     intermediate_dir = output_dir / "intermediate"
     intermediate_dir.mkdir(parents=True, exist_ok=True)
@@ -110,7 +110,7 @@ def apply_ken_burns(
     ]
 
     logger.info(
-        "Applying %s to scene %d (%ds at %dfps)",
+        "Applying %s to scene %d (%.1fs at %dfps)",
         effect,
         scene.number,
         scene.duration,

@@ -105,6 +105,16 @@ class TestScene:
         assert len(scene.characters) == 2
         assert scene.provider.backend == "fal"
 
+    def test_scene_creation_with_float_duration(self):
+        # Arrange & Act
+        scene = Scene(
+            number=1, title="Test", scene_type="still", prompt="A thing.", duration=2.5
+        )
+
+        # Assert
+        assert scene.duration == 2.5
+        assert isinstance(scene.duration, float)
+
     def test_scene_creation_with_model_override(self):
         # Arrange & Act
         scene = Scene(

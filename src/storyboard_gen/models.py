@@ -34,7 +34,7 @@ class Scene:
     title: str
     scene_type: str  # "still" or "clip"
     prompt: str
-    duration: int  # seconds
+    duration: float  # seconds (supports sub-second precision for voice-over alignment)
     camera: str | None = None  # WIDE, CLOSE, WINDOW, etc.
     ken_burns: str | None = None  # zoom_in, zoom_out, pan_ltr, pan_rtl, static
     characters: list[str] = field(default_factory=list)  # character IDs

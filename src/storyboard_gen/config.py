@@ -203,7 +203,7 @@ def _parse_scenes(
                 title=scene_data.get("title", f"Scene {i + 1}"),
                 scene_type=scene_type,
                 prompt=scene_data.get("prompt", ""),
-                duration=scene_data.get("duration", 5),
+                duration=float(scene_data.get("duration", 5)),
                 camera=scene_data.get("camera"),
                 ken_burns=ken_burns,
                 characters=char_ids,

@@ -1,4 +1,4 @@
-<!-- Version: 1.1 | Last updated: 2026-02-13 -->
+<!-- Version: 1.2 | Last updated: 2026-02-13 -->
 
 # project.yaml Specification
 
@@ -195,7 +195,7 @@ scenes:
 | `title` | string | no | `"Scene N"` | Human-readable scene title |
 | `type` | string | no | `"still"` | `"still"` or `"clip"` |
 | `prompt` | string | no | `""` | Scene description for the AI model |
-| `duration` | int | no | `5` | Duration in seconds — match to voice-over timing |
+| `duration` | number | no | `5` | Duration in seconds (supports decimals, e.g. `2.5`) — match to voice-over timing |
 | `camera` | string | no | `null` | Advisory camera angle: `"WIDE"`, `"CLOSE"`, `"WINDOW"`, or any string |
 | `ken_burns` | string | no | `null` | Ken Burns effect for stills (ignored for clips) |
 | `characters` | list | no | `[]` | Character IDs from the `characters` section |

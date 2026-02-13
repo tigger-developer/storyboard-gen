@@ -399,6 +399,26 @@ class TestSceneModelOverride:
         assert project.get_scene(1).model is None
 
 
+class TestProjectDuration:
+    def test_load_project_preserves_float_duration(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Float Duration",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 2.5},
+                {"number": 2, "type": "still", "prompt": "y", "duration": 3.7},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.get_scene(1).duration == 2.5
+        assert project.get_scene(2).duration == 3.7
+
+
 class TestProjectAudio:
     def test_load_project_with_audio_resolves_path(self, tmp_path):
         # Arrange

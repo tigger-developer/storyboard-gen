@@ -215,7 +215,7 @@ class FalProvider(ImageProvider):
         prompt: str,
         output_path: Path,
         aspect_ratio: str,
-        duration: int,
+        duration: float,
         reference_images: list[Path] | None = None,
         options: dict | None = None,
     ) -> bytes:

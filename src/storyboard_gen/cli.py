@@ -225,15 +225,16 @@ def _cmd_validate() -> int:
 def _cmd_list() -> int:
     """List all scenes with their details."""
     project = load_project()
-    print(f"{'#':>3}  {'Type':<6}  {'Dur':>3}s  {'Ken Burns':<10}  Title")
-    print("-" * 60)
+    print(f"{'#':>3}  {'Type':<6}  {'Dur':>5}  {'Ken Burns':<10}  Title")
+    print("-" * 62)
     for scene in project.scenes:
         kb = scene.ken_burns or "-"
+        dur = f"{scene.duration:g}s"
         print(
-            f"{scene.number:>3}  {scene.scene_type:<6}  {scene.duration:>3}s  {kb:<10}  {scene.title}"
+            f"{scene.number:>3}  {scene.scene_type:<6}  {dur:>5}  {kb:<10}  {scene.title}"
         )
     total = sum(s.duration for s in project.scenes)
-    print(f"\nTotal duration: ~{total}s")
+    print(f"\nTotal duration: ~{total:g}s")
     return 0
 
 

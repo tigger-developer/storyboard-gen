@@ -64,6 +64,49 @@ class TestCliList:
         assert "15s" in output  # 5 + 4 + 6
 
 
+class TestCliListFloatDurations:
+    def test_list_shows_float_durations(self, tmp_path, capsys):
+        # Arrange
+        data = {
+            "title": "Float Test",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 2.5},
+                {"number": 2, "type": "still", "prompt": "y", "duration": 3.7},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+        os.chdir(tmp_path)
+
+        # Act
+        exit_code = main(["list"])
+
+        # Assert
+        assert exit_code == 0
+        output = capsys.readouterr().out
+        assert "2.5s" in output
+        assert "3.7s" in output
+        assert "6.2s" in output  # total
+
+    def test_list_shows_integer_durations_without_decimal(self, tmp_path, capsys):
+        # Arrange
+        data = {
+            "title": "Int Test",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 5},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+        os.chdir(tmp_path)
+
+        # Act
+        exit_code = main(["list"])
+
+        # Assert
+        assert exit_code == 0
+        output = capsys.readouterr().out
+        assert "5s" in output
+
+
 class TestCliEnvLoading:
     @patch("storyboard_gen.cli.generate_still")
     def test_generate_loads_dotenv_before_provider_creation(
