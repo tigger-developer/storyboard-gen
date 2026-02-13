@@ -9,13 +9,13 @@ import pytest
 import yaml
 
 from storyboard_gen.cli import main
+from storyboard_gen.config import load_project
 from storyboard_gen.kdenlive import (
     _build_mlt,
     _frames,
     _resolve_clip_path,
     generate_kdenlive,
 )
-from storyboard_gen.config import load_project
 from storyboard_gen.ken_burns import ASPECT_DIMENSIONS
 
 
@@ -85,6 +85,14 @@ def _load_project_from(project_dir):
         os.chdir(orig)
 
 
+def _get_prop(element, name):
+    """Get the text of a <property name="..."> child element."""
+    for prop in element.findall("property"):
+        if prop.get("name") == name:
+            return prop.text
+    return None
+
+
 class TestFrameCalculation:
     def test_frames_whole_seconds(self):
         # Arrange & Act & Assert
@@ -142,6 +150,7 @@ class TestBuildMlt:
 
         # Assert
         assert mlt.tag == "mlt"
+        assert mlt.get("producer") == "main_bin"
 
     def test_profile_matches_aspect_ratio(self, tmp_path):
         # Arrange & Act
@@ -159,21 +168,20 @@ class TestBuildMlt:
         # Arrange & Act
         mlt = self._build(tmp_path)
 
-        # Assert — 3 scenes = 3 producers
+        # Assert — 3 scenes + 1 black_track = 4 producers
         producers = mlt.findall("producer")
-        assert len(producers) == 3
+        scene_producers = [p for p in producers if _get_prop(p, "resource") != "black"]
+        assert len(scene_producers) == 3
 
     def test_producer_paths_absolute(self, tmp_path):
         # Arrange & Act
         mlt = self._build(tmp_path)
 
-        # Assert
+        # Assert — scene producers have absolute paths
         for producer in mlt.findall("producer"):
-            resource = None
-            for prop in producer.findall("property"):
-                if prop.get("name") == "resource":
-                    resource = prop.text
-                    break
+            resource = _get_prop(producer, "resource")
+            if resource == "black":
+                continue
             assert resource is not None
             assert Path(resource).is_absolute()
 
@@ -185,7 +193,7 @@ class TestBuildMlt:
         # Act
         mlt = self._build(tmp_path, audio_path=audio_file)
 
-        # Assert — look for a producer with an audio resource
+        # Assert
         found_audio = False
         for producer in mlt.findall("producer"):
             if producer.get("id") == "audio_producer":
@@ -200,6 +208,113 @@ class TestBuildMlt:
         # Assert
         for producer in mlt.findall("producer"):
             assert producer.get("id") != "audio_producer"
+
+
+class TestKdenliveStructure:
+    """Kdenlive-specific structural requirements."""
+
+    def _build(self, tmp_path, dissolve_frames=15, audio_path=None, **kwargs):
+        project_dir = _make_project_dir(tmp_path, **kwargs)
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+        return _build_mlt(project, output_dir, dissolve_frames, 30, audio_path)
+
+    def test_black_track_producer_present(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert
+        black = mlt.find("producer[@id='black_track']")
+        assert black is not None
+        assert _get_prop(black, "resource") == "black"
+        assert _get_prop(black, "mlt_service") == "color"
+
+    def test_producers_have_kdenlive_id(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert — each scene producer has a kdenlive:id
+        for producer in mlt.findall("producer"):
+            if producer.get("id") == "black_track":
+                continue
+            kid = _get_prop(producer, "kdenlive:id")
+            assert kid is not None
+
+    def test_producers_have_kdenlive_clipname(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert — scene producers have clipname
+        for producer in mlt.findall("producer"):
+            if producer.get("id") == "black_track":
+                continue
+            clipname = _get_prop(producer, "kdenlive:clipname")
+            assert clipname is not None
+
+    def test_main_bin_present(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert
+        main_bin = mlt.find("playlist[@id='main_bin']")
+        assert main_bin is not None
+
+    def test_main_bin_contains_all_scene_producers(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert — main_bin has entries for all 3 scene producers
+        main_bin = mlt.find("playlist[@id='main_bin']")
+        entries = main_bin.findall("entry")
+        entry_producers = [e.get("producer") for e in entries]
+        assert "producer_1" in entry_producers
+        assert "producer_2" in entry_producers
+        assert "producer_3" in entry_producers
+
+    def test_main_bin_contains_audio_producer(self, tmp_path):
+        # Arrange
+        audio_file = tmp_path / "audio.m4a"
+        audio_file.write_bytes(b"fake-audio")
+
+        # Act
+        mlt = self._build(tmp_path, audio_path=audio_file)
+
+        # Assert
+        main_bin = mlt.find("playlist[@id='main_bin']")
+        entry_producers = [e.get("producer") for e in main_bin.findall("entry")]
+        assert "audio_producer" in entry_producers
+
+    def test_main_bin_has_docproperties_version(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert
+        main_bin = mlt.find("playlist[@id='main_bin']")
+        version = _get_prop(main_bin, "kdenlive:docproperties.version")
+        assert version == "1.1"
+
+    def test_project_tractor_present(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert — last tractor should have kdenlive:projectTractor
+        tractors = mlt.findall("tractor")
+        project_tractors = [
+            t for t in tractors if _get_prop(t, "kdenlive:projectTractor") == "1"
+        ]
+        assert len(project_tractors) == 1
+
+    def test_playlist_entries_have_kdenlive_id(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert — entries in video playlists have kdenlive:id sub-properties
+        playlist0 = mlt.find("playlist[@id='playlist0']")
+        entries = playlist0.findall("entry")
+        assert len(entries) > 0
+        for entry in entries:
+            kid = _get_prop(entry, "kdenlive:id")
+            assert kid is not None
 
 
 class TestDissolveLayout:
@@ -229,7 +344,6 @@ class TestDissolveLayout:
         playlist1 = mlt.find("playlist[@id='playlist1']")
         blanks0 = playlist0.findall("blank")
         blanks1 = playlist1.findall("blank")
-        # With 3 clips: playlist0 has clips 1,3 with blanks; playlist1 has clip 2 with blanks
         assert len(blanks0) > 0
         assert len(blanks1) > 0
 
@@ -237,9 +351,9 @@ class TestDissolveLayout:
         # Arrange & Act
         mlt = self._build_with_dissolves(tmp_path)
 
-        # Assert — 3 scenes = 2 dissolves, each dissolve has luma + mix = 4 total
-        tractor = mlt.find("tractor")
-        transitions = tractor.findall("transition")
+        # Assert — dissolve transitions live inside the video track tractor
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+        transitions = video_tractor.findall("transition")
         luma_transitions = [
             t for t in transitions if t.get("id", "").startswith("dissolve_")
         ]
@@ -250,24 +364,20 @@ class TestDissolveLayout:
         mlt = self._build_with_dissolves(tmp_path, dissolve_frames=30)
 
         # Assert
-        tractor = mlt.find("tractor")
-        transitions = tractor.findall("transition")
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+        transitions = video_tractor.findall("transition")
         for t in transitions:
             if t.get("id", "").startswith("dissolve_"):
-                length = None
-                for prop in t.findall("property"):
-                    if prop.get("name") == "length":
-                        length = prop.text
-                        break
+                length = _get_prop(t, "length")
                 assert length == "30"
 
     def test_luma_and_mix_transitions_paired(self, tmp_path):
         # Arrange & Act
         mlt = self._build_with_dissolves(tmp_path)
 
-        # Assert — each dissolve has a luma (video) and mix (audio) transition
-        tractor = mlt.find("tractor")
-        transitions = tractor.findall("transition")
+        # Assert
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+        transitions = video_tractor.findall("transition")
         luma_count = sum(
             1 for t in transitions if t.get("id", "").startswith("dissolve_")
         )
@@ -294,10 +404,13 @@ class TestDissolveLayout:
         output_dir = project_dir / "output"
         mlt = _build_mlt(project, output_dir, 15, 30, None)
 
-        # Assert — single scene means no transitions
-        tractor = mlt.find("tractor")
-        transitions = tractor.findall("transition")
-        assert len(transitions) == 0
+        # Assert — single scene: no dissolve transitions in video tractor
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+        transitions = video_tractor.findall("transition")
+        dissolve_transitions = [
+            t for t in transitions if t.get("id", "").startswith("dissolve_")
+        ]
+        assert len(dissolve_transitions) == 0
 
 
 class TestNoDissolveLayout:
@@ -308,20 +421,24 @@ class TestNoDissolveLayout:
         output_dir = project_dir / "output"
         return _build_mlt(project, output_dir, 0, 30, None)
 
-    def test_single_playlist_when_no_dissolve(self, tmp_path):
+    def test_single_playlist_has_content_when_no_dissolve(self, tmp_path):
         # Arrange & Act
         mlt = self._build_no_dissolves(tmp_path)
 
-        # Assert
-        playlists = mlt.findall("playlist")
-        assert len(playlists) == 1
-        assert playlists[0].get("id") == "playlist0"
+        # Assert — playlist0 has entries, playlist1 is empty
+        playlist0 = mlt.find("playlist[@id='playlist0']")
+        entries = playlist0.findall("entry")
+        assert len(entries) == 3
+
+        playlist1 = mlt.find("playlist[@id='playlist1']")
+        assert playlist1 is not None
+        assert len(playlist1.findall("entry")) == 0
 
     def test_all_clips_on_single_playlist(self, tmp_path):
         # Arrange & Act
         mlt = self._build_no_dissolves(tmp_path)
 
-        # Assert — all 3 scenes on one playlist, no blanks
+        # Assert — all 3 scenes on playlist0, no blanks
         playlist = mlt.find("playlist[@id='playlist0']")
         entries = playlist.findall("entry")
         assert len(entries) == 3

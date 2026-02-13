@@ -2,6 +2,7 @@
 # ABOUTME: Exports an MLT XML project for timeline editing with dissolve transitions.
 
 import logging
+import uuid
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -78,6 +79,10 @@ def _resolve_clip_path(scene: Scene, output_dir: Path) -> Path:
     return output_dir / "clips" / f"scene_{scene.number:02d}.mp4"
 
 
+# ProducerInfo: (producer_id, length_frames, kdenlive_id, clip_name)
+ProducerInfo = tuple[str, int, int, str]
+
+
 def _build_mlt(
     project: Project,
     output_dir: Path,
@@ -85,58 +90,80 @@ def _build_mlt(
     fps: int,
     audio_path: Path | None,
 ) -> ET.Element:
-    """Build the MLT XML document.
+    """Build the Kdenlive-compatible MLT XML document.
 
-    Returns the root <mlt> Element.
+    Returns the root <mlt> Element with proper Kdenlive structure:
+    producers, main_bin, video/audio track tractors, sequence tractor,
+    and project tractor.
     """
     mlt = ET.Element("mlt")
+    mlt.set("producer", "main_bin")
+    mlt.set("root", str(output_dir.parent.resolve()))
 
     # Profile
     aspect_ratio = project.aspect_ratio
     width, height = ASPECT_DIMENSIONS.get(aspect_ratio, (1920, 1080))
-    _add_profile(mlt, width, height, fps, aspect_ratio)
+    _add_profile(mlt, width, height, fps)
 
-    # Scene producers
-    producers = []
+    # Black track producer (Kdenlive timeline background)
+    _add_black_track(mlt)
+
+    # Scene producers (kdenlive:id starts at 2; 1 is reserved for the sequence)
+    kdenlive_id = 2
+    producers: list[ProducerInfo] = []
     for scene in project.scenes:
         clip_path = _resolve_clip_path(scene, output_dir)
         length = _frames(scene.duration, fps)
         producer_id = f"producer_{scene.number}"
-        _add_producer(mlt, producer_id, clip_path.resolve(), length)
-        producers.append((producer_id, length))
+        _add_scene_producer(
+            mlt, producer_id, clip_path.resolve(), length, kdenlive_id, scene.title
+        )
+        producers.append((producer_id, length, kdenlive_id, scene.title))
+        kdenlive_id += 1
 
     # Audio producer
-    audio_producer_id = None
+    audio_info: ProducerInfo | None = None
     if audio_path is not None:
-        audio_producer_id = "audio_producer"
-        _add_producer(mlt, audio_producer_id, audio_path.resolve(), 0)
+        _add_scene_producer(
+            mlt, "audio_producer", audio_path.resolve(), 0, kdenlive_id, "Audio"
+        )
+        audio_info = ("audio_producer", 0, kdenlive_id, "Audio")
+        kdenlive_id += 1
 
-    # Build playlists and transitions
+    # Video track: A/B playlists wrapped in a tractor
     use_dissolves = dissolve_frames > 0 and len(producers) > 1
     if use_dissolves:
-        playlists, transitions = _build_playlists_with_dissolves(
-            mlt, producers, dissolve_frames
+        _build_video_track_with_dissolves(mlt, producers, dissolve_frames)
+    else:
+        _build_video_track_no_dissolves(mlt, producers)
+
+    # Audio track (if configured)
+    has_audio = audio_info is not None
+    if has_audio:
+        _build_audio_track(mlt, audio_info)
+
+    # Total timeline length in frames
+    if use_dissolves:
+        total_frames = sum(p[1] for p in producers) - (
+            (len(producers) - 1) * dissolve_frames
         )
     else:
-        playlists = _build_playlist_no_dissolves(mlt, producers)
-        transitions = []
+        total_frames = sum(p[1] for p in producers)
 
-    # Audio playlist
-    audio_playlist_id = None
-    if audio_producer_id:
-        audio_playlist = ET.SubElement(mlt, "playlist", id="audio_playlist")
-        ET.SubElement(audio_playlist, "entry", producer=audio_producer_id)
-        audio_playlist_id = "audio_playlist"
+    # Sequence tractor (combines all tracks)
+    seq_uuid = str(uuid.uuid4())
+    _build_sequence_tractor(mlt, total_frames, seq_uuid, has_audio)
 
-    # Tractor
-    _add_tractor(mlt, playlists, transitions, audio_playlist_id)
+    # Main bin (clip library — required by Kdenlive)
+    _build_main_bin(mlt, producers, audio_info, seq_uuid, total_frames)
+
+    # Project tractor (wraps active sequence)
+    _build_project_tractor(mlt, total_frames)
 
     return mlt
 
 
-def _add_profile(
-    mlt: ET.Element, width: int, height: int, fps: int, aspect_ratio: str
-) -> None:
+def _add_profile(mlt: ET.Element, width: int, height: int, fps: int) -> None:
     """Add a <profile> element to the MLT document."""
     ET.SubElement(
         mlt,
@@ -149,64 +176,80 @@ def _add_profile(
         display_aspect_den=str(height),
         progressive="1",
         colorspace="709",
+        sample_aspect_num="1",
+        sample_aspect_den="1",
     )
 
 
-def _add_producer(
-    mlt: ET.Element, producer_id: str, path: Path, length_frames: int
-) -> None:
-    """Add a <producer> element for a clip or audio file."""
-    producer = ET.SubElement(mlt, "producer", id=producer_id)
-    prop_resource = ET.SubElement(producer, "property", name="resource")
-    prop_resource.text = str(path)
-    if length_frames > 0:
-        prop_length = ET.SubElement(producer, "property", name="length")
-        prop_length.text = str(length_frames)
+def _add_black_track(mlt: ET.Element) -> None:
+    """Add the black background producer required by Kdenlive."""
+    producer = ET.SubElement(mlt, "producer", id="black_track")
+    _set_prop(producer, "resource", "black")
+    _set_prop(producer, "mlt_service", "color")
+    _set_prop(producer, "kdenlive:playlistid", "black_track")
+    _set_prop(producer, "mlt_image_format", "rgba")
 
 
-def _build_playlists_with_dissolves(
+def _add_scene_producer(
     mlt: ET.Element,
-    producers: list[tuple[str, int]],
+    producer_id: str,
+    path: Path,
+    length_frames: int,
+    kdenlive_id: int,
+    clip_name: str,
+) -> None:
+    """Add a <producer> element for a scene clip or audio file."""
+    attrs = {"id": producer_id}
+    if length_frames > 0:
+        attrs["in"] = "0"
+        attrs["out"] = str(length_frames - 1)
+    producer = ET.SubElement(mlt, "producer", **attrs)
+    _set_prop(producer, "resource", str(path))
+    if length_frames > 0:
+        _set_prop(producer, "length", str(length_frames))
+    _set_prop(producer, "kdenlive:id", str(kdenlive_id))
+    _set_prop(producer, "kdenlive:clipname", clip_name)
+
+
+def _build_video_track_with_dissolves(
+    mlt: ET.Element,
+    producers: list[ProducerInfo],
     dissolve_frames: int,
-) -> tuple[list[str], list[dict]]:
-    """Build two alternating playlists (A/B editing) for dissolve transitions.
+) -> None:
+    """Build A/B video playlists and wrap them in a video track tractor.
 
-    Clips alternate between playlist0 and playlist1. Blank entries fill the
-    gaps so the timelines stay aligned. Transitions overlap at dissolve points.
-
-    Returns:
-        Tuple of (playlist_ids, transition_defs).
+    Clips alternate between playlist0 and playlist1. During a dissolve,
+    clip N (ending on A) overlaps with clip N+1 (starting on B). A luma
+    transition handles the video crossfade, a mix transition handles audio.
     """
     playlist0 = ET.SubElement(mlt, "playlist", id="playlist0")
     playlist1 = ET.SubElement(mlt, "playlist", id="playlist1")
 
     transitions = []
-    timeline_pos = 0  # current position in frames on the timeline
+    timeline_pos = 0
 
-    for i, (producer_id, length) in enumerate(producers):
+    for i, (producer_id, length, kdenlive_id, _name) in enumerate(producers):
         is_even = i % 2 == 0
         active_playlist = playlist0 if is_even else playlist1
         other_playlist = playlist1 if is_even else playlist0
 
         if i == 0:
-            # First clip: just place it on playlist0
-            ET.SubElement(active_playlist, "entry", producer=producer_id)
-            # Other playlist gets a blank for the non-overlapping portion
+            entry = ET.SubElement(
+                active_playlist,
+                "entry",
+                producer=producer_id,
+                **{"in": "0", "out": str(length - 1)},
+            )
+            _set_prop(entry, "kdenlive:id", str(kdenlive_id))
             blank_length = length - dissolve_frames
             ET.SubElement(other_playlist, "blank", length=str(blank_length))
             timeline_pos = length
         else:
-            # Overlap: this clip starts dissolve_frames before previous clip ends
             overlap_start = timeline_pos - dissolve_frames
 
-            # The active playlist needs a blank from its last entry to the
-            # start of this clip (accounting for the overlap)
-            # For even playlists: last entry ended at some point, gap until now
-            # The blank fills the gap between the end of the last entry on
-            # this playlist and the start of this entry
             if i >= 2:
-                # This playlist had a clip 2 positions ago; calculate the
-                # blank needed between end of that clip and start of this one
+                # Blank between the end of the last clip on this playlist
+                # and the start of this one
                 prev_same_idx = i - 2
                 gap_frames = 0
                 for j in range(prev_same_idx + 1, i):
@@ -215,9 +258,14 @@ def _build_playlists_with_dissolves(
                 if blank_length > 0:
                     ET.SubElement(active_playlist, "blank", length=str(blank_length))
 
-            ET.SubElement(active_playlist, "entry", producer=producer_id)
+            entry = ET.SubElement(
+                active_playlist,
+                "entry",
+                producer=producer_id,
+                **{"in": "0", "out": str(length - 1)},
+            )
+            _set_prop(entry, "kdenlive:id", str(kdenlive_id))
 
-            # Add dissolve transition
             transitions.append(
                 {
                     "a_track": "0" if is_even else "1",
@@ -230,68 +278,210 @@ def _build_playlists_with_dissolves(
 
             timeline_pos = overlap_start + length
 
-    # Pad the shorter playlist to match timeline length
-    # (handled implicitly by Kdenlive)
+    # Video track tractor wrapping the A/B playlists
+    tractor = ET.SubElement(mlt, "tractor", id="video_tractor")
+    ET.SubElement(tractor, "track", hide="audio", producer="playlist0")
+    ET.SubElement(tractor, "track", hide="audio", producer="playlist1")
 
-    return (["playlist0", "playlist1"], transitions)
-
-
-def _build_playlist_no_dissolves(
-    mlt: ET.Element, producers: list[tuple[str, int]]
-) -> list[str]:
-    """Build a single sequential playlist with no transitions."""
-    playlist = ET.SubElement(mlt, "playlist", id="playlist0")
-    for producer_id, _length in producers:
-        ET.SubElement(playlist, "entry", producer=producer_id)
-    return ["playlist0"]
-
-
-def _add_tractor(
-    mlt: ET.Element,
-    playlists: list[str],
-    transitions: list[dict],
-    audio_playlist_id: str | None,
-) -> None:
-    """Add a <tractor> element combining tracks and transitions."""
-    tractor = ET.SubElement(mlt, "tractor", id="tractor0")
-
-    # Add multitrack with references to playlists
-    multitrack = ET.SubElement(tractor, "multitrack")
-    for playlist_id in playlists:
-        ET.SubElement(multitrack, "track", producer=playlist_id)
-    if audio_playlist_id:
-        ET.SubElement(multitrack, "track", producer=audio_playlist_id)
-
-    # Add transitions (video dissolve + audio crossfade for each)
     for t in transitions:
-        # Video dissolve (luma)
-        dissolve = ET.SubElement(
-            tractor,
-            "transition",
-            id=f"dissolve_{t['index']}",
-        )
-        dissolve.set("in", t["in"])
-        dissolve.set("out", t["out"])
-        prop_mlt_service = ET.SubElement(dissolve, "property", name="mlt_service")
-        prop_mlt_service.text = "luma"
-        prop_a = ET.SubElement(dissolve, "property", name="a_track")
-        prop_a.text = t["a_track"]
-        prop_b = ET.SubElement(dissolve, "property", name="b_track")
-        prop_b.text = t["b_track"]
-        prop_length = ET.SubElement(dissolve, "property", name="length")
-        prop_length.text = str(int(t["out"]) - int(t["in"]))
+        _add_dissolve_transition(tractor, t)
+        _add_mix_transition(tractor, t)
 
-        # Audio crossfade (mix)
-        mix = ET.SubElement(
-            tractor,
-            "transition",
-            id=f"mix_{t['index']}",
+
+def _build_video_track_no_dissolves(
+    mlt: ET.Element, producers: list[ProducerInfo]
+) -> None:
+    """Build sequential video playlists (no transitions) wrapped in a tractor."""
+    playlist0 = ET.SubElement(mlt, "playlist", id="playlist0")
+    for producer_id, length, kdenlive_id, _name in producers:
+        entry = ET.SubElement(
+            playlist0,
+            "entry",
+            producer=producer_id,
+            **{"in": "0", "out": str(length - 1)},
         )
-        mix.set("in", t["in"])
-        mix.set("out", t["out"])
-        prop_mlt_service = ET.SubElement(mix, "property", name="mlt_service")
-        prop_mlt_service.text = "mix"
-        prop_a = ET.SubElement(mix, "property", name="a_track")
-        prop_a.text = t["a_track"]
-        prop_b = ET.SubElement(mix, "property", name="b_track")
-        prop_b.text = t["b_track"]
+        _set_prop(entry, "kdenlive:id", str(kdenlive_id))
+
+    # Empty B playlist (Kdenlive expects A/B pair per track)
+    ET.SubElement(mlt, "playlist", id="playlist1")
+
+    # Video track tractor
+    tractor = ET.SubElement(mlt, "tractor", id="video_tractor")
+    ET.SubElement(tractor, "track", hide="audio", producer="playlist0")
+    ET.SubElement(tractor, "track", hide="audio", producer="playlist1")
+
+
+def _build_audio_track(mlt: ET.Element, audio_info: ProducerInfo) -> None:
+    """Build an audio track with A/B playlists wrapped in a tractor."""
+    producer_id, _length, kdenlive_id, _name = audio_info
+
+    playlist_a = ET.SubElement(mlt, "playlist", id="audio_playlist0")
+    _set_prop(playlist_a, "kdenlive:audio_track", "1")
+    entry = ET.SubElement(playlist_a, "entry", producer=producer_id)
+    _set_prop(entry, "kdenlive:id", str(kdenlive_id))
+
+    # Empty B playlist
+    playlist_b = ET.SubElement(mlt, "playlist", id="audio_playlist1")
+    _set_prop(playlist_b, "kdenlive:audio_track", "1")
+
+    tractor = ET.SubElement(mlt, "tractor", id="audio_tractor")
+    _set_prop(tractor, "kdenlive:audio_track", "1")
+    ET.SubElement(tractor, "track", hide="video", producer="audio_playlist0")
+    ET.SubElement(tractor, "track", hide="video", producer="audio_playlist1")
+
+
+def _build_sequence_tractor(
+    mlt: ET.Element,
+    total_frames: int,
+    seq_uuid: str,
+    has_audio: bool,
+) -> None:
+    """Build the sequence tractor that combines all tracks.
+
+    This is the Kdenlive timeline. It includes the black track as
+    background and internal mix/qtblend transitions between tracks.
+    """
+    tractor = ET.SubElement(
+        mlt,
+        "tractor",
+        id="sequence_tractor",
+        **{"in": "0", "out": str(max(total_frames - 1, 0))},
+    )
+    _set_prop(tractor, "kdenlive:uuid", f"{{{seq_uuid}}}")
+    _set_prop(tractor, "kdenlive:clipname", "Sequence 1")
+    _set_prop(tractor, "kdenlive:id", "1")
+    _set_prop(tractor, "kdenlive:producer_type", "17")
+    _set_prop(
+        tractor, "kdenlive:sequenceproperties.hasAudio", "1" if has_audio else "0"
+    )
+    _set_prop(tractor, "kdenlive:sequenceproperties.hasVideo", "1")
+
+    # Track 0: black background
+    ET.SubElement(tractor, "track", producer="black_track")
+
+    # Audio track (if present) as track 1
+    track_index = 1
+    if has_audio:
+        ET.SubElement(tractor, "track", producer="audio_tractor")
+        # mix transition for audio track
+        _add_internal_mix(tractor, "seq_mix_audio", a_track=0, b_track=track_index)
+        track_index += 1
+
+    # Video track
+    ET.SubElement(tractor, "track", producer="video_tractor")
+    # qtblend transition for video compositing over black
+    _add_internal_qtblend(tractor, "seq_blend_video", a_track=0, b_track=track_index)
+
+
+def _build_main_bin(
+    mlt: ET.Element,
+    producers: list[ProducerInfo],
+    audio_info: ProducerInfo | None,
+    seq_uuid: str,
+    total_frames: int,
+) -> None:
+    """Build the main_bin playlist (Kdenlive's clip library).
+
+    Every producer must be registered here or Kdenlive will reject it.
+    """
+    main_bin = ET.SubElement(mlt, "playlist", id="main_bin")
+    _set_prop(main_bin, "kdenlive:docproperties.version", "1.1")
+    _set_prop(main_bin, "kdenlive:docproperties.kdenliveversion", "25.04.0")
+    _set_prop(main_bin, "kdenlive:docproperties.uuid", f"{{{seq_uuid}}}")
+    _set_prop(main_bin, "kdenlive:docproperties.activetimeline", f"{{{seq_uuid}}}")
+    _set_prop(main_bin, "xml_retain", "1")
+
+    # Register all scene producers
+    for producer_id, length, _kid, _name in producers:
+        attrs = {"producer": producer_id}
+        if length > 0:
+            attrs["in"] = "0"
+            attrs["out"] = str(length - 1)
+        ET.SubElement(main_bin, "entry", **attrs)
+
+    # Register audio producer
+    if audio_info is not None:
+        ET.SubElement(main_bin, "entry", producer=audio_info[0])
+
+    # Register the sequence tractor
+    seq_attrs = {"producer": "sequence_tractor"}
+    if total_frames > 0:
+        seq_attrs["in"] = "0"
+        seq_attrs["out"] = str(total_frames - 1)
+    ET.SubElement(main_bin, "entry", **seq_attrs)
+
+
+def _build_project_tractor(mlt: ET.Element, total_frames: int) -> None:
+    """Build the project tractor that wraps the active sequence."""
+    tractor = ET.SubElement(
+        mlt,
+        "tractor",
+        id="project_tractor",
+        **{"in": "0", "out": str(max(total_frames - 1, 0))},
+    )
+    _set_prop(tractor, "kdenlive:projectTractor", "1")
+    ET.SubElement(
+        tractor,
+        "track",
+        producer="sequence_tractor",
+        **{"in": "0", "out": str(max(total_frames - 1, 0))},
+    )
+
+
+# --- Transition helpers ---
+
+
+def _add_dissolve_transition(tractor: ET.Element, t: dict) -> None:
+    """Add a luma (video dissolve) transition to a tractor."""
+    dissolve = ET.SubElement(tractor, "transition", id=f"dissolve_{t['index']}")
+    dissolve.set("in", t["in"])
+    dissolve.set("out", t["out"])
+    _set_prop(dissolve, "mlt_service", "luma")
+    _set_prop(dissolve, "a_track", t["a_track"])
+    _set_prop(dissolve, "b_track", t["b_track"])
+    _set_prop(dissolve, "length", str(int(t["out"]) - int(t["in"])))
+
+
+def _add_mix_transition(tractor: ET.Element, t: dict) -> None:
+    """Add a mix (audio crossfade) transition to a tractor."""
+    mix = ET.SubElement(tractor, "transition", id=f"mix_{t['index']}")
+    mix.set("in", t["in"])
+    mix.set("out", t["out"])
+    _set_prop(mix, "mlt_service", "mix")
+    _set_prop(mix, "a_track", t["a_track"])
+    _set_prop(mix, "b_track", t["b_track"])
+
+
+def _add_internal_mix(
+    tractor: ET.Element, transition_id: str, a_track: int, b_track: int
+) -> None:
+    """Add an internal mix transition (always-active audio mixing)."""
+    transition = ET.SubElement(tractor, "transition", id=transition_id)
+    _set_prop(transition, "a_track", str(a_track))
+    _set_prop(transition, "b_track", str(b_track))
+    _set_prop(transition, "mlt_service", "mix")
+    _set_prop(transition, "internal_added", "237")
+    _set_prop(transition, "always_active", "1")
+    _set_prop(transition, "accepts_blanks", "1")
+    _set_prop(transition, "sum", "1")
+
+
+def _add_internal_qtblend(
+    tractor: ET.Element, transition_id: str, a_track: int, b_track: int
+) -> None:
+    """Add an internal qtblend transition (always-active video compositing)."""
+    transition = ET.SubElement(tractor, "transition", id=transition_id)
+    _set_prop(transition, "a_track", str(a_track))
+    _set_prop(transition, "b_track", str(b_track))
+    _set_prop(transition, "mlt_service", "qtblend")
+    _set_prop(transition, "internal_added", "237")
+    _set_prop(transition, "always_active", "1")
+
+
+# --- Utility ---
+
+
+def _set_prop(element: ET.Element, name: str, value: str) -> None:
+    """Add a <property name="...">value</property> child element."""
+    prop = ET.SubElement(element, "property", name=name)
+    prop.text = value
