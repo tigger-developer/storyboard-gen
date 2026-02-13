@@ -62,6 +62,23 @@ class TestCliList:
         assert "15s" in output  # 5 + 4 + 6
 
 
+class TestCliEnvLoading:
+    @patch("storyboard_gen.cli.generate_still")
+    def test_generate_loads_dotenv_before_provider_creation(
+        self, mock_gen_still, sample_project_dir, monkeypatch
+    ):
+        # Arrange — put FAL_KEY in .env but not in the environment
+        os.chdir(sample_project_dir)
+        (sample_project_dir / ".env").write_text("FAL_KEY=test-fal-key-123\n")
+        monkeypatch.delenv("FAL_KEY", raising=False)
+
+        # Act
+        main(["generate", "--scene", "1"])
+
+        # Assert — FAL_KEY should now be in the environment
+        assert os.environ.get("FAL_KEY") == "test-fal-key-123"
+
+
 class TestCliGenerate:
     @patch("storyboard_gen.cli.generate_still")
     def test_generate_multiple_scenes_in_order(

@@ -5,6 +5,8 @@ import argparse
 import logging
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from storyboard_gen import __version__
 from storyboard_gen.config import ConfigError, load_project
 from storyboard_gen.generate import generate_clip, generate_still
@@ -170,6 +172,9 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s: %(message)s",
     )
+
+    # Load .env from cwd so all provider credentials are available
+    load_dotenv(Path.cwd() / ".env")
 
     try:
         return _dispatch(args)
