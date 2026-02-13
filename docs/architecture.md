@@ -1,4 +1,4 @@
-<!-- Version: 0.5 | Last updated: 2026-02-13 -->
+<!-- Version: 0.6 | Last updated: 2026-02-13 -->
 
 # Architecture: storyboard-gen
 
@@ -45,7 +45,7 @@ Applies zoom/pan effects to still images using FFmpeg, producing short video cli
 
 ### Assembly (`assemble.py`)
 
-Concatenates all scene outputs (Ken Burns stills + video clips) in order using FFmpeg. Optionally adds crossfade transitions.
+Concatenates all scene outputs (Ken Burns stills + video clips) in order using FFmpeg. When an audio path is provided, runs a two-pass process: concat to temp file, then mux audio with `-shortest` to match the shorter of video/audio. Cleans up temp files in a `try`/`finally` block.
 
 ## Data flow
 
@@ -65,7 +65,19 @@ ken_burns.py ──▶ output/intermediate/*.mp4 (stills with effects)
     │
     ▼
 assemble.py ──▶ output/final/assembled.mp4
+              ──▶ (optional) audio mux via FFmpeg
 ```
+
+## Audio resolution
+
+The `assemble` command resolves audio via this priority chain:
+
+1. `--preview` flag → no audio (regardless of other settings)
+2. CLI `--audio <path>` → explicit override
+3. `project.yaml` `audio:` field → project default
+4. None → assemble without audio
+
+If the resolved path doesn't exist, a warning is logged and assembly proceeds without audio.
 
 ## Reference image resolution
 

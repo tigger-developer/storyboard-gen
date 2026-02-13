@@ -59,6 +59,7 @@ class Project:
     scenes: list[Scene]
     still_provider: ProviderConfig | None = None
     clip_provider: ProviderConfig | None = None
+    audio: Path | None = None
 
     def get_scene(self, number: int) -> Scene:
         """Return a scene by number. Raises ValueError if not found."""

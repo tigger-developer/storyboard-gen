@@ -329,6 +329,37 @@ class TestProject:
         assert len(refs) == 1
         assert refs[0] == scene_ref
 
+    def test_project_creation_with_audio_path(self):
+        # Arrange & Act
+        project = Project(
+            title="Test",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(number=1, title="S1", scene_type="still", prompt="P", duration=5)
+            ],
+            audio=Path("audio.m4a"),
+        )
+
+        # Assert
+        assert project.audio == Path("audio.m4a")
+
+    def test_project_audio_defaults_to_none(self):
+        # Arrange & Act
+        project = Project(
+            title="Test",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(number=1, title="S1", scene_type="still", prompt="P", duration=5)
+            ],
+        )
+
+        # Assert
+        assert project.audio is None
+
     def test_get_reference_images_falls_back_to_characters(self, tmp_path):
         # Arrange — no scene.reference, falls back to character refs
         char_ref = tmp_path / "hero.png"

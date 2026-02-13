@@ -114,18 +114,25 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "Apply Ken Burns effects (zoom, pan) to stills, then merge all "
             "stills and video clips in scene order into a single final video. "
-            "Overlays audio from audio.m4a if present (use --preview to skip)."
+            "Muxes audio if configured in project.yaml or via --audio."
         ),
         epilog=(
             "examples:\n"
-            "  storyboard-gen assemble                  Assemble with audio\n"
-            "  storyboard-gen assemble --preview        Assemble without audio\n"
-            "  storyboard-gen assemble --output out.mp4 Custom output filename"
+            "  storyboard-gen assemble                      Assemble (with audio if configured)\n"
+            "  storyboard-gen assemble --preview             Assemble without audio\n"
+            "  storyboard-gen assemble --audio narration.m4a Override audio track\n"
+            "  storyboard-gen assemble --output out.mp4      Custom output filename"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     asm_parser.add_argument(
         "--preview", action="store_true", help="Assemble without audio"
+    )
+    asm_parser.add_argument(
+        "--audio",
+        type=str,
+        default=None,
+        help="Audio file to mux (overrides project.yaml)",
     )
     asm_parser.add_argument(
         "--output", type=str, default="assembled.mp4", help="Output filename"
@@ -277,14 +284,31 @@ def _cmd_assemble(args: argparse.Namespace) -> int:
             return 1
         apply_ken_burns(image_path, scene, project.aspect_ratio, output_dir)
 
+    # Resolve audio: --preview → None; --audio → override; project.yaml → default
+    audio_path = None
+    if not args.preview:
+        if args.audio:
+            audio_path = Path(args.audio).resolve()
+        elif project.audio:
+            audio_path = project.audio
+
+        if audio_path and not audio_path.exists():
+            logging.warning(
+                "Audio file not found: %s — assembling without audio", audio_path
+            )
+            audio_path = None
+
     # Assemble
-    assemble(project, output_dir, args.output)
+    assemble(project, output_dir, args.output, audio_path=audio_path)
     return 0
 
 
 _TEMPLATE_PROJECT_YAML = """\
 title: "My Project"
 aspect_ratio: "9:16"
+
+# Optional: audio track to mux into assembled video
+# audio: "audio.m4a"
 
 # Uncomment and configure a provider (defaults to Google if omitted)
 # providers:

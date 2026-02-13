@@ -1,4 +1,4 @@
-<!-- Version: 1.0 | Last updated: 2026-02-13 -->
+<!-- Version: 1.1 | Last updated: 2026-02-13 -->
 
 # project.yaml Specification
 
@@ -12,6 +12,7 @@ This is the complete schema reference for `project.yaml`, the storyboard definit
 my-project/
 ├── project.yaml          # This file
 ├── .env                  # API credentials (not committed)
+├── audio.m4a             # Optional audio track for assembly
 ├── references/           # Character/style reference images
 │   ├── hero.jpg
 │   └── villain.png
@@ -30,6 +31,7 @@ my-project/
 |-------|------|----------|---------|-------------|
 | `title` | string | **yes** | — | Project title |
 | `aspect_ratio` | string | no | `"16:9"` | Output aspect ratio |
+| `audio` | string | no | `null` | Path to audio file for assembly (relative to project dir) |
 | `style_prefix` | string | no | `""` | Visual style description prepended to every scene prompt |
 | `providers` | object | no | — | AI provider configuration (defaults to Google) |
 | `characters` | object | no | `{}` | Named characters with descriptions and reference images |
@@ -38,6 +40,14 @@ my-project/
 ### `aspect_ratio`
 
 Valid values: `"9:16"`, `"16:9"`, `"4:3"`, `"1:1"`
+
+### `audio`
+
+Optional path to an audio file (voice-over, soundtrack) to mux into the assembled video. Relative to the project directory. The CLI `--audio` flag overrides this value; `--preview` skips audio entirely. If the file doesn't exist at assembly time, a warning is logged and assembly proceeds without audio.
+
+```yaml
+audio: "audio.m4a"
+```
 
 ### `style_prefix`
 
@@ -222,6 +232,7 @@ Advisory only — included in the prompt text sent to the AI model. The tool doe
 ```yaml
 title: "The Bridge at Dawn"
 aspect_ratio: "9:16"
+audio: "narration.m4a"
 
 providers:
   still:
@@ -315,14 +326,15 @@ Run `storyboard-gen validate` to check your `project.yaml` for errors before gen
 ## CLI commands
 
 ```bash
-storyboard-gen validate                # Validate project.yaml
-storyboard-gen list                    # List all scenes with status
-storyboard-gen generate --scene 1      # Generate one scene
-storyboard-gen generate --scene 1 3 5  # Generate specific scenes in order
-storyboard-gen generate --all-stills   # Generate all stills
-storyboard-gen generate --all-clips    # Generate all clips
-storyboard-gen generate --all          # Generate everything
-storyboard-gen assemble                # Assemble final video with Ken Burns
-storyboard-gen assemble --preview      # Assemble without audio
-storyboard-gen --version               # Show version
+storyboard-gen validate                     # Validate project.yaml
+storyboard-gen list                         # List all scenes with status
+storyboard-gen generate --scene 1           # Generate one scene
+storyboard-gen generate --scene 1 3 5       # Generate specific scenes in order
+storyboard-gen generate --all-stills        # Generate all stills
+storyboard-gen generate --all-clips         # Generate all clips
+storyboard-gen generate --all              # Generate everything
+storyboard-gen assemble                     # Assemble final video (with audio if configured)
+storyboard-gen assemble --preview           # Assemble without audio
+storyboard-gen assemble --audio voice.m4a   # Override audio track
+storyboard-gen --version                    # Show version
 ```

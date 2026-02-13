@@ -43,7 +43,8 @@ storyboard-gen list                    # List all scenes
 storyboard-gen generate --scene 1      # Generate one scene
 storyboard-gen generate --all-stills   # All stills
 storyboard-gen generate --all          # Everything
-storyboard-gen assemble                # Assemble final video
+storyboard-gen assemble                # Assemble final video (with audio if configured)
+storyboard-gen assemble --audio vo.m4a # Override audio track
 storyboard-gen --version               # Show version
 ```
 
@@ -91,6 +92,7 @@ Each video project is a directory containing:
 my-project/
 ├── project.yaml      # Storyboard definition
 ├── .env              # API credentials
+├── audio.m4a         # Optional audio track for assembly
 ├── references/       # Character/style reference images
 └── output/           # Generated assets (created by tool)
     ├── stills/       # Imagen output (PNG)

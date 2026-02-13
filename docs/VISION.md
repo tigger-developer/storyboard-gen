@@ -1,4 +1,4 @@
-<!-- Version: 0.1 | Last updated: 2026-02-12 -->
+<!-- Version: 0.2 | Last updated: 2026-02-13 -->
 
 # Vision: storyboard-gen
 
@@ -25,9 +25,13 @@ Separate the creative decisions (storyboard, prompts, character designs, style) 
 ## Non-goals
 
 - This is not a full video editor
-- This does not handle audio (voice-over, music)
+- This does not handle audio editing (mixing, effects, trimming) — it can overlay a pre-prepared audio track during assembly
 - This does not upload to social media
 - This does not manage Google Cloud billing or quotas
+
+## Audio support
+
+The `assemble` command can mux a single audio file (voice-over, soundtrack) into the final video. Audio is configured via the `audio:` field in `project.yaml` or the `--audio` CLI flag. The `--preview` flag skips audio. Full audio editing (mixing, trimming, effects) remains out of scope — prepare audio externally.
 
 ## Supported backends
 

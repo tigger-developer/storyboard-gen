@@ -1,7 +1,9 @@
 # ABOUTME: Tests for storyboard_gen.cli.
 # ABOUTME: Validates command-line argument parsing and subcommand dispatch.
 
+import logging
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import yaml
@@ -221,6 +223,142 @@ class TestCliInit:
         assert ".env" in output
         assert ".gitignore" in output
         assert "references/" in output
+
+
+class TestCliAssemble:
+    def _make_assemblable_project(self, project_dir, audio=None):
+        """Create a project dir with stills and clips ready for assembly."""
+        data = {
+            "title": "Assemble Test",
+            "aspect_ratio": "9:16",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "duration": 5,
+                    "prompt": "A scene.",
+                    "ken_burns": "zoom_in",
+                },
+                {
+                    "number": 2,
+                    "type": "clip",
+                    "duration": 6,
+                    "prompt": "Action.",
+                },
+            ],
+        }
+        if audio:
+            data["audio"] = audio
+        (project_dir / "project.yaml").write_text(yaml.dump(data))
+
+        # Create required output files
+        output = project_dir / "output"
+        stills = output / "stills"
+        stills.mkdir(parents=True)
+        (stills / "scene_01.png").write_bytes(b"fake-png")
+        intermediate = output / "intermediate"
+        intermediate.mkdir()
+        (intermediate / "scene_01.mp4").write_bytes(b"fake-video")
+        clips = output / "clips"
+        clips.mkdir()
+        (clips / "scene_02.mp4").write_bytes(b"fake-video")
+
+    @patch("storyboard_gen.cli.assemble")
+    @patch("storyboard_gen.cli.apply_ken_burns")
+    def test_assemble_calls_assemble_with_no_audio_by_default(
+        self, mock_kb, mock_assemble, tmp_path
+    ):
+        # Arrange
+        self._make_assemblable_project(tmp_path)
+        os.chdir(tmp_path)
+        mock_assemble.return_value = Path("output/final/assembled.mp4")
+
+        # Act
+        exit_code = main(["assemble"])
+
+        # Assert
+        assert exit_code == 0
+        mock_assemble.assert_called_once()
+        _, kwargs = mock_assemble.call_args
+        assert kwargs.get("audio_path") is None
+
+    @patch("storyboard_gen.cli.assemble")
+    @patch("storyboard_gen.cli.apply_ken_burns")
+    def test_assemble_passes_audio_from_project_yaml(
+        self, mock_kb, mock_assemble, tmp_path
+    ):
+        # Arrange
+        self._make_assemblable_project(tmp_path, audio="narration.m4a")
+        audio_file = tmp_path / "narration.m4a"
+        audio_file.write_bytes(b"fake-audio")
+        os.chdir(tmp_path)
+        mock_assemble.return_value = Path("output/final/assembled.mp4")
+
+        # Act
+        exit_code = main(["assemble"])
+
+        # Assert
+        assert exit_code == 0
+        _, kwargs = mock_assemble.call_args
+        assert kwargs["audio_path"] == audio_file
+
+    @patch("storyboard_gen.cli.assemble")
+    @patch("storyboard_gen.cli.apply_ken_burns")
+    def test_assemble_cli_audio_overrides_project_yaml(
+        self, mock_kb, mock_assemble, tmp_path
+    ):
+        # Arrange
+        self._make_assemblable_project(tmp_path, audio="narration.m4a")
+        (tmp_path / "narration.m4a").write_bytes(b"fake-audio")
+        override_audio = tmp_path / "override.m4a"
+        override_audio.write_bytes(b"fake-audio-override")
+        os.chdir(tmp_path)
+        mock_assemble.return_value = Path("output/final/assembled.mp4")
+
+        # Act
+        exit_code = main(["assemble", "--audio", str(override_audio)])
+
+        # Assert
+        assert exit_code == 0
+        _, kwargs = mock_assemble.call_args
+        assert kwargs["audio_path"] == override_audio
+
+    @patch("storyboard_gen.cli.assemble")
+    @patch("storyboard_gen.cli.apply_ken_burns")
+    def test_assemble_preview_skips_audio(self, mock_kb, mock_assemble, tmp_path):
+        # Arrange
+        self._make_assemblable_project(tmp_path, audio="narration.m4a")
+        (tmp_path / "narration.m4a").write_bytes(b"fake-audio")
+        os.chdir(tmp_path)
+        mock_assemble.return_value = Path("output/final/assembled.mp4")
+
+        # Act
+        exit_code = main(["assemble", "--preview"])
+
+        # Assert
+        assert exit_code == 0
+        _, kwargs = mock_assemble.call_args
+        assert kwargs.get("audio_path") is None
+
+    @patch("storyboard_gen.cli.assemble")
+    @patch("storyboard_gen.cli.apply_ken_burns")
+    def test_assemble_warns_when_audio_file_missing(
+        self, mock_kb, mock_assemble, tmp_path, caplog
+    ):
+        # Arrange — audio configured but file doesn't exist
+        self._make_assemblable_project(tmp_path, audio="missing.m4a")
+        os.chdir(tmp_path)
+        mock_assemble.return_value = Path("output/final/assembled.mp4")
+
+        # Act
+        with caplog.at_level(logging.WARNING):
+            exit_code = main(["assemble"])
+
+        # Assert — proceeds without audio, logs warning
+        assert exit_code == 0
+        _, kwargs = mock_assemble.call_args
+        assert kwargs.get("audio_path") is None
+        assert "missing.m4a" in caplog.text
 
 
 class TestCliVersion:

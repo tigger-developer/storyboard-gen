@@ -66,6 +66,11 @@ def _parse_project(data: dict, project_dir: Path) -> Project:
 
     style_prefix = data.get("style_prefix", "")
 
+    audio_path = None
+    audio_str = data.get("audio")
+    if audio_str:
+        audio_path = project_dir / audio_str
+
     still_provider, clip_provider = _parse_providers(data.get("providers", {}))
 
     characters = _parse_characters(data.get("characters", {}), project_dir)
@@ -79,6 +84,7 @@ def _parse_project(data: dict, project_dir: Path) -> Project:
         scenes=scenes,
         still_provider=still_provider,
         clip_provider=clip_provider,
+        audio=audio_path,
     )
 
 

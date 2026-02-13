@@ -399,6 +399,41 @@ class TestSceneModelOverride:
         assert project.get_scene(1).model is None
 
 
+class TestProjectAudio:
+    def test_load_project_with_audio_resolves_path(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Audio Test",
+            "audio": "audio.m4a",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.audio == tmp_path / "audio.m4a"
+
+    def test_load_project_without_audio_defaults_to_none(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "No Audio",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.audio is None
+
+
 class TestGetEnvConfig:
     def test_get_env_config_reads_dotenv_from_cwd(self, tmp_path, monkeypatch):
         # Arrange: create .env in a temp dir and chdir to it

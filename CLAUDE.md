@@ -30,8 +30,9 @@ storyboard-gen generate --scene 1 11    # Generate specific scenes in order
 storyboard-gen generate --all-stills    # Generate all stills
 storyboard-gen generate --all-clips     # Generate all video clips
 storyboard-gen generate --all           # Generate everything
-storyboard-gen assemble                 # Assemble final video with Ken Burns
+storyboard-gen assemble                 # Assemble final video (with audio if configured)
 storyboard-gen assemble --preview       # Assemble without audio
+storyboard-gen assemble --audio vo.m4a  # Override audio track
 storyboard-gen validate                 # Validate project.yaml
 storyboard-gen list                     # List all scenes with status
 ```
@@ -87,10 +88,10 @@ storyboard-gen/
 some-project/
 ├── project.yaml           # Storyboard definition (THE key file)
 ├── .env                   # API credentials (not committed)
+├── audio.m4a              # Optional audio track for assembly
 ├── references/            # Character/style reference images
 │   ├── boy.jpg            # jpg, png, or other image formats
 │   └── brow_man.png
-├── audio.m4a              # Optional voice-over/soundtrack for assembly
 └── output/                # Generated assets (created by tool)
     ├── stills/
     ├── clips/
@@ -171,6 +172,7 @@ GCS_OUTPUT_BUCKET=gs://your-bucket-name/
 ```yaml
 title: "Project Title"
 aspect_ratio: "9:16"  # 9:16, 16:9, 4:3, 1:1
+audio: "audio.m4a"    # optional, relative to project dir
 
 # Optional: configure AI providers (defaults to Google if omitted)
 providers:
