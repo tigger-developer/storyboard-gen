@@ -7,8 +7,12 @@ from unittest.mock import MagicMock
 import pytest
 from PIL import Image as PILImage
 
-from storyboard_gen.generate import crop_to_aspect_ratio, generate_still
-from storyboard_gen.models import Character, Project, Scene
+from storyboard_gen.generate import (
+    _resolve_provider,
+    crop_to_aspect_ratio,
+    generate_still,
+)
+from storyboard_gen.models import Character, Project, ProviderConfig, Scene
 from storyboard_gen.providers.base import ImageProvider
 
 
@@ -188,6 +192,86 @@ class TestGenerateStill:
         # Assert — reference images passed to provider
         call_args = provider.generate_still.call_args
         assert call_args.kwargs["reference_images"] == [ref_path]
+
+
+class TestResolveProvider:
+    def test_resolve_provider_scene_model_overrides_project_provider(self, monkeypatch):
+        # Arrange — project has fal/flux-general, scene overrides model only
+        scene = Scene(
+            number=1,
+            title="Kontext",
+            scene_type="still",
+            prompt="A portrait.",
+            duration=5,
+            model="fal-ai/flux-pro/kontext",
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[scene],
+            still_provider=ProviderConfig(
+                backend="fal",
+                model="fal-ai/flux-general",
+                options={"safety_tolerance": 5},
+            ),
+        )
+        captured = {}
+        mock_provider = _make_mock_provider()
+
+        def fake_create(backend, model, options):
+            captured["backend"] = backend
+            captured["model"] = model
+            captured["options"] = options
+            return mock_provider
+
+        monkeypatch.setattr("storyboard_gen.generate.create_provider", fake_create)
+
+        # Act
+        _resolve_provider(scene, project, "still")
+
+        # Assert — model from scene, backend and options from project provider
+        assert captured["model"] == "fal-ai/flux-pro/kontext"
+        assert captured["backend"] == "fal"
+        assert captured["options"] == {"safety_tolerance": 5}
+
+    def test_resolve_provider_scene_model_without_project_provider_uses_google_default(
+        self, monkeypatch
+    ):
+        # Arrange — no project-level provider, scene overrides model only
+        scene = Scene(
+            number=1,
+            title="Custom model",
+            scene_type="still",
+            prompt="x",
+            duration=5,
+            model="imagen-5.0-generate-001",
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[scene],
+        )
+        captured = {}
+        mock_provider = _make_mock_provider()
+
+        def fake_create(backend, model, options):
+            captured["backend"] = backend
+            captured["model"] = model
+            captured["options"] = options
+            return mock_provider
+
+        monkeypatch.setattr("storyboard_gen.generate.create_provider", fake_create)
+
+        # Act
+        _resolve_provider(scene, project, "still")
+
+        # Assert — model from scene, backend defaults to google
+        assert captured["model"] == "imagen-5.0-generate-001"
+        assert captured["backend"] == "google"
 
 
 class TestCropToAspectRatio:

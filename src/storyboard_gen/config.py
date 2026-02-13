@@ -177,6 +177,13 @@ def _parse_scenes(raw: list, characters: dict[str, Character]) -> list[Scene]:
                 raw_provider, f"scene {i + 1} provider"
             )
 
+        scene_model = scene_data.get("model")
+
+        if scene_model and scene_provider:
+            raise ConfigError(
+                f"Scene {i + 1}: cannot specify both 'model' and 'provider'"
+            )
+
         scenes.append(
             Scene(
                 number=scene_data.get("number", i + 1),
@@ -188,6 +195,7 @@ def _parse_scenes(raw: list, characters: dict[str, Character]) -> list[Scene]:
                 ken_burns=ken_burns,
                 characters=char_ids,
                 provider=scene_provider,
+                model=scene_model,
             )
         )
 

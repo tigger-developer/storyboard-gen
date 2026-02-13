@@ -39,6 +39,7 @@ class Scene:
     ken_burns: str | None = None  # zoom_in, zoom_out, pan_ltr, pan_rtl, static
     characters: list[str] = field(default_factory=list)  # character IDs
     provider: ProviderConfig | None = None  # per-scene provider override
+    model: str | None = None  # per-scene model-only override (shorthand)
 
 
 VALID_SCENE_TYPES = {"still", "clip"}

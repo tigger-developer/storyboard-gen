@@ -1,4 +1,4 @@
-<!-- Version: 0.3 | Last updated: 2026-02-13 -->
+<!-- Version: 0.4 | Last updated: 2026-02-13 -->
 
 # Architecture: storyboard-gen
 
@@ -69,9 +69,10 @@ assemble.py ──▶ output/final/assembled.mp4
 
 ## Provider selection
 
-1. Per-scene `provider:` override (highest priority)
-2. Project-level `providers.still` / `providers.clip`
-3. Default: Google with Imagen 4 (stills) / Veo 3.1 (clips)
+1. Per-scene `provider:` override — full control (highest priority)
+2. Per-scene `model:` override — model-only shorthand, inherits backend and options from the project-level provider (or Google default). Cannot be combined with `provider:` on the same scene.
+3. Project-level `providers.still` / `providers.clip`
+4. Default: Google with Imagen 4 (stills) / Veo 3.1 (clips)
 
 ## External dependencies
 
@@ -84,8 +85,9 @@ assemble.py ──▶ output/final/assembled.mp4
 ## Configuration precedence
 
 1. Command-line arguments
-2. Per-scene provider override in `project.yaml`
-3. Project-level provider config in `project.yaml`
-4. `.env` in project directory
-5. Environment variables
-6. Defaults in code
+2. Per-scene `provider:` override in `project.yaml`
+3. Per-scene `model:` override in `project.yaml` (inherits backend/options)
+4. Project-level provider config in `project.yaml`
+5. `.env` in project directory
+6. Environment variables
+7. Defaults in code

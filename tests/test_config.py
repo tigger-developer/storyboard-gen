@@ -284,6 +284,77 @@ class TestProjectProviders:
         assert project.get_scene(2).provider is None
 
 
+class TestSceneModelOverride:
+    def test_load_scene_with_model_override(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Model Override",
+            "providers": {
+                "still": {"backend": "fal", "model": "fal-ai/flux-general"},
+            },
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "A portrait.",
+                    "duration": 5,
+                    "model": "fal-ai/flux-pro/kontext",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        scene = project.get_scene(1)
+        assert scene.model == "fal-ai/flux-pro/kontext"
+        assert scene.provider is None
+
+    def test_load_scene_with_model_and_provider_raises(self, tmp_path):
+        # Arrange — both model and provider on same scene
+        data = {
+            "title": "Conflict",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "model": "fal-ai/flux-pro/kontext",
+                    "provider": {
+                        "backend": "fal",
+                        "model": "fal-ai/flux-general",
+                    },
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(
+            ConfigError, match="cannot specify both 'model' and 'provider'"
+        ):
+            load_project(tmp_path)
+
+    def test_load_scene_without_model_defaults_to_none(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "No Model",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.get_scene(1).model is None
+
+
 class TestGetEnvConfig:
     def test_get_env_config_reads_dotenv_from_cwd(self, tmp_path, monkeypatch):
         # Arrange: create .env in a temp dir and chdir to it

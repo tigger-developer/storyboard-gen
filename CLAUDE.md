@@ -220,12 +220,23 @@ scenes:
       mood. The more specific, the better the output.
 
   - number: 2
+    title: "Kontext portrait"
+    camera: "CLOSE"
+    type: still
+    duration: 6
+    model: "fal-ai/flux-pro/kontext"  # model-only override (inherits backend/options)
+    characters: [boy]
+    prompt: >
+      A close-up portrait. Uses Kontext model but inherits the
+      project-level FAL backend and options.
+
+  - number: 3
     title: "Action sequence"
     camera: "CLOSE"
     type: clip              # clip generates video — use for motion
     duration: 7
     characters: [boy]
-    provider:               # optional per-scene provider override
+    provider:               # optional full per-scene provider override
       backend: google
       model: "veo-3.1-fast-generate-001"
     prompt: >
@@ -239,7 +250,8 @@ scenes:
 - `camera` is advisory — it's included in prompts for the AI, not enforced
 - `ken_burns` only applies to stills; clips are already video
 - `characters` links to character definitions for reference image lookup
-- `provider` on a scene overrides the project-level provider for that scene
+- `model` on a scene overrides only the model, inheriting backend and options from the project-level provider (or Google default). Cannot be combined with `provider` on the same scene
+- `provider` on a scene fully overrides the project-level provider for that scene
 - Scene 1 should be generated first and used as style reference for subsequent scenes
 
 ## TDD approach

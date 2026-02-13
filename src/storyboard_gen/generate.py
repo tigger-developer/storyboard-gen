@@ -23,8 +23,27 @@ def _resolve_provider(scene: Scene, project: Project, scene_type: str) -> ImageP
 
     Falls back to Google with default models if no provider is configured.
     """
-    # Per-scene override takes precedence
+    # Per-scene full provider override takes precedence
     provider_cfg = scene.provider
+
+    # Per-scene model-only override: merge with project-level or Google default
+    if provider_cfg is None and scene.model:
+        if scene_type == "still":
+            base = project.still_provider
+        else:
+            base = project.clip_provider
+
+        if base is None:
+            default_model = (
+                DEFAULT_IMAGEN_MODEL if scene_type == "still" else DEFAULT_VEO_MODEL
+            )
+            base = ProviderConfig(backend="google", model=default_model)
+
+        provider_cfg = ProviderConfig(
+            backend=base.backend,
+            model=scene.model,
+            options=base.options,
+        )
 
     # Then project-level config
     if provider_cfg is None:

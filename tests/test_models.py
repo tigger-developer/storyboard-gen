@@ -105,6 +105,30 @@ class TestScene:
         assert len(scene.characters) == 2
         assert scene.provider.backend == "fal"
 
+    def test_scene_creation_with_model_override(self):
+        # Arrange & Act
+        scene = Scene(
+            number=1,
+            title="Kontext scene",
+            scene_type="still",
+            prompt="A portrait.",
+            duration=5,
+            model="fal-ai/flux-pro/kontext",
+        )
+
+        # Assert
+        assert scene.model == "fal-ai/flux-pro/kontext"
+        assert scene.provider is None
+
+    def test_scene_model_defaults_to_none(self):
+        # Arrange & Act
+        scene = Scene(
+            number=1, title="Test", scene_type="still", prompt="x", duration=5
+        )
+
+        # Assert
+        assert scene.model is None
+
 
 class TestProject:
     def _make_project(self) -> Project:
