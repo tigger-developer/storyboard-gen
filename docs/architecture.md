@@ -1,4 +1,4 @@
-<!-- Version: 0.4 | Last updated: 2026-02-13 -->
+<!-- Version: 0.5 | Last updated: 2026-02-13 -->
 
 # Architecture: storyboard-gen
 
@@ -66,6 +66,13 @@ ken_burns.py ──▶ output/intermediate/*.mp4 (stills with effects)
     ▼
 assemble.py ──▶ output/final/assembled.mp4
 ```
+
+## Reference image resolution
+
+`Project.get_reference_images(scene)` is the single chokepoint for reference images. All code paths (generate_still, generate_clip, all providers) consume its output.
+
+1. **Scene-level override**: If `scene.reference` is set and the file exists, return that single path. This replaces character-based lookup entirely for the scene.
+2. **Character-level fallback**: Otherwise, collect reference images from each character listed in the scene.
 
 ## Provider selection
 

@@ -284,6 +284,50 @@ class TestProjectProviders:
         assert project.get_scene(2).provider is None
 
 
+class TestSceneReferenceOverride:
+    def test_load_scene_with_reference_override(self, tmp_path):
+        # Arrange — scene has reference: key
+        ref_file = tmp_path / "references" / "mum.png"
+        ref_file.parent.mkdir()
+        ref_file.write_bytes(b"fake-png")
+        data = {
+            "title": "Ref Override",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "Portrait of mum.",
+                    "duration": 5,
+                    "reference": "references/mum.png",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert — reference resolved relative to project_dir
+        scene = project.get_scene(1)
+        assert scene.reference == tmp_path / "references" / "mum.png"
+
+    def test_load_scene_without_reference_defaults_to_none(self, tmp_path):
+        # Arrange — no reference key
+        data = {
+            "title": "No Ref",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.get_scene(1).reference is None
+
+
 class TestSceneModelOverride:
     def test_load_scene_with_model_override(self, tmp_path):
         # Arrange

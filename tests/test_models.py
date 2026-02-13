@@ -129,6 +129,29 @@ class TestScene:
         # Assert
         assert scene.model is None
 
+    def test_scene_creation_with_reference_override(self):
+        # Arrange & Act
+        scene = Scene(
+            number=1,
+            title="Override",
+            scene_type="still",
+            prompt="Portrait.",
+            duration=5,
+            reference=Path("references/mum.png"),
+        )
+
+        # Assert
+        assert scene.reference == Path("references/mum.png")
+
+    def test_scene_reference_defaults_to_none(self):
+        # Arrange & Act
+        scene = Scene(
+            number=1, title="Test", scene_type="still", prompt="x", duration=5
+        )
+
+        # Assert
+        assert scene.reference is None
+
 
 class TestProject:
     def _make_project(self) -> Project:
@@ -272,3 +295,66 @@ class TestProject:
         # Assert
         assert len(refs) == 1
         assert refs[0] == ref_path
+
+    def test_get_reference_images_uses_scene_override(self, tmp_path):
+        # Arrange — scene.reference overrides character refs
+        scene_ref = tmp_path / "scene_override.png"
+        scene_ref.write_bytes(b"fake")
+        char_ref = tmp_path / "hero.png"
+        char_ref.write_bytes(b"fake")
+        chars = {
+            "hero": Character(id="hero", description="Hero", reference=char_ref),
+        }
+        scene = Scene(
+            number=1,
+            title="T",
+            scene_type="still",
+            prompt="P",
+            duration=5,
+            characters=["hero"],
+            reference=scene_ref,
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="",
+            characters=chars,
+            scenes=[scene],
+        )
+
+        # Act
+        refs = project.get_reference_images(scene)
+
+        # Assert — scene override replaces character refs
+        assert len(refs) == 1
+        assert refs[0] == scene_ref
+
+    def test_get_reference_images_falls_back_to_characters(self, tmp_path):
+        # Arrange — no scene.reference, falls back to character refs
+        char_ref = tmp_path / "hero.png"
+        char_ref.write_bytes(b"fake")
+        chars = {
+            "hero": Character(id="hero", description="Hero", reference=char_ref),
+        }
+        scene = Scene(
+            number=1,
+            title="T",
+            scene_type="still",
+            prompt="P",
+            duration=5,
+            characters=["hero"],
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="",
+            characters=chars,
+            scenes=[scene],
+        )
+
+        # Act
+        refs = project.get_reference_images(scene)
+
+        # Assert — character ref used as fallback
+        assert len(refs) == 1
+        assert refs[0] == char_ref

@@ -242,6 +242,17 @@ scenes:
     prompt: >
       Clips don't use ken_burns (it's for stills only). Describe
       the motion/action you want in the video.
+
+  - number: 4
+    title: "Portrait with override"
+    camera: "CLOSE"
+    type: still
+    duration: 5
+    characters: [mum]
+    reference: "references/mum.png"  # overrides character-level reference for this scene
+    prompt: >
+      When reference is set on a scene, it replaces the
+      character-based reference lookup entirely for that scene.
 ```
 
 ### Schema notes
@@ -252,6 +263,7 @@ scenes:
 - `characters` links to character definitions for reference image lookup
 - `model` on a scene overrides only the model, inheriting backend and options from the project-level provider (or Google default). Cannot be combined with `provider` on the same scene
 - `provider` on a scene fully overrides the project-level provider for that scene
+- `reference` on a scene overrides the character-level reference image lookup entirely; all providers receive this single path instead of character refs
 - Scene 1 should be generated first and used as style reference for subsequent scenes
 
 ## TDD approach

@@ -69,7 +69,7 @@ def _parse_project(data: dict, project_dir: Path) -> Project:
     still_provider, clip_provider = _parse_providers(data.get("providers", {}))
 
     characters = _parse_characters(data.get("characters", {}), project_dir)
-    scenes = _parse_scenes(data.get("scenes", []), characters)
+    scenes = _parse_scenes(data.get("scenes", []), characters, project_dir)
 
     return Project(
         title=title,
@@ -139,7 +139,9 @@ def _parse_characters(raw: dict, project_dir: Path) -> dict[str, Character]:
     return characters
 
 
-def _parse_scenes(raw: list, characters: dict[str, Character]) -> list[Scene]:
+def _parse_scenes(
+    raw: list, characters: dict[str, Character], project_dir: Path
+) -> list[Scene]:
     """Parse the scenes section of project.yaml."""
     if not raw:
         raise ConfigError("project.yaml must have at least one scene")
@@ -184,6 +186,11 @@ def _parse_scenes(raw: list, characters: dict[str, Character]) -> list[Scene]:
                 f"Scene {i + 1}: cannot specify both 'model' and 'provider'"
             )
 
+        scene_reference = None
+        ref_str = scene_data.get("reference")
+        if ref_str:
+            scene_reference = project_dir / ref_str
+
         scenes.append(
             Scene(
                 number=scene_data.get("number", i + 1),
@@ -196,6 +203,7 @@ def _parse_scenes(raw: list, characters: dict[str, Character]) -> list[Scene]:
                 characters=char_ids,
                 provider=scene_provider,
                 model=scene_model,
+                reference=scene_reference,
             )
         )
 

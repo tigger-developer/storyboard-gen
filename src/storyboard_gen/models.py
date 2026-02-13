@@ -40,6 +40,7 @@ class Scene:
     characters: list[str] = field(default_factory=list)  # character IDs
     provider: ProviderConfig | None = None  # per-scene provider override
     model: str | None = None  # per-scene model-only override (shorthand)
+    reference: Path | None = None  # per-scene reference image override
 
 
 VALID_SCENE_TYPES = {"still", "clip"}
@@ -79,7 +80,13 @@ class Project:
         return f"{self.style_prefix.strip()} {scene.prompt.strip()}"
 
     def get_reference_images(self, scene: Scene) -> list[Path]:
-        """Return reference image paths for characters in a scene."""
+        """Return reference image paths for a scene.
+
+        If the scene has a reference override, return that single path.
+        Otherwise fall back to character-level reference images.
+        """
+        if scene.reference and scene.reference.exists():
+            return [scene.reference]
         refs = []
         for char_id in scene.characters:
             char = self.characters.get(char_id)
