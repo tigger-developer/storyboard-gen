@@ -1,0 +1,328 @@
+<!-- Version: 1.0 | Last updated: 2026-02-13 -->
+
+# project.yaml Specification
+
+This is the complete schema reference for `project.yaml`, the storyboard definition file used by [storyboard-gen](https://github.com/tigger04/storyboard-gen).
+
+## File location
+
+`project.yaml` must be in the root of your project directory. The tool looks for it in the current working directory when you run any command.
+
+```
+my-project/
+├── project.yaml          # This file
+├── .env                  # API credentials (not committed)
+├── references/           # Character/style reference images
+│   ├── hero.jpg
+│   └── villain.png
+└── output/               # Generated assets (created by tool)
+    ├── stills/
+    ├── clips/
+    ├── intermediate/
+    └── final/
+```
+
+---
+
+## Top-level fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `title` | string | **yes** | — | Project title |
+| `aspect_ratio` | string | no | `"16:9"` | Output aspect ratio |
+| `style_prefix` | string | no | `""` | Visual style description prepended to every scene prompt |
+| `providers` | object | no | — | AI provider configuration (defaults to Google) |
+| `characters` | object | no | `{}` | Named characters with descriptions and reference images |
+| `scenes` | list | **yes** | — | At least one scene required |
+
+### `aspect_ratio`
+
+Valid values: `"9:16"`, `"16:9"`, `"4:3"`, `"1:1"`
+
+### `style_prefix`
+
+A detailed visual style description that gets prepended to every scene's prompt. Be specific about art style, colour palette, lighting, setting details. This is what keeps your scenes visually consistent.
+
+---
+
+## `providers` section
+
+Optional. If omitted, defaults to Google (Imagen for stills, Veo for clips).
+
+```yaml
+providers:
+  still:
+    backend: fal
+    model: "fal-ai/flux-general"
+    options:
+      safety_tolerance: 5
+  clip:
+    backend: google
+    model: "veo-3.1-fast-generate-001"
+    options: {}
+```
+
+### Provider config fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `backend` | string | **yes** | `"google"`, `"fal"`, or `"replicate"` |
+| `model` | string | **yes** | Provider-specific model identifier |
+| `options` | object | no | Provider-specific options passed through to the API |
+
+### Available backends and models
+
+#### Google (`backend: google`)
+
+| Model | Type | Description |
+|-------|------|-------------|
+| `imagen-4.0-generate-001` | still | Imagen 4 — default for stills |
+| `imagen-3.0-capability-001` | still | Imagen 3 Capability — used automatically for single-reference edits |
+| `veo-3.1-fast-generate-001` | clip | Veo 3.1 Fast — default for clips |
+
+Requires: `USE_VERTEX=true` with GCP credentials, or `GEMINI_API_KEY` in `.env`.
+
+#### FAL.ai (`backend: fal`)
+
+| Model | Type | Description |
+|-------|------|-------------|
+| `fal-ai/flux-general` | still | Flux with reference image support, LoRAs, ControlNets |
+| `fal-ai/flux-pro/v1.1` | still | Flux Pro 1.1 — high quality text-to-image |
+
+**Options:** `seed` (int), `safety_tolerance` (1-6), `num_inference_steps` (1-50), `guidance_scale` (0-20), `reference_strength` (float).
+
+Stills only — does not support clips. Requires `FAL_KEY` in `.env`.
+
+#### Replicate (`backend: replicate`)
+
+| Model | Type | Description |
+|-------|------|-------------|
+| `black-forest-labs/flux-1.1-pro` | still | Flux Pro 1.1 — text-to-image only |
+| `black-forest-labs/flux-dev` | still | Flux Dev — supports image-to-image with references |
+
+**Options:** `seed` (int), `safety_tolerance` (0-6), `output_quality` (0-100), `prompt_upsampling` (bool).
+
+Stills only — does not support clips. Requires `REPLICATE_API_TOKEN` in `.env`.
+
+### Provider selection priority
+
+1. Per-scene `provider:` override (highest)
+2. Project-level `providers.still` / `providers.clip`
+3. Default: Google with `imagen-4.0-generate-001` (stills) / `veo-3.1-fast-generate-001` (clips)
+
+---
+
+## `characters` section
+
+Optional. Maps character IDs to descriptions and reference images.
+
+```yaml
+characters:
+  hero:
+    description: >
+      A 10-year-old boy with messy red hair, freckles, green eyes.
+      Wearing a blue hoodie and worn jeans. Energetic expression.
+    reference: "references/hero.jpg"
+
+  villain:
+    description: >
+      Tall woman in a dark cloak, silver hair, piercing grey eyes.
+      Angular features, commanding presence.
+    reference: null
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `description` | string | no | Physical description included in prompts for consistency |
+| `reference` | string or null | no | Path to reference image, relative to project directory |
+
+### Notes
+
+- Character IDs are used in scene `characters` lists.
+- Reference images are uploaded to the provider for style-consistent generation.
+- Only single-reference scenes use the reference image (to avoid blending artefacts).
+- The reference path is resolved relative to the project directory.
+- Missing reference files are silently skipped at generation time (not at validation).
+
+---
+
+## `scenes` section
+
+A list of scenes. At least one scene is required.
+
+```yaml
+scenes:
+  - number: 1
+    title: "Opening shot"
+    camera: "WIDE"
+    type: still
+    duration: 8
+    ken_burns: "zoom_in"
+    characters: [hero, villain]
+    prompt: >
+      A wide establishing shot of the hero and villain facing each other
+      across a misty bridge at dawn. Golden light breaks through clouds.
+
+  - number: 2
+    title: "Chase sequence"
+    camera: "CLOSE"
+    type: clip
+    duration: 7
+    characters: [hero]
+    provider:
+      backend: google
+      model: "veo-3.1-fast-generate-001"
+    prompt: >
+      Dynamic chase through narrow cobblestone streets. The hero sprints,
+      looking over his shoulder. Camera follows from behind.
+```
+
+### Scene fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `number` | int | no | auto (1-indexed) | Scene number — used for ordering and filenames |
+| `title` | string | no | `"Scene N"` | Human-readable scene title |
+| `type` | string | no | `"still"` | `"still"` or `"clip"` |
+| `prompt` | string | no | `""` | Scene description for the AI model |
+| `duration` | int | no | `5` | Duration in seconds — match to voice-over timing |
+| `camera` | string | no | `null` | Advisory camera angle: `"WIDE"`, `"CLOSE"`, `"WINDOW"`, or any string |
+| `ken_burns` | string | no | `null` | Ken Burns effect for stills (ignored for clips) |
+| `characters` | list | no | `[]` | Character IDs from the `characters` section |
+| `provider` | object | no | `null` | Per-scene provider override (same format as `providers.still`) |
+
+### `type`
+
+| Value | Generator | Output |
+|-------|-----------|--------|
+| `still` | Image model (Imagen, Flux) | `output/stills/scene_NN.png` |
+| `clip` | Video model (Veo) | `output/clips/scene_NN.mp4` |
+
+### `ken_burns`
+
+Only applies to stills. Ignored for clips.
+
+| Value | Effect |
+|-------|--------|
+| `zoom_in` | Slow zoom into the image |
+| `zoom_out` | Slow zoom out from the image |
+| `pan_ltr` | Pan left to right |
+| `pan_rtl` | Pan right to left |
+| `static` | No movement |
+| `null` (omitted) | No Ken Burns processing |
+
+### `camera`
+
+Advisory only — included in the prompt text sent to the AI model. The tool does not enforce framing. Common values: `"WIDE"`, `"CLOSE"`, `"WINDOW"`, `"MEDIUM"`, `"OVERHEAD"`. Any string is accepted.
+
+---
+
+## Complete example
+
+```yaml
+title: "The Bridge at Dawn"
+aspect_ratio: "9:16"
+
+providers:
+  still:
+    backend: fal
+    model: "fal-ai/flux-general"
+    options:
+      safety_tolerance: 5
+  clip:
+    backend: google
+    model: "veo-3.1-fast-generate-001"
+
+style_prefix: >
+  Cinematic digital illustration in a painterly style with soft warm
+  lighting. Muted earth tones with pops of gold and blue. Atmospheric
+  depth of field with bokeh highlights. Studio Ghibli-inspired character
+  proportions with realistic textures.
+
+characters:
+  hero:
+    description: >
+      A 10-year-old boy with messy auburn hair, round green eyes,
+      scattered freckles across his nose. Wears a faded blue hoodie
+      two sizes too big, rolled-up sleeves, muddy canvas trainers.
+    reference: "references/hero.png"
+
+  guide:
+    description: >
+      An elderly woman, weathered face, kind brown eyes behind
+      round spectacles. White hair in a loose bun. Wears a worn
+      green cardigan with patches on the elbows.
+    reference: null
+
+scenes:
+  # === ACT 1: THE BRIDGE ===
+
+  - number: 1
+    title: "Dawn on the bridge"
+    camera: "WIDE"
+    type: still
+    duration: 8
+    ken_burns: "zoom_in"
+    characters: [hero]
+    prompt: >
+      Wide establishing shot. The hero stands alone on an ancient
+      stone bridge stretching across a misty river valley. Dawn
+      light breaks through low clouds, casting long golden shadows.
+      The boy looks small against the vast landscape. Morning birds
+      circle in the distance.
+
+  - number: 2
+    title: "The hero turns"
+    camera: "CLOSE"
+    type: clip
+    duration: 6
+    characters: [hero]
+    prompt: >
+      Close-up of the hero slowly turning to look behind him.
+      His expression shifts from wonder to surprise. Wind catches
+      his hair. Morning light on his face.
+
+  - number: 3
+    title: "The guide appears"
+    camera: "MEDIUM"
+    type: still
+    duration: 5
+    ken_burns: "pan_ltr"
+    characters: [guide]
+    provider:                          # override: use Google for this scene
+      backend: google
+      model: "imagen-4.0-generate-001"
+    prompt: >
+      Medium shot. The guide stands at the far end of the bridge,
+      silhouetted against the brightening sky. She holds a wooden
+      walking stick and a lantern that still glows faintly.
+```
+
+---
+
+## Validation
+
+Run `storyboard-gen validate` to check your `project.yaml` for errors before generating. Common issues:
+
+- Missing `title`
+- No scenes defined
+- Invalid `aspect_ratio` (must be `9:16`, `16:9`, `4:3`, or `1:1`)
+- Invalid `type` (must be `still` or `clip`)
+- Invalid `ken_burns` value
+- Scene references a character ID not defined in `characters`
+- Invalid provider `backend` (must be `google`, `fal`, or `replicate`)
+
+## CLI commands
+
+```bash
+storyboard-gen validate                # Validate project.yaml
+storyboard-gen list                    # List all scenes with status
+storyboard-gen generate --scene 1      # Generate one scene
+storyboard-gen generate --scene 1 3 5  # Generate specific scenes in order
+storyboard-gen generate --all-stills   # Generate all stills
+storyboard-gen generate --all-clips    # Generate all clips
+storyboard-gen generate --all          # Generate everything
+storyboard-gen assemble                # Assemble final video with Ken Burns
+storyboard-gen assemble --preview      # Assemble without audio
+storyboard-gen --version               # Show version
+```
