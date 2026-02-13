@@ -22,9 +22,13 @@ workflow:
 
 providers:
   Google    Imagen (stills) + Veo (clips) — default provider
+            Auth: GEMINI_API_KEY or USE_VERTEX=true with GCP credentials
   FAL.ai    Flux models (stills only)
+            Auth: FAL_KEY
   Replicate Flux models (stills only)
+            Auth: REPLICATE_API_TOKEN
   Configure in project.yaml 'providers' section or per-scene overrides.
+  Credentials go in .env in your project directory.
 
 project layout:
   project.yaml    Storyboard definition (scenes, characters, style)
