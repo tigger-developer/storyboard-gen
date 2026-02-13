@@ -1,5 +1,5 @@
 # ABOUTME: Command-line interface for storyboard-gen.
-# ABOUTME: Subcommands: generate, assemble, validate, list.
+# ABOUTME: Subcommands: generate, assemble, validate, list, init.
 
 import argparse
 import logging
@@ -75,6 +75,15 @@ def main(argv: list[str] | None = None) -> int:
     # list subcommand
     subparsers.add_parser("list", help="List all scenes")
 
+    # init subcommand
+    init_parser = subparsers.add_parser("init", help="Create a new project")
+    init_parser.add_argument(
+        "directory",
+        nargs="?",
+        default=".",
+        help="Directory to create project in (default: current directory)",
+    )
+
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -102,6 +111,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_generate(args)
     if args.command == "assemble":
         return _cmd_assemble(args)
+    if args.command == "init":
+        return _cmd_init(args)
     return 1
 
 
@@ -182,4 +193,117 @@ def _cmd_assemble(args: argparse.Namespace) -> int:
 
     # Assemble
     assemble(project, output_dir, args.output)
+    return 0
+
+
+_TEMPLATE_PROJECT_YAML = """\
+title: "My Project"
+aspect_ratio: "9:16"
+
+# Uncomment and configure a provider (defaults to Google if omitted)
+# providers:
+#   still:
+#     backend: google            # google, fal, or replicate
+#     model: "imagen-4.0-generate-001"
+#     options: {}
+#   clip:
+#     backend: google
+#     model: "veo-3.1-fast-generate-001"
+#     options: {}
+
+style_prefix: >
+  Describe your visual style here. Be specific: art style, colour
+  palette, lighting, setting details. This is prepended to every
+  scene prompt for consistency.
+
+characters:
+  character_one:
+    description: >
+      Physical description for prompt consistency. Include clothing,
+      hair, distinguishing features.
+    reference: "references/character_one.jpg"
+
+  character_two:
+    description: >
+      Another character. Set reference to null if no reference image.
+    reference: null
+
+scenes:
+  # === ACT 1 ===
+
+  - number: 1
+    title: "Opening shot"
+    camera: "WIDE"
+    type: still
+    duration: 8
+    ken_burns: "zoom_in"
+    characters: [character_one]
+    prompt: >
+      Describe the opening scene. Include character positions,
+      expressions, background, lighting, mood.
+
+  - number: 2
+    title: "Second scene"
+    camera: "CLOSE"
+    type: still
+    duration: 6
+    ken_burns: "pan_ltr"
+    characters: [character_one, character_two]
+    prompt: >
+      Describe the second scene in detail.
+
+  - number: 3
+    title: "Action sequence"
+    camera: "WIDE"
+    type: clip
+    duration: 7
+    characters: [character_one, character_two]
+    prompt: >
+      Clips generate video — describe the motion and action
+      you want. Ken Burns is not used for clips.
+"""
+
+_TEMPLATE_ENV = """\
+# Google Vertex AI backend (recommended if you have a GCP project)
+USE_VERTEX=true
+GOOGLE_CLOUD_PROJECT=your-project-id
+GOOGLE_CLOUD_LOCATION=us-central1
+GCS_OUTPUT_BUCKET=gs://your-bucket/
+
+# OR Google Gemini Developer API backend (simpler setup)
+# GEMINI_API_KEY=your-api-key
+
+# FAL.ai backend (for Flux models)
+# FAL_KEY=your-fal-key
+
+# Replicate backend (for Flux models)
+# REPLICATE_API_TOKEN=your-replicate-token
+"""
+
+_TEMPLATE_GITIGNORE = """\
+.env
+output/
+"""
+
+
+def _cmd_init(args: argparse.Namespace) -> int:
+    """Create a new storyboard project with template files."""
+    target = Path(args.directory).resolve()
+    target.mkdir(parents=True, exist_ok=True)
+
+    project_yaml = target / "project.yaml"
+    if project_yaml.exists():
+        logging.error("project.yaml already exists in %s", target)
+        return 1
+
+    project_yaml.write_text(_TEMPLATE_PROJECT_YAML)
+    (target / ".env").write_text(_TEMPLATE_ENV)
+    (target / ".gitignore").write_text(_TEMPLATE_GITIGNORE)
+    (target / "references").mkdir(exist_ok=True)
+
+    print(f"Created new project in {target}/")
+    print("  project.yaml  — storyboard definition")
+    print("  .env          — API credentials (edit before use)")
+    print("  .gitignore    — excludes .env and output/")
+    print("  references/   — add character/style reference images here")
     return 0

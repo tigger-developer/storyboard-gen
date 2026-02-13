@@ -19,31 +19,25 @@ make install
 source .venv/bin/activate
 ```
 
-### Set up credentials
+### Set up a project
 
 ```bash
+# Scaffold a new project directory
+storyboard-gen init ~/Movies/social/my-project
+cd ~/Movies/social/my-project
+
 # Authenticate with Google Cloud
 gcloud auth application-default login
 
-# Create a project directory
-mkdir -p ~/Movies/social/my-project/references
-cd ~/Movies/social/my-project
-
-# Create .env with your credentials
-cat > .env <<EOF
-USE_VERTEX=true
-GOOGLE_CLOUD_PROJECT=your-project-id
-GOOGLE_CLOUD_LOCATION=us-central1
-GCS_OUTPUT_BUCKET=gs://your-bucket-name/
-EOF
+# Edit .env with your credentials
+# Edit project.yaml with your storyboard
+# Add reference images to references/
 ```
 
 ### Use it
 
 ```bash
-# Create project.yaml (see docs/VISION.md for schema)
-# Add reference images to references/
-
+storyboard-gen init [directory]         # Create a new project
 storyboard-gen validate                # Check project.yaml
 storyboard-gen list                    # List all scenes
 storyboard-gen generate --scene 1      # Generate one scene

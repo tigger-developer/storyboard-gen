@@ -4,6 +4,8 @@
 import os
 from unittest.mock import patch
 
+import yaml
+
 import storyboard_gen
 from storyboard_gen.cli import main
 
@@ -110,6 +112,98 @@ class TestCliGenerate:
         mock_gen_clip.assert_called_once()
         assert mock_gen_still.call_args[0][0].number == 1
         assert mock_gen_clip.call_args[0][0].number == 3
+
+
+class TestCliInit:
+    def test_init_creates_project_yaml_in_current_dir(self, tmp_path, capsys):
+        # Arrange
+        os.chdir(tmp_path)
+
+        # Act
+        exit_code = main(["init"])
+
+        # Assert
+        assert exit_code == 0
+        project_yaml = tmp_path / "project.yaml"
+        assert project_yaml.exists()
+        data = yaml.safe_load(project_yaml.read_text())
+        assert "title" in data
+        assert "scenes" in data
+        assert "style_prefix" in data
+
+    def test_init_creates_project_yaml_in_named_dir(self, tmp_path, capsys):
+        # Arrange
+        target = tmp_path / "my-project"
+
+        # Act
+        exit_code = main(["init", str(target)])
+
+        # Assert
+        assert exit_code == 0
+        assert (target / "project.yaml").exists()
+
+    def test_init_creates_references_directory(self, tmp_path, capsys):
+        # Arrange
+        os.chdir(tmp_path)
+
+        # Act
+        main(["init"])
+
+        # Assert
+        assert (tmp_path / "references").is_dir()
+
+    def test_init_creates_env_file(self, tmp_path, capsys):
+        # Arrange
+        os.chdir(tmp_path)
+
+        # Act
+        main(["init"])
+
+        # Assert
+        env_file = tmp_path / ".env"
+        assert env_file.exists()
+        content = env_file.read_text()
+        assert "GOOGLE_CLOUD_PROJECT" in content
+
+    def test_init_creates_gitignore(self, tmp_path, capsys):
+        # Arrange
+        os.chdir(tmp_path)
+
+        # Act
+        main(["init"])
+
+        # Assert
+        gitignore = tmp_path / ".gitignore"
+        assert gitignore.exists()
+        content = gitignore.read_text()
+        assert ".env" in content
+        assert "output/" in content
+
+    def test_init_refuses_if_project_yaml_exists(self, tmp_path, caplog):
+        # Arrange
+        os.chdir(tmp_path)
+        (tmp_path / "project.yaml").write_text("title: Existing")
+
+        # Act
+        exit_code = main(["init"])
+
+        # Assert
+        assert exit_code == 1
+        assert "already exists" in caplog.text
+
+    def test_init_prints_summary(self, tmp_path, capsys):
+        # Arrange
+        os.chdir(tmp_path)
+
+        # Act
+        main(["init"])
+
+        # Assert
+        output = capsys.readouterr().out
+        assert "project.yaml" in output
+        assert ".env" in output
+        assert ".gitignore" in output
+        assert "references/" in output
 
 
 class TestCliVersion:

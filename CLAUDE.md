@@ -20,6 +20,10 @@ The tool is installed once and run from within any project directory. A project 
 ## Usage
 
 ```bash
+# Create a new project
+storyboard-gen init                     # Scaffold in current directory
+storyboard-gen init ~/Movies/my-video   # Scaffold in a named directory
+
 # From within a project directory (e.g. ~/Movies/social/pout/)
 storyboard-gen generate --scene 1       # Generate one scene
 storyboard-gen generate --scene 1 11    # Generate specific scenes in order
