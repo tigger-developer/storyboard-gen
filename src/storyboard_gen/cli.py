@@ -20,7 +20,7 @@ workflow:
   2. Edit project.yaml                  Define scenes, characters, style
   3. Edit .env                          Configure API credentials
   4. storyboard-gen generate --all      Generate stills and clips
-  5. storyboard-gen assemble            Assemble final video
+  5. storyboard-gen assemble            Merge clips + stills into final video
 
 providers:
   Google    Imagen (stills) + Veo (clips) — default provider
@@ -109,11 +109,11 @@ def main(argv: list[str] | None = None) -> int:
     # assemble subcommand
     asm_parser = subparsers.add_parser(
         "assemble",
-        help="Apply Ken Burns effects and assemble final video",
+        help="Merge generated stills and clips into a final video",
         description=(
-            "Apply Ken Burns effects (zoom, pan) to generated stills, then "
-            "concatenate all stills and clips into a final video. Optionally "
-            "overlays audio from audio.m4a in the project directory."
+            "Apply Ken Burns effects (zoom, pan) to stills, then merge all "
+            "stills and video clips in scene order into a single final video. "
+            "Overlays audio from audio.m4a if present (use --preview to skip)."
         ),
         epilog=(
             "examples:\n"
