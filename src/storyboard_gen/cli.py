@@ -25,7 +25,7 @@ workflow:
 providers:
   Google    Imagen (stills) + Veo (clips) — default provider
             Auth: GEMINI_API_KEY or USE_VERTEX=true with GCP credentials
-  FAL.ai    Flux models (stills only)
+  FAL.ai    Flux + Kontext models (stills only)
             Auth: FAL_KEY
   Replicate Flux models (stills only)
             Auth: REPLICATE_API_TOKEN
@@ -90,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
             "  storyboard-gen generate --scene 1        Generate scene 1\n"
             "  storyboard-gen generate --scene 1 5 3    Generate scenes 1, 5, 3 in that order\n"
             "  storyboard-gen generate --all-stills     Generate all still scenes\n"
+            "  storyboard-gen generate --all-clips      Generate all video clips\n"
             "  storyboard-gen generate --all            Generate all stills and clips"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
