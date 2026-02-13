@@ -1,4 +1,4 @@
-<!-- Version: 0.6 | Last updated: 2026-02-13 -->
+<!-- Version: 0.7 | Last updated: 2026-02-13 -->
 
 # Architecture: storyboard-gen
 
@@ -10,7 +10,7 @@ storyboard-gen is a Python CLI tool. It reads a `project.yaml` from the current 
 
 ### CLI layer (`cli.py`, `__main__.py`)
 
-Parses command-line arguments and dispatches to the appropriate module. Subcommands: `generate`, `assemble`, `validate`, `list`.
+Parses command-line arguments and dispatches to the appropriate module. Subcommands: `generate`, `assemble`, `kdenlive`, `validate`, `list`.
 
 ### Configuration layer (`config.py`)
 
@@ -47,6 +47,10 @@ Applies zoom/pan effects to still images using FFmpeg, producing short video cli
 
 Concatenates all scene outputs (Ken Burns stills + video clips) in order using FFmpeg. When an audio path is provided, runs a two-pass process: concat to temp file, then mux audio with `-shortest` to match the shorter of video/audio. Cleans up temp files in a `try`/`finally` block.
 
+### Kdenlive export (`kdenlive.py`)
+
+Generates a Kdenlive project file (MLT XML format) for timeline editing. Uses an A/B editing pattern for dissolve transitions: clips alternate between two playlists, with `luma` (video) and `mix` (audio) transitions at overlap points. Supports configurable dissolve length or hard cuts. Includes the audio track if configured. The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adding crossfades, and adjusting transitions before final render.
+
 ## Data flow
 
 ```
@@ -66,6 +70,10 @@ ken_burns.py ──▶ output/intermediate/*.mp4 (stills with effects)
     ▼
 assemble.py ──▶ output/final/assembled.mp4
               ──▶ (optional) audio mux via FFmpeg
+    │
+    ▼
+kdenlive.py ──▶ output/final/{title}.kdenlive
+              ──▶ MLT XML with A/B playlists, dissolve transitions, audio track
 ```
 
 ## Audio resolution

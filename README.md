@@ -45,6 +45,9 @@ storyboard-gen generate --all-stills   # All stills
 storyboard-gen generate --all          # Everything
 storyboard-gen assemble                # Assemble final video (with audio if configured)
 storyboard-gen assemble --audio vo.m4a # Override audio track
+storyboard-gen kdenlive                # Export Kdenlive project for editing
+storyboard-gen kdenlive --dissolve 30  # Custom dissolve length
+storyboard-gen kdenlive --no-dissolve  # Hard cuts, no transitions
 storyboard-gen --version               # Show version
 ```
 

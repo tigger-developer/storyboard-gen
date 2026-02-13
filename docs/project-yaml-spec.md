@@ -1,4 +1,4 @@
-<!-- Version: 1.2 | Last updated: 2026-02-13 -->
+<!-- Version: 1.3 | Last updated: 2026-02-13 -->
 
 # project.yaml Specification
 
@@ -336,5 +336,9 @@ storyboard-gen generate --all              # Generate everything
 storyboard-gen assemble                     # Assemble final video (with audio if configured)
 storyboard-gen assemble --preview           # Assemble without audio
 storyboard-gen assemble --audio voice.m4a   # Override audio track
+storyboard-gen kdenlive                     # Export Kdenlive project (15-frame dissolves)
+storyboard-gen kdenlive --dissolve 30       # 30-frame dissolves (1s at 30fps)
+storyboard-gen kdenlive --no-dissolve       # Hard cuts, no transitions
+storyboard-gen kdenlive --output my.kdenlive # Custom output filename
 storyboard-gen --version                    # Show version
 ```

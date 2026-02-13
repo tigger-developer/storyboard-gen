@@ -1,5 +1,5 @@
 # ABOUTME: Command-line interface for storyboard-gen.
-# ABOUTME: Subcommands: generate, assemble, validate, list, init.
+# ABOUTME: Subcommands: generate, assemble, kdenlive, validate, list, init.
 
 import argparse
 import logging
@@ -12,6 +12,7 @@ from storyboard_gen.config import ConfigError, load_project
 from storyboard_gen.generate import generate_clip, generate_still
 from storyboard_gen.ken_burns import apply_ken_burns
 from storyboard_gen.assemble import assemble
+from storyboard_gen.kdenlive import generate_kdenlive
 
 
 HELP_EPILOG = """\
@@ -21,6 +22,7 @@ workflow:
   3. Edit .env                          Configure API credentials
   4. storyboard-gen generate --all      Generate stills and clips
   5. storyboard-gen assemble            Merge clips + stills into final video
+  6. storyboard-gen kdenlive            Export Kdenlive project for editing
 
 providers:
   Google    Imagen (stills) + Veo (clips) — default provider
@@ -138,6 +140,55 @@ def main(argv: list[str] | None = None) -> int:
         "--output", type=str, default="assembled.mp4", help="Output filename"
     )
 
+    # kdenlive subcommand
+    kdenlive_parser = subparsers.add_parser(
+        "kdenlive",
+        help="Export a Kdenlive project for timeline editing",
+        description=(
+            "Generate a Kdenlive (.kdenlive) project file from the storyboard. "
+            "Includes dissolve transitions between scenes and an audio track if "
+            "configured. Open the result in Kdenlive for fine-tuning."
+        ),
+        epilog=(
+            "examples:\n"
+            "  storyboard-gen kdenlive                          Default: 15-frame dissolves\n"
+            "  storyboard-gen kdenlive --dissolve 30            30-frame dissolves (1s at 30fps)\n"
+            "  storyboard-gen kdenlive --no-dissolve            Hard cuts, no transitions\n"
+            "  storyboard-gen kdenlive --output my_project.kdenlive  Custom output name"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    kdenlive_group = kdenlive_parser.add_mutually_exclusive_group()
+    kdenlive_group.add_argument(
+        "--dissolve",
+        type=int,
+        default=15,
+        metavar="FRAMES",
+        help="Number of frames for dissolve transitions (default: 15)",
+    )
+    kdenlive_group.add_argument(
+        "--no-dissolve",
+        action="store_true",
+        help="Hard cuts with no dissolve transitions",
+    )
+    kdenlive_parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Output filename (default: {title}.kdenlive)",
+    )
+    kdenlive_parser.add_argument(
+        "--audio",
+        type=str,
+        default=None,
+        help="Audio file to include (overrides project.yaml)",
+    )
+    kdenlive_parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Export without audio",
+    )
+
     # validate subcommand
     subparsers.add_parser(
         "validate",
@@ -204,6 +255,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_generate(args)
     if args.command == "assemble":
         return _cmd_assemble(args)
+    if args.command == "kdenlive":
+        return _cmd_kdenlive(args)
     if args.command == "init":
         return _cmd_init(args)
     return 1
@@ -301,6 +354,38 @@ def _cmd_assemble(args: argparse.Namespace) -> int:
 
     # Assemble
     assemble(project, output_dir, args.output, audio_path=audio_path)
+    return 0
+
+
+def _cmd_kdenlive(args: argparse.Namespace) -> int:
+    """Export a Kdenlive project file for timeline editing."""
+    project = load_project()
+    output_dir = Path.cwd() / "output"
+
+    dissolve_frames = 0 if args.no_dissolve else args.dissolve
+
+    # Resolve audio: --preview → None; --audio → override; project.yaml → default
+    audio_path = None
+    if not args.preview:
+        if args.audio:
+            audio_path = Path(args.audio).resolve()
+        elif project.audio:
+            audio_path = project.audio
+
+        if audio_path and not audio_path.exists():
+            logging.warning(
+                "Audio file not found: %s — exporting without audio", audio_path
+            )
+            audio_path = None
+
+    output_path = generate_kdenlive(
+        project,
+        output_dir,
+        output_filename=args.output,
+        dissolve_frames=dissolve_frames,
+        audio_path=audio_path,
+    )
+    print(f"Kdenlive project: {output_path}")
     return 0
 
 
