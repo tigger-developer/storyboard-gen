@@ -9,10 +9,12 @@ from dotenv import load_dotenv
 
 from storyboard_gen.models import (
     VALID_ASPECT_RATIOS,
+    VALID_BACKENDS,
     VALID_KEN_BURNS,
     VALID_SCENE_TYPES,
     Character,
     Project,
+    ProviderConfig,
     Scene,
 )
 
@@ -64,6 +66,8 @@ def _parse_project(data: dict, project_dir: Path) -> Project:
 
     style_prefix = data.get("style_prefix", "")
 
+    still_provider, clip_provider = _parse_providers(data.get("providers", {}))
+
     characters = _parse_characters(data.get("characters", {}), project_dir)
     scenes = _parse_scenes(data.get("scenes", []), characters)
 
@@ -73,7 +77,45 @@ def _parse_project(data: dict, project_dir: Path) -> Project:
         style_prefix=style_prefix,
         characters=characters,
         scenes=scenes,
+        still_provider=still_provider,
+        clip_provider=clip_provider,
     )
+
+
+def _parse_provider_config(raw: dict, context: str) -> ProviderConfig:
+    """Parse a single provider config dict into a ProviderConfig."""
+    backend = raw.get("backend", "")
+    if backend not in VALID_BACKENDS:
+        raise ConfigError(
+            f"Invalid provider backend '{backend}' in {context}. "
+            f"Must be one of: {', '.join(sorted(VALID_BACKENDS))}"
+        )
+    model = raw.get("model", "")
+    options = raw.get("options", {})
+    if not isinstance(options, dict):
+        options = {}
+    return ProviderConfig(backend=backend, model=model, options=options)
+
+
+def _parse_providers(
+    raw: dict,
+) -> tuple[ProviderConfig | None, ProviderConfig | None]:
+    """Parse the top-level providers section.
+
+    Returns (still_provider, clip_provider), either of which may be None.
+    """
+    if not raw or not isinstance(raw, dict):
+        return None, None
+
+    still_provider = None
+    clip_provider = None
+
+    if "still" in raw and isinstance(raw["still"], dict):
+        still_provider = _parse_provider_config(raw["still"], "providers.still")
+    if "clip" in raw and isinstance(raw["clip"], dict):
+        clip_provider = _parse_provider_config(raw["clip"], "providers.clip")
+
+    return still_provider, clip_provider
 
 
 def _parse_characters(raw: dict, project_dir: Path) -> dict[str, Character]:
@@ -128,6 +170,13 @@ def _parse_scenes(raw: list, characters: dict[str, Character]) -> list[Scene]:
                     f"Scene {i + 1}: references unknown character '{cid}'"
                 )
 
+        scene_provider = None
+        raw_provider = scene_data.get("provider")
+        if isinstance(raw_provider, dict):
+            scene_provider = _parse_provider_config(
+                raw_provider, f"scene {i + 1} provider"
+            )
+
         scenes.append(
             Scene(
                 number=scene_data.get("number", i + 1),
@@ -138,6 +187,7 @@ def _parse_scenes(raw: list, characters: dict[str, Character]) -> list[Scene]:
                 camera=scene_data.get("camera"),
                 ken_burns=ken_burns,
                 characters=char_ids,
+                provider=scene_provider,
             )
         )
 

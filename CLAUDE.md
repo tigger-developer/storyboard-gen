@@ -58,9 +58,14 @@ storyboard-gen/
 │       ├── __main__.py    # python -m storyboard_gen entry point
 │       ├── cli.py         # argparse CLI
 │       ├── config.py      # Load and validate project.yaml
-│       ├── models.py      # Dataclasses: Project, Scene, Character
-│       ├── client.py      # Google GenAI client setup
-│       ├── generate.py    # Image and video generation
+│       ├── models.py      # Dataclasses: Project, Scene, Character, ProviderConfig
+│       ├── generate.py    # Generation orchestrator (delegates to providers)
+│       ├── providers/     # Pluggable AI backends
+│       │   ├── __init__.py    # Registry and factory
+│       │   ├── base.py        # ImageProvider ABC
+│       │   ├── google.py      # Google Vertex AI (Imagen + Veo)
+│       │   ├── fal.py         # FAL.ai (Flux models)
+│       │   └── replicate.py   # Replicate (Flux models)
 │       ├── ken_burns.py   # Ken Burns effects via FFmpeg
 │       └── assemble.py    # Final video assembly via FFmpeg
 └── tests/
@@ -91,7 +96,7 @@ some-project/
 
 ## Key dependencies
 
-- `google-genai>=1.0.0` — unified Google GenAI SDK (Imagen + Veo)
+Core:
 - `Pillow>=10.0.0` — image handling
 - `python-dotenv>=1.0.0` — .env file loading
 - `pyyaml>=6.0` — project.yaml parsing
@@ -99,39 +104,79 @@ some-project/
 - `ruff` — linting and formatting
 - `ffmpeg` — system dependency for Ken Burns and assembly
 
-## API usage notes
+Provider SDKs (optional, install as needed):
+- `google-genai>=1.0.0` — Google Vertex AI (Imagen + Veo)
+- `fal-client>=0.5.0` — FAL.ai (Flux models)
+- `replicate>=1.0.0` — Replicate (Flux models)
 
-- Imagen generates stills via `client.models.generate_images()`
-- Veo generates video via `client.models.generate_videos()` — long-running operation, must be polled
-- Veo output goes to a GCS bucket (required by Vertex AI) — configured in `.env`
-- For Vertex AI: set `USE_VERTEX=true`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`
-- For Gemini Developer API: set `GEMINI_API_KEY`
-- Reference images can be uploaded alongside prompts for style consistency
-- Scene 1 should be generated first and used as style reference for subsequent scenes
+## Provider system
+
+Providers are configured in `project.yaml` via the `providers` section. Each provider has a `backend`, `model`, and optional `options`. Individual scenes can override the project-level provider.
+
+Provider resolution order:
+1. Per-scene `provider:` override
+2. Project-level `providers.still` / `providers.clip`
+3. Default: Google with Imagen 4 (stills) / Veo 3.1 (clips)
+
+### Google
+- Stills: Imagen via `generate_images()` or `edit_image()` (with references)
+- Clips: Veo via `generate_videos()` (long-running operation, polled)
+- Auth: `USE_VERTEX=true` + GCP credentials, or `GEMINI_API_KEY`
+
+### FAL.ai
+- Stills: Flux models via `fal_client.subscribe()`
+- Clips: Not supported (use Google for clips)
+- Auth: `FAL_KEY` environment variable
+- Reference images uploaded to FAL CDN automatically
+
+### Replicate
+- Stills: Flux models via `replicate.run()`
+- Clips: Not supported (use Google for clips)
+- Auth: `REPLICATE_API_TOKEN` environment variable
 
 ## Environment variables (.env in project directory)
 
 ```
-# Vertex AI backend
+# Google Vertex AI backend
 USE_VERTEX=true
 GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=us-central1
 GCS_OUTPUT_BUCKET=gs://your-bucket-name/
 
-# OR Gemini Developer API backend
+# OR Google Gemini Developer API backend
 # GEMINI_API_KEY=your-api-key
+
+# FAL.ai backend
+# FAL_KEY=your-fal-key
+
+# Replicate backend
+# REPLICATE_API_TOKEN=your-replicate-token
 ```
 
 ## Models
 
-- Imagen: `imagen-4.0-generate-001`
-- Veo: `veo-3.1-fast-generate-001`
+- Google Imagen: `imagen-4.0-generate-001`
+- Google Veo: `veo-3.1-fast-generate-001`
+- FAL Flux: `fal-ai/flux-general`, `fal-ai/flux-pro/v1.1`
+- Replicate Flux: `black-forest-labs/flux-1.1-pro`, `black-forest-labs/flux-dev`
 
 ## project.yaml schema
 
 ```yaml
 title: "Project Title"
 aspect_ratio: "9:16"  # 9:16, 16:9, 4:3, 1:1
+
+# Optional: configure AI providers (defaults to Google if omitted)
+providers:
+  still:
+    backend: fal                # google, fal, or replicate
+    model: "fal-ai/flux-general"
+    options:                    # provider-specific options
+      safety_tolerance: 5
+  clip:
+    backend: google
+    model: "veo-3.1-fast-generate-001"
+    options: {}
 
 style_prefix: >
   Detailed visual style description applied to all scene prompts.
@@ -159,7 +204,7 @@ scenes:
   - number: 1
     title: "Opening shot"
     camera: "WIDE"         # WIDE, CLOSE, WINDOW, or custom string
-    type: still             # still (Imagen) or clip (Veo)
+    type: still             # still or clip
     duration: 8             # seconds — match to voice-over timing
     ken_burns: "zoom_in"    # zoom_in, zoom_out, pan_ltr, pan_rtl, static, null
     characters: [boy, mum]  # optional — character IDs for reference images
@@ -171,9 +216,12 @@ scenes:
   - number: 2
     title: "Action sequence"
     camera: "CLOSE"
-    type: clip              # Veo generates video — use for motion
+    type: clip              # clip generates video — use for motion
     duration: 7
     characters: [boy]
+    provider:               # optional per-scene provider override
+      backend: google
+      model: "veo-3.1-fast-generate-001"
     prompt: >
       Clips don't use ken_burns (it's for stills only). Describe
       the motion/action you want in the video.
@@ -185,6 +233,7 @@ scenes:
 - `camera` is advisory — it's included in prompts for the AI, not enforced
 - `ken_burns` only applies to stills; clips are already video
 - `characters` links to character definitions for reference image lookup
+- `provider` on a scene overrides the project-level provider for that scene
 - Scene 1 should be generated first and used as style reference for subsequent scenes
 
 ## TDD approach

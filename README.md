@@ -1,6 +1,6 @@
 # storyboard-gen
 
-A CLI tool that generates video stills and clips from a YAML storyboard definition, using Google AI APIs (Imagen for stills, Veo for video clips).
+A CLI tool that generates video stills and clips from a YAML storyboard definition. Supports multiple AI providers: Google (Imagen/Veo), FAL.ai (Flux), and Replicate (Flux).
 
 ## Quickstart
 
@@ -57,8 +57,11 @@ storyboard-gen --version               # Show version
 
 - Python 3.12+
 - FFmpeg (system install, must be on PATH)
-- Google Cloud SDK (`gcloud`) for Vertex AI authentication
-- A Google Cloud project with Vertex AI enabled, or a Gemini API key
+- At least one provider SDK:
+  - **Google:** `pip install storyboard-gen[google]` — requires GCP project or Gemini API key
+  - **FAL.ai:** `pip install storyboard-gen[fal]` — requires FAL_KEY
+  - **Replicate:** `pip install storyboard-gen[replicate]` — requires REPLICATE_API_TOKEN
+  - **All providers:** `pip install storyboard-gen[all]`
 
 ## Project structure
 

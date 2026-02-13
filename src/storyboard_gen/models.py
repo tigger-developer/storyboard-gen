@@ -5,6 +5,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+VALID_BACKENDS = {"google", "fal", "replicate"}
+
+
+@dataclass(frozen=True)
+class ProviderConfig:
+    """Configuration for an image/video generation provider."""
+
+    backend: str  # "google", "fal", or "replicate"
+    model: str  # provider-specific model identifier
+    options: dict = field(default_factory=dict)  # provider-specific options
+
+
 @dataclass(frozen=True)
 class Character:
     """A named character with a description and optional reference image."""
@@ -26,6 +38,7 @@ class Scene:
     camera: str | None = None  # WIDE, CLOSE, WINDOW, etc.
     ken_burns: str | None = None  # zoom_in, zoom_out, pan_ltr, pan_rtl, static
     characters: list[str] = field(default_factory=list)  # character IDs
+    provider: ProviderConfig | None = None  # per-scene provider override
 
 
 VALID_SCENE_TYPES = {"still", "clip"}
@@ -42,6 +55,8 @@ class Project:
     style_prefix: str
     characters: dict[str, Character]
     scenes: list[Scene]
+    still_provider: ProviderConfig | None = None
+    clip_provider: ProviderConfig | None = None
 
     def get_scene(self, number: int) -> Scene:
         """Return a scene by number. Raises ValueError if not found."""

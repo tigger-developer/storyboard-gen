@@ -166,6 +166,124 @@ class TestProjectScenes:
         assert scene1.characters == ["hero"]
 
 
+class TestProjectProviders:
+    def test_load_project_with_providers(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Provider Test",
+            "providers": {
+                "still": {
+                    "backend": "fal",
+                    "model": "fal-ai/flux-general",
+                    "options": {"strength": 0.85},
+                },
+                "clip": {
+                    "backend": "google",
+                    "model": "veo-3.1-fast-generate-001",
+                },
+            },
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.still_provider.backend == "fal"
+        assert project.still_provider.model == "fal-ai/flux-general"
+        assert project.still_provider.options["strength"] == 0.85
+        assert project.clip_provider.backend == "google"
+        assert project.clip_provider.model == "veo-3.1-fast-generate-001"
+        assert project.clip_provider.options == {}
+
+    def test_load_project_without_providers_defaults_to_none(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "No Providers",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.still_provider is None
+        assert project.clip_provider is None
+
+    def test_load_project_with_partial_providers(self, tmp_path):
+        # Arrange — only still provider specified
+        data = {
+            "title": "Partial",
+            "providers": {
+                "still": {"backend": "replicate", "model": "flux-2-pro"},
+            },
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.still_provider.backend == "replicate"
+        assert project.clip_provider is None
+
+    def test_load_project_with_invalid_backend_raises_config_error(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Bad Backend",
+            "providers": {
+                "still": {"backend": "midjourney", "model": "v6"},
+            },
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="Invalid provider backend"):
+            load_project(tmp_path)
+
+    def test_load_scene_with_provider_override(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Scene Override",
+            "providers": {
+                "still": {"backend": "google", "model": "imagen-4.0-generate-001"},
+            },
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "provider": {
+                        "backend": "fal",
+                        "model": "fal-ai/flux-general",
+                    },
+                },
+                {"number": 2, "type": "still", "prompt": "y", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert — scene 1 has override, scene 2 does not
+        assert project.get_scene(1).provider.backend == "fal"
+        assert project.get_scene(2).provider is None
+
+
 class TestGetEnvConfig:
     def test_get_env_config_reads_dotenv_from_cwd(self, tmp_path, monkeypatch):
         # Arrange: create .env in a temp dir and chdir to it

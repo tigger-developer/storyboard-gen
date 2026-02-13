@@ -1,10 +1,10 @@
-<!-- Version: 0.1 | Last updated: 2026-02-12 -->
+<!-- Version: 0.2 | Last updated: 2026-02-13 -->
 
 # Architecture: storyboard-gen
 
 ## Overview
 
-storyboard-gen is a Python CLI tool. It reads a `project.yaml` from the current working directory, calls Google GenAI APIs to generate images and video clips, and optionally assembles them into a final video with Ken Burns effects.
+storyboard-gen is a Python CLI tool. It reads a `project.yaml` from the current working directory, calls AI image/video APIs to generate stills and clips, and optionally assembles them into a final video with Ken Burns effects.
 
 ## Components
 
@@ -14,23 +14,30 @@ Parses command-line arguments and dispatches to the appropriate module. Subcomma
 
 ### Configuration layer (`config.py`)
 
-Loads `project.yaml` from the current directory. Loads `.env` for API credentials. Validates the schema and resolves reference image paths.
+Loads `project.yaml` from the current directory. Loads `.env` for API credentials. Validates the schema, resolves reference image paths, and parses provider configuration.
 
 ### Models (`models.py`)
 
-Pure dataclasses: `Project`, `Scene`, `Character`. No behaviour, just structured data parsed from the YAML.
+Pure dataclasses: `Project`, `Scene`, `Character`, `ProviderConfig`. No behaviour, just structured data parsed from the YAML.
 
-### Client (`client.py`)
+### Provider layer (`providers/`)
 
-Creates a `google.genai.Client` configured for either Vertex AI or Gemini Developer API, based on environment variables.
+Pluggable image/video generation backends. Each provider implements the `ImageProvider` ABC:
 
-### Generation (`generate.py`)
+- `providers/base.py` — Abstract base class defining `generate_still()` and `generate_clip()` interface.
+- `providers/google.py` — Google Vertex AI / Gemini (Imagen for stills, Veo for clips).
+- `providers/fal.py` — FAL.ai (Flux models for stills).
+- `providers/replicate.py` — Replicate (Flux models for stills).
+- `providers/__init__.py` — Registry and factory. Uses lazy imports so unused SDKs are not required.
 
-Two main functions:
-- `generate_still(scene, project)` — calls Imagen, returns image bytes, saves to `output/stills/`
-- `generate_clip(scene, project)` — calls Veo (long-running op), polls for completion, downloads from GCS, saves to `output/clips/`
+Providers are configured in `project.yaml` via the `providers` section, with per-scene overrides possible. Projects without a `providers` section default to Google.
 
-Both prepend the project's `style_prefix` to the scene prompt and include character reference images where specified.
+### Generation orchestrator (`generate.py`)
+
+Thin orchestrator that resolves the provider, delegates generation, and handles post-processing:
+
+- `generate_still(scene, project)` — resolves provider, calls `provider.generate_still()`, applies aspect ratio crop, archives previous output, saves PNG.
+- `generate_clip(scene, project)` — resolves provider, calls `provider.generate_clip()`, archives previous output, saves MP4.
 
 ### Ken Burns (`ken_burns.py`)
 
@@ -46,13 +53,11 @@ Concatenates all scene outputs (Ken Burns stills + video clips) in order using F
 project.yaml
     │
     ▼
-config.py ──▶ models.py (Project, Scene, Character)
+config.py ──▶ models.py (Project, Scene, Character, ProviderConfig)
     │
     ▼
-client.py ──▶ google.genai.Client
-    │
-    ▼
-generate.py ──▶ output/stills/*.png
+generate.py ──▶ providers/ (Google, FAL, Replicate)
+            ──▶ output/stills/*.png
             ──▶ output/clips/*.mp4
     │
     ▼
@@ -62,16 +67,25 @@ ken_burns.py ──▶ output/intermediate/*.mp4 (stills with effects)
 assemble.py ──▶ output/final/assembled.mp4
 ```
 
+## Provider selection
+
+1. Per-scene `provider:` override (highest priority)
+2. Project-level `providers.still` / `providers.clip`
+3. Default: Google with Imagen 4 (stills) / Veo 3.1 (clips)
+
 ## External dependencies
 
-- Google Vertex AI / Gemini API (network)
-- Google Cloud Storage bucket (for Veo output)
+- Google Vertex AI / Gemini API (optional — `pip install storyboard-gen[google]`)
+- FAL.ai API (optional — `pip install storyboard-gen[fal]`)
+- Replicate API (optional — `pip install storyboard-gen[replicate]`)
 - FFmpeg (system binary, must be on PATH)
 - Python 3.12+
 
 ## Configuration precedence
 
 1. Command-line arguments
-2. `.env` in project directory
-3. Environment variables
-4. Defaults in code
+2. Per-scene provider override in `project.yaml`
+3. Project-level provider config in `project.yaml`
+4. `.env` in project directory
+5. Environment variables
+6. Defaults in code

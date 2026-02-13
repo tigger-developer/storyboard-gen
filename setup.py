@@ -6,7 +6,7 @@ from setuptools import find_packages, setup
 setup(
     name="storyboard-gen",
     version="0.8.0",
-    description="Generate video stills and clips from a YAML storyboard using Google AI APIs",
+    description="Generate video stills and clips from a YAML storyboard using AI image/video APIs",
     author="Taḋg Paul O'Brien",
     license="MIT",
     package_dir={"": "src"},
@@ -18,6 +18,15 @@ setup(
         "Pillow>=10.0.0",
         "pyyaml>=6.0",
     ],
+    extras_require={
+        "fal": ["fal-client>=0.5.0"],
+        "replicate": ["replicate>=1.0.0"],
+        "all": [
+            "google-genai>=1.0.0",
+            "fal-client>=0.5.0",
+            "replicate>=1.0.0",
+        ],
+    },
     entry_points={
         "console_scripts": [
             "storyboard-gen=storyboard_gen.cli:main",

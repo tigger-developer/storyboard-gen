@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from storyboard_gen.models import Character, Project, Scene
+from storyboard_gen.models import Character, Project, ProviderConfig, Scene
 
 
 class TestCharacter:
@@ -37,6 +37,40 @@ class TestCharacter:
             pass
 
 
+class TestProviderConfig:
+    def test_provider_config_creation(self):
+        # Arrange & Act
+        cfg = ProviderConfig(backend="fal", model="fal-ai/flux-general")
+
+        # Assert
+        assert cfg.backend == "fal"
+        assert cfg.model == "fal-ai/flux-general"
+        assert cfg.options == {}
+
+    def test_provider_config_with_options(self):
+        # Arrange & Act
+        cfg = ProviderConfig(
+            backend="fal",
+            model="fal-ai/flux-general",
+            options={"strength": 0.85, "num_inference_steps": 28},
+        )
+
+        # Assert
+        assert cfg.options["strength"] == 0.85
+        assert cfg.options["num_inference_steps"] == 28
+
+    def test_provider_config_is_frozen(self):
+        # Arrange
+        cfg = ProviderConfig(backend="google", model="imagen-4.0-generate-001")
+
+        # Act & Assert
+        try:
+            cfg.backend = "fal"
+            assert False, "Should have raised FrozenInstanceError"
+        except AttributeError:
+            pass
+
+
 class TestScene:
     def test_scene_creation_with_defaults(self):
         # Arrange & Act
@@ -49,6 +83,7 @@ class TestScene:
         assert scene.camera is None
         assert scene.ken_burns is None
         assert scene.characters == []
+        assert scene.provider is None
 
     def test_scene_creation_with_all_fields(self):
         # Arrange & Act
@@ -61,12 +96,14 @@ class TestScene:
             camera="WIDE",
             ken_burns="zoom_in",
             characters=["hero", "sidekick"],
+            provider=ProviderConfig(backend="fal", model="fal-ai/flux-general"),
         )
 
         # Assert
         assert scene.scene_type == "clip"
         assert scene.ken_burns == "zoom_in"
         assert len(scene.characters) == 2
+        assert scene.provider.backend == "fal"
 
 
 class TestProject:
@@ -87,6 +124,42 @@ class TestProject:
             characters=chars,
             scenes=scenes,
         )
+
+    def test_project_with_provider_configs(self):
+        # Arrange & Act
+        project = Project(
+            title="Test",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(number=1, title="S1", scene_type="still", prompt="P", duration=5)
+            ],
+            still_provider=ProviderConfig(backend="fal", model="fal-ai/flux-general"),
+            clip_provider=ProviderConfig(
+                backend="google", model="veo-3.1-fast-generate-001"
+            ),
+        )
+
+        # Assert
+        assert project.still_provider.backend == "fal"
+        assert project.clip_provider.backend == "google"
+
+    def test_project_provider_defaults_to_none(self):
+        # Arrange & Act
+        project = Project(
+            title="Test",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(number=1, title="S1", scene_type="still", prompt="P", duration=5)
+            ],
+        )
+
+        # Assert
+        assert project.still_provider is None
+        assert project.clip_provider is None
 
     def test_get_scene_returns_correct_scene(self):
         # Arrange
