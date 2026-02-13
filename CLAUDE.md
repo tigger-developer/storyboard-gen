@@ -128,7 +128,8 @@ Provider resolution order:
 - Auth: `USE_VERTEX=true` + GCP credentials, or `GEMINI_API_KEY`
 
 ### FAL.ai
-- Stills: Flux models via `fal_client.subscribe()`
+- Stills: Flux and Kontext models via `fal_client.subscribe()`
+- Kontext models auto-route: image-to-image (with reference) or text-to-image (without)
 - Clips: Not supported (use Google for clips)
 - Auth: `FAL_KEY` environment variable
 - Reference images uploaded to FAL CDN automatically
@@ -162,6 +163,7 @@ GCS_OUTPUT_BUCKET=gs://your-bucket-name/
 - Google Imagen: `imagen-4.0-generate-001`
 - Google Veo: `veo-3.1-fast-generate-001`
 - FAL Flux: `fal-ai/flux-general`, `fal-ai/flux-pro/v1.1`
+- FAL Kontext: `fal-ai/flux-pro/kontext` (image-to-image with ref, text-to-image without)
 - Replicate Flux: `black-forest-labs/flux-1.1-pro`, `black-forest-labs/flux-dev`
 
 ## project.yaml schema

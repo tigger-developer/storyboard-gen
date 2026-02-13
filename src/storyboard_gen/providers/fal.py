@@ -1,5 +1,5 @@
 # ABOUTME: FAL.ai provider for storyboard-gen.
-# ABOUTME: Generates stills via Flux models through the fal-client SDK.
+# ABOUTME: Generates stills via Flux and Kontext models through the fal-client SDK.
 
 import logging
 import urllib.request
@@ -50,11 +50,96 @@ def _download_url(url: str) -> bytes:
 
 
 class FalProvider(ImageProvider):
-    """FAL.ai image provider using Flux models."""
+    """FAL.ai image provider using Flux and Kontext models."""
 
     def __init__(self, model: str, options: dict | None = None):
         self.model = model
         self.options = options or {}
+
+    @property
+    def _is_kontext(self) -> bool:
+        """Detect whether this provider is configured for a Kontext model."""
+        return "kontext" in self.model.lower()
+
+    def _upload_reference(self, reference_images: list[Path] | None) -> str | None:
+        """Upload a single reference image to FAL CDN if it exists.
+
+        Args:
+            reference_images: Optional list of reference image paths.
+
+        Returns:
+            CDN URL string, or None if no valid reference.
+        """
+        if reference_images and len(reference_images) == 1:
+            ref_path = reference_images[0]
+            if ref_path.exists():
+                ref_url = fal_client.upload_file(str(ref_path))
+                logger.info("Uploaded reference -> %s", ref_url)
+                return ref_url
+        return None
+
+    def _build_kontext_args(
+        self, prompt: str, aspect_ratio: str, ref_url: str | None
+    ) -> tuple[str, dict]:
+        """Build arguments and endpoint for Kontext models.
+
+        Kontext has two modes:
+        - Image-to-image (base endpoint): requires image_url, uses raw aspect_ratio.
+        - Text-to-image (/text-to-image suffix): uses image_size presets.
+
+        Args:
+            prompt: Full prompt text.
+            aspect_ratio: Raw "W:H" string.
+            ref_url: Uploaded reference URL, or None.
+
+        Returns:
+            Tuple of (endpoint, arguments dict).
+        """
+        if ref_url:
+            # Image-to-image: base endpoint, image_url, raw aspect_ratio
+            endpoint = self.model
+            arguments = {
+                "prompt": prompt,
+                "image_url": ref_url,
+                "aspect_ratio": aspect_ratio,
+                "num_images": 1,
+                "output_format": "png",
+            }
+        else:
+            # Text-to-image: append /text-to-image, use image_size preset
+            endpoint = self.model.rstrip("/") + "/text-to-image"
+            image_size = _map_aspect_ratio(aspect_ratio)
+            arguments = {
+                "prompt": prompt,
+                "image_size": image_size,
+                "num_images": 1,
+                "output_format": "png",
+            }
+        return endpoint, arguments
+
+    def _build_flux_args(
+        self, prompt: str, aspect_ratio: str, ref_url: str | None
+    ) -> tuple[str, dict]:
+        """Build arguments and endpoint for Flux models.
+
+        Args:
+            prompt: Full prompt text.
+            aspect_ratio: Raw "W:H" string.
+            ref_url: Uploaded reference URL, or None.
+
+        Returns:
+            Tuple of (endpoint, arguments dict).
+        """
+        image_size = _map_aspect_ratio(aspect_ratio)
+        arguments = {
+            "prompt": prompt,
+            "image_size": image_size,
+            "num_images": 1,
+            "output_format": "png",
+        }
+        if ref_url:
+            arguments["reference_image_url"] = ref_url
+        return self.model, arguments
 
     def generate_still(
         self,
@@ -64,11 +149,11 @@ class FalProvider(ImageProvider):
         reference_images: list[Path] | None = None,
         options: dict | None = None,
     ) -> bytes:
-        """Generate a still image via FAL Flux models.
+        """Generate a still image via FAL Flux or Kontext models.
 
         Uses fal_client.subscribe() for synchronous generation.
-        When a single reference image is provided, uploads it to FAL CDN
-        and passes it as reference_image_url for style guidance.
+        Kontext models route to image-to-image (with reference) or
+        text-to-image (without). Flux models use reference_image_url.
 
         Args:
             prompt: Full prompt (style_prefix + scene prompt).
@@ -89,14 +174,14 @@ class FalProvider(ImageProvider):
                 "fal-client is not installed. Run: pip install fal-client"
             )
 
-        image_size = _map_aspect_ratio(aspect_ratio)
+        ref_url = self._upload_reference(reference_images)
 
-        arguments = {
-            "prompt": prompt,
-            "image_size": image_size,
-            "num_images": 1,
-            "output_format": "png",
-        }
+        if self._is_kontext:
+            endpoint, arguments = self._build_kontext_args(
+                prompt, aspect_ratio, ref_url
+            )
+        else:
+            endpoint, arguments = self._build_flux_args(prompt, aspect_ratio, ref_url)
 
         # Merge provider options (seed, safety_tolerance, etc.)
         merged_options = self.options.copy()
@@ -104,19 +189,13 @@ class FalProvider(ImageProvider):
             merged_options.update(options)
         arguments.update(merged_options)
 
-        # Upload single reference image for style guidance
-        if reference_images and len(reference_images) == 1:
-            ref_path = reference_images[0]
-            if ref_path.exists():
-                ref_url = fal_client.upload_file(str(ref_path))
-                arguments["reference_image_url"] = ref_url
-                logger.info("Uploaded reference -> %s", ref_url)
-
-        logger.info("Generating still via FAL model=%s", self.model)
+        logger.info(
+            "Generating still via FAL model=%s endpoint=%s", self.model, endpoint
+        )
         logger.debug("Arguments: %s", arguments)
 
         try:
-            result = fal_client.subscribe(self.model, arguments=arguments)
+            result = fal_client.subscribe(endpoint, arguments=arguments)
         except Exception as exc:
             raise RuntimeError(f"FAL API error: {exc}") from exc
 

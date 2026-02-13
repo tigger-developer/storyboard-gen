@@ -176,6 +176,175 @@ class TestFalGenerateStill:
             )
 
 
+class TestFalKontextStill:
+    """Tests for Kontext model routing (image-to-image and text-to-image)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_text_to_image_appends_endpoint(self, mock_fal, tmp_path):
+        """No references → appends /text-to-image, uses image_size preset."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-pro/kontext")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy in a field",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert — endpoint has /text-to-image appended
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/flux-pro/kontext/text-to-image"
+        arguments = call_args.kwargs["arguments"]
+        assert arguments["image_size"] == "portrait_16_9"
+        assert "image_url" not in arguments
+        assert "aspect_ratio" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_image_to_image_uses_base_endpoint(self, mock_fal, tmp_path):
+        """With reference → base endpoint, image_url, raw aspect_ratio."""
+        # Arrange
+        ref_path = tmp_path / "ref.png"
+        ref_path.write_bytes(b"fake-image")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-pro/kontext")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy in a field",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref_path],
+            )
+
+        # Assert — base endpoint, image_url set, raw aspect_ratio
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/flux-pro/kontext"
+        arguments = call_args.kwargs["arguments"]
+        assert arguments["image_url"] == "https://fal.media/files/ref.png"
+        assert arguments["aspect_ratio"] == "9:16"
+        assert "image_size" not in arguments
+        assert "reference_image_url" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_image_to_image_skips_nonexistent_reference(
+        self, mock_fal, tmp_path
+    ):
+        """Missing ref file → falls back to text-to-image."""
+        # Arrange
+        ref_path = tmp_path / "missing.png"  # does not exist
+
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-pro/kontext")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy in a field",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref_path],
+            )
+
+        # Assert — falls back to text-to-image
+        mock_fal.upload_file.assert_not_called()
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/flux-pro/kontext/text-to-image"
+        arguments = call_args.kwargs["arguments"]
+        assert "image_url" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_passes_options(self, mock_fal, tmp_path):
+        """Provider options (seed, safety_tolerance) are merged into arguments."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(
+            model="fal-ai/flux-pro/kontext",
+            options={"seed": 42, "safety_tolerance": 5},
+        )
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="Prompt",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["seed"] == 42
+        assert arguments["safety_tolerance"] == 5
+
+    def test_is_kontext_detection(self):
+        """_is_kontext returns True for Kontext models, False otherwise."""
+        # Positive cases
+        assert FalProvider(model="fal-ai/flux-pro/kontext")._is_kontext is True
+        assert (
+            FalProvider(model="fal-ai/flux-pro/kontext/text-to-image")._is_kontext
+            is True
+        )
+        assert FalProvider(model="fal-ai/Kontext-Model")._is_kontext is True
+
+        # Negative cases
+        assert FalProvider(model="fal-ai/flux-pro/v1.1")._is_kontext is False
+        assert FalProvider(model="fal-ai/flux-general")._is_kontext is False
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux_model_with_reference_uses_reference_image_url(
+        self, mock_fal, tmp_path
+    ):
+        """Regression: Flux models still use reference_image_url, not image_url."""
+        # Arrange
+        ref_path = tmp_path / "ref.png"
+        ref_path.write_bytes(b"fake-image")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-general")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A hero",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref_path],
+            )
+
+        # Assert — Flux uses reference_image_url, NOT image_url
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/flux-general"
+        arguments = call_args.kwargs["arguments"]
+        assert arguments["reference_image_url"] == "https://fal.media/files/ref.png"
+        assert "image_url" not in arguments
+
+
 class TestFalGenerateClip:
     def test_raises_not_implemented(self, tmp_path):
         provider = FalProvider(model="fal-ai/flux-pro/v1.1")
