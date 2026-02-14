@@ -102,6 +102,10 @@ class TestFrameCalculation:
         # Arrange & Act & Assert
         assert _frames(2.5, 30) == 75
 
+    def test_frames_rounds_rather_than_truncates(self):
+        # 2.517 * 30 = 75.51 → round() gives 76, int() gives 75
+        assert _frames(2.517, 30) == 76
+
     def test_frames_zero_duration(self):
         # Arrange & Act & Assert
         assert _frames(0, 30) == 0
@@ -304,6 +308,40 @@ class TestKdenliveStructure:
         ]
         assert len(project_tractors) == 1
 
+    def test_video_tractor_has_internal_qtblend(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert — video_tractor must have an always-active qtblend
+        # so that blanks on the top playlist are transparent, letting
+        # the bottom playlist's content show through
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+        transitions = video_tractor.findall("transition")
+        qtblend = [
+            t
+            for t in transitions
+            if _get_prop(t, "mlt_service") == "qtblend"
+            and _get_prop(t, "always_active") == "1"
+        ]
+        assert len(qtblend) == 1
+        assert _get_prop(qtblend[0], "a_track") == "0"
+        assert _get_prop(qtblend[0], "b_track") == "1"
+
+    def test_video_tractor_has_internal_mix(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert — video_tractor must have an always-active mix
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+        transitions = video_tractor.findall("transition")
+        mix = [
+            t
+            for t in transitions
+            if _get_prop(t, "mlt_service") == "mix"
+            and _get_prop(t, "always_active") == "1"
+        ]
+        assert len(mix) == 1
+
     def test_playlist_entries_have_kdenlive_id(self, tmp_path):
         # Arrange & Act
         mlt = self._build(tmp_path)
@@ -384,6 +422,26 @@ class TestDissolveLayout:
         mix_count = sum(1 for t in transitions if t.get("id", "").startswith("mix_"))
         assert luma_count == mix_count
         assert luma_count == 2  # 3 scenes - 1
+
+    def test_dissolve_direction_outgoing_to_incoming(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build_with_dissolves(tmp_path)
+
+        # Assert — dissolve_0 goes from scene 1 (track 0) to scene 2 (track 1)
+        # a_track = outgoing clip's track, b_track = incoming clip's track
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+
+        dissolve_0 = video_tractor.find("transition[@id='dissolve_0']")
+        assert dissolve_0 is not None
+        # Scene 1 on playlist0 (track 0), scene 2 on playlist1 (track 1)
+        assert _get_prop(dissolve_0, "a_track") == "0"
+        assert _get_prop(dissolve_0, "b_track") == "1"
+
+        dissolve_1 = video_tractor.find("transition[@id='dissolve_1']")
+        assert dissolve_1 is not None
+        # Scene 2 on playlist1 (track 1), scene 3 on playlist0 (track 0)
+        assert _get_prop(dissolve_1, "a_track") == "1"
+        assert _get_prop(dissolve_1, "b_track") == "0"
 
     def test_single_scene_no_transitions(self, tmp_path):
         # Arrange

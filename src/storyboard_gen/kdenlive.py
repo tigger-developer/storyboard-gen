@@ -66,7 +66,7 @@ def generate_kdenlive(
 
 def _frames(seconds: float, fps: int) -> int:
     """Convert a duration in seconds to a frame count."""
-    return int(seconds * fps)
+    return round(seconds * fps)
 
 
 def _resolve_clip_path(scene: Scene, output_dir: Path) -> Path:
@@ -266,10 +266,11 @@ def _build_video_track_with_dissolves(
             )
             _set_prop(entry, "kdenlive:id", str(kdenlive_id))
 
+            # Dissolve FROM previous clip (other playlist) TO this clip (active)
             transitions.append(
                 {
-                    "a_track": "0" if is_even else "1",
-                    "b_track": "1" if is_even else "0",
+                    "a_track": "1" if is_even else "0",
+                    "b_track": "0" if is_even else "1",
                     "in": str(overlap_start),
                     "out": str(overlap_start + dissolve_frames),
                     "index": i - 1,
@@ -282,6 +283,10 @@ def _build_video_track_with_dissolves(
     tractor = ET.SubElement(mlt, "tractor", id="video_tractor")
     ET.SubElement(tractor, "track", hide="audio", producer="playlist0")
     ET.SubElement(tractor, "track", hide="audio", producer="playlist1")
+
+    # Internal transitions for base compositing (blanks become transparent)
+    _add_internal_mix(tractor, "video_track_mix", a_track=0, b_track=1)
+    _add_internal_qtblend(tractor, "video_track_blend", a_track=0, b_track=1)
 
     for t in transitions:
         _add_dissolve_transition(tractor, t)
@@ -309,6 +314,10 @@ def _build_video_track_no_dissolves(
     tractor = ET.SubElement(mlt, "tractor", id="video_tractor")
     ET.SubElement(tractor, "track", hide="audio", producer="playlist0")
     ET.SubElement(tractor, "track", hide="audio", producer="playlist1")
+
+    # Internal transitions for base compositing
+    _add_internal_mix(tractor, "video_track_mix", a_track=0, b_track=1)
+    _add_internal_qtblend(tractor, "video_track_blend", a_track=0, b_track=1)
 
 
 def _build_audio_track(mlt: ET.Element, audio_info: ProducerInfo) -> None:
