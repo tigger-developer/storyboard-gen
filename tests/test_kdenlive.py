@@ -443,6 +443,57 @@ class TestDissolveLayout:
         assert _get_prop(dissolve_1, "a_track") == "1"
         assert _get_prop(dissolve_1, "b_track") == "0"
 
+    def test_timeline_total_equals_sum_of_durations_with_dissolves(self, tmp_path):
+        # Arrange — 3 scenes: 5s + 4s + 6s = 15s = 450 frames at 30fps
+        # With dissolves, the total should STILL be 450 frames because
+        # non-first clips are extended to compensate for overlap
+        mlt = self._build_with_dissolves(tmp_path, dissolve_frames=15)
+
+        # Assert — sequence_tractor out attribute = total_frames - 1 = 449
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        assert seq.get("out") == "449"
+
+    def test_non_first_producers_extended_by_dissolve_frames(self, tmp_path):
+        # Arrange — scenes: 5s (150f), 4s (120f), 6s (180f) at 30fps
+        # With 15-frame dissolves, producers 2 and 3 should be extended by 15
+        mlt = self._build_with_dissolves(tmp_path, dissolve_frames=15)
+
+        # Assert — first producer unchanged, others extended
+        p1 = mlt.find("producer[@id='producer_1']")
+        assert p1.get("out") == "149"  # 150 - 1 (no extension)
+
+        p2 = mlt.find("producer[@id='producer_2']")
+        assert p2.get("out") == "134"  # 120 + 15 - 1 (extended)
+
+        p3 = mlt.find("producer[@id='producer_3']")
+        assert p3.get("out") == "194"  # 180 + 15 - 1 (extended)
+
+    def test_playlist_entries_use_extended_lengths(self, tmp_path):
+        # Arrange
+        mlt = self._build_with_dissolves(tmp_path, dissolve_frames=15)
+
+        # Assert — playlist entries for non-first clips use extended out values
+        playlist1 = mlt.find("playlist[@id='playlist1']")
+        entries = playlist1.findall("entry")
+        # Scene 2 is on playlist1, extended by 15 frames
+        scene2_entry = entries[0]
+        assert scene2_entry.get("out") == "134"  # 120 + 15 - 1
+
+    def test_no_extension_without_dissolves(self, tmp_path):
+        # Arrange — dissolve_frames=0 means no extension
+        project_dir = _make_project_dir(tmp_path)
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+        mlt = _build_mlt(project, output_dir, 0, 30, None)
+
+        # Assert — all producers have original lengths
+        p2 = mlt.find("producer[@id='producer_2']")
+        assert p2.get("out") == "119"  # 120 - 1 (no extension)
+
+        # Total timeline = sum of durations = 450 frames
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        assert seq.get("out") == "449"
+
     def test_single_scene_no_transitions(self, tmp_path):
         # Arrange
         scenes = [

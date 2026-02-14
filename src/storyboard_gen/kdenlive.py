@@ -109,11 +109,17 @@ def _build_mlt(
     _add_black_track(mlt)
 
     # Scene producers (kdenlive:id starts at 2; 1 is reserved for the sequence)
+    # When dissolves are enabled, non-first clips are extended by dissolve_frames
+    # so that the dissolve overlap is absorbed by extra frames at the end,
+    # keeping the total timeline equal to sum(scene_durations).
+    use_dissolves = dissolve_frames > 0 and len(project.scenes) > 1
     kdenlive_id = 2
     producers: list[ProducerInfo] = []
-    for scene in project.scenes:
+    for i, scene in enumerate(project.scenes):
         clip_path = _resolve_clip_path(scene, output_dir)
         length = _frames(scene.duration, fps)
+        if use_dissolves and i > 0:
+            length += dissolve_frames
         producer_id = f"producer_{scene.number}"
         _add_scene_producer(
             mlt, producer_id, clip_path.resolve(), length, kdenlive_id, scene.title
@@ -131,7 +137,6 @@ def _build_mlt(
         kdenlive_id += 1
 
     # Video track: A/B playlists wrapped in a tractor
-    use_dissolves = dissolve_frames > 0 and len(producers) > 1
     if use_dissolves:
         _build_video_track_with_dissolves(mlt, producers, dissolve_frames)
     else:
