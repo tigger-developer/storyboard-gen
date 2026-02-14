@@ -75,22 +75,24 @@ class GoogleProvider(ImageProvider):
         if client is None:
             client = self._get_client()
 
-        # Only use subject references for single reference images to avoid
-        # reference bleeding across characters.
         ref_images = []
-        if reference_images and len(reference_images) == 1:
-            ref_path = reference_images[0]
-            if ref_path.exists():
-                ref_images.append(
-                    types.SubjectReferenceImage(
-                        reference_id=1,
-                        reference_image=types.Image.from_file(location=str(ref_path)),
-                        config=types.SubjectReferenceConfig(
-                            subject_type="SUBJECT_TYPE_PERSON",
-                        ),
+        if reference_images:
+            for idx, ref_path in enumerate(reference_images, start=1):
+                if ref_path.exists():
+                    ref_images.append(
+                        types.SubjectReferenceImage(
+                            reference_id=idx,
+                            reference_image=types.Image.from_file(
+                                location=str(ref_path)
+                            ),
+                            config=types.SubjectReferenceConfig(
+                                subject_type="SUBJECT_TYPE_PERSON",
+                            ),
+                        )
                     )
-                )
-                logger.info("Reference [1]: %s", ref_path)
+                    logger.info("Reference [%d]: %s", idx, ref_path)
+                else:
+                    logger.warning("Reference image not found, skipping: %s", ref_path)
 
         if ref_images:
             logger.info(

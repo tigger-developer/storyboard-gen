@@ -64,12 +64,20 @@ class ReplicateProvider(ImageProvider):
             merged_options.update(options)
         input_args.update(merged_options)
 
-        # Pass single reference image for img2img (flux-dev supports this)
-        if reference_images and len(reference_images) == 1:
-            ref_path = reference_images[0]
-            if ref_path.exists():
-                input_args["image"] = open(ref_path, "rb")  # noqa: SIM115
-                logger.info("Reference image: %s", ref_path)
+        # Pass first valid reference image for img2img (flux-dev supports this).
+        # Replicate only supports a single reference; warn when truncating.
+        if reference_images:
+            if len(reference_images) > 1:
+                logger.warning(
+                    "Replicate provider only supports 1 reference image; "
+                    "using first of %d provided",
+                    len(reference_images),
+                )
+            for ref_path in reference_images:
+                if ref_path.exists():
+                    input_args["image"] = open(ref_path, "rb")  # noqa: SIM115
+                    logger.info("Reference image: %s", ref_path)
+                    break
 
         logger.info("Generating still via Replicate model=%s", self.model)
         logger.debug("Input: %s", input_args)

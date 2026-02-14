@@ -161,6 +161,70 @@ class TestReplicateGenerateStill:
             )
 
 
+class TestReplicateMultiReference:
+    """Tests for multi-reference image handling in Replicate provider."""
+
+    @patch("storyboard_gen.providers.replicate.replicate")
+    def test_uses_first_reference_when_multiple_provided(
+        self, mock_replicate, tmp_path
+    ):
+        """Multi-ref scenes should use the first reference, not discard all."""
+        # Arrange
+        ref1 = tmp_path / "ref1.png"
+        ref2 = tmp_path / "ref2.png"
+        ref1.write_bytes(b"fake-image-1")
+        ref2.write_bytes(b"fake-image-2")
+
+        mock_file = MagicMock()
+        mock_file.read.return_value = b"png-bytes"
+        mock_replicate.run.return_value = [mock_file]
+        provider = ReplicateProvider(model="black-forest-labs/flux-dev")
+
+        # Act
+        provider.generate_still(
+            prompt="A hero and sidekick",
+            output_path=tmp_path / "scene_01.png",
+            aspect_ratio="9:16",
+            reference_images=[ref1, ref2],
+        )
+
+        # Assert — first reference used
+        input_args = mock_replicate.run.call_args.kwargs["input"]
+        assert "image" in input_args
+
+    @patch("storyboard_gen.providers.replicate.replicate")
+    def test_warns_when_multiple_references_truncated(
+        self, mock_replicate, tmp_path, caplog
+    ):
+        """A warning should be logged when only the first reference is used."""
+        # Arrange
+        ref1 = tmp_path / "ref1.png"
+        ref2 = tmp_path / "ref2.png"
+        ref1.write_bytes(b"fake-image-1")
+        ref2.write_bytes(b"fake-image-2")
+
+        mock_file = MagicMock()
+        mock_file.read.return_value = b"png-bytes"
+        mock_replicate.run.return_value = [mock_file]
+        provider = ReplicateProvider(model="black-forest-labs/flux-dev")
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            # Act
+            provider.generate_still(
+                prompt="A hero and sidekick",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref1, ref2],
+            )
+
+        # Assert — warning logged about truncation
+        assert any(
+            "only supports 1 reference" in r.message.lower() for r in caplog.records
+        )
+
+
 class TestReplicateGenerateClip:
     def test_raises_not_implemented(self, tmp_path):
         provider = ReplicateProvider(model="black-forest-labs/flux-1.1-pro")

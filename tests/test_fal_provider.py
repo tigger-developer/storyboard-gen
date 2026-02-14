@@ -345,6 +345,112 @@ class TestFalKontextStill:
         assert "image_url" not in arguments
 
 
+class TestFalMultiReference:
+    """Tests for multi-reference image handling in FAL provider."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux_uses_first_reference_when_multiple_provided(self, mock_fal, tmp_path):
+        """Multi-ref Flux scenes should use the first reference, not discard all."""
+        # Arrange
+        ref1 = tmp_path / "ref1.png"
+        ref2 = tmp_path / "ref2.png"
+        ref1.write_bytes(b"fake-image-1")
+        ref2.write_bytes(b"fake-image-2")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref1.png"
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-general")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A hero and sidekick",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref1, ref2],
+            )
+
+        # Assert — first reference uploaded and used
+        mock_fal.upload_file.assert_called_once_with(str(ref1))
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["reference_image_url"] == "https://fal.media/files/ref1.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_uses_first_reference_when_multiple_provided(
+        self, mock_fal, tmp_path
+    ):
+        """Multi-ref Kontext scenes should use the first reference for image-to-image."""
+        # Arrange
+        ref1 = tmp_path / "ref1.png"
+        ref2 = tmp_path / "ref2.png"
+        ref1.write_bytes(b"fake-image-1")
+        ref2.write_bytes(b"fake-image-2")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref1.png"
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-pro/kontext")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A hero and sidekick",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref1, ref2],
+            )
+
+        # Assert — first reference uploaded and used for image-to-image
+        mock_fal.upload_file.assert_called_once_with(str(ref1))
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/flux-pro/kontext"
+        arguments = call_args.kwargs["arguments"]
+        assert arguments["image_url"] == "https://fal.media/files/ref1.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_warns_when_multiple_references_truncated(self, mock_fal, tmp_path, caplog):
+        """A warning should be logged when only the first reference is used."""
+        # Arrange
+        ref1 = tmp_path / "ref1.png"
+        ref2 = tmp_path / "ref2.png"
+        ref1.write_bytes(b"fake-image-1")
+        ref2.write_bytes(b"fake-image-2")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref1.png"
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-general")
+
+        import logging
+
+        with (
+            caplog.at_level(logging.WARNING),
+            patch("storyboard_gen.providers.fal._download_url") as mock_dl,
+        ):
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A hero and sidekick",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref1, ref2],
+            )
+
+        # Assert — warning logged about truncation
+        assert any(
+            "only supports 1 reference" in r.message.lower() for r in caplog.records
+        )
+
+
 class TestFalGenerateClip:
     def test_raises_not_implemented(self, tmp_path):
         provider = FalProvider(model="fal-ai/flux-pro/v1.1")

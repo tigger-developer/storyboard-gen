@@ -62,7 +62,10 @@ class FalProvider(ImageProvider):
         return "kontext" in self.model.lower()
 
     def _upload_reference(self, reference_images: list[Path] | None) -> str | None:
-        """Upload a single reference image to FAL CDN if it exists.
+        """Upload the first valid reference image to FAL CDN.
+
+        FAL models only support a single reference image. When multiple
+        are provided, the first existing file is used and a warning is logged.
 
         Args:
             reference_images: Optional list of reference image paths.
@@ -70,8 +73,15 @@ class FalProvider(ImageProvider):
         Returns:
             CDN URL string, or None if no valid reference.
         """
-        if reference_images and len(reference_images) == 1:
-            ref_path = reference_images[0]
+        if not reference_images:
+            return None
+        if len(reference_images) > 1:
+            logger.warning(
+                "FAL provider only supports 1 reference image; "
+                "using first of %d provided",
+                len(reference_images),
+            )
+        for ref_path in reference_images:
             if ref_path.exists():
                 ref_url = fal_client.upload_file(str(ref_path))
                 logger.info("Uploaded reference -> %s", ref_url)
