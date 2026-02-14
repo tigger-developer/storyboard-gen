@@ -477,8 +477,28 @@ GCS_OUTPUT_BUCKET=gs://your-bucket/
 """
 
 _TEMPLATE_GITIGNORE = """\
+# Secrets
 .env
-output/
+
+# Generated video (large, regenerable from stills + project.yaml)
+output/intermediate/
+output/clips/
+
+# Assembled video output
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+
+# Keep generated stills (expensive API calls to regenerate)
+!output/stills/
+
+# Keep Kdenlive project files (small XML)
+!*.kdenlive
+
+# macOS
+.DS_Store
 """
 
 
@@ -500,6 +520,6 @@ def _cmd_init(args: argparse.Namespace) -> int:
     print(f"Created new project in {target}/")
     print("  project.yaml  — storyboard definition")
     print("  .env          — API credentials (edit before use)")
-    print("  .gitignore    — excludes .env and output/")
+    print("  .gitignore    — excludes secrets and video, keeps stills and Kdenlive")
     print("  references/   — add character/style reference images here")
     return 0

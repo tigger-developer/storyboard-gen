@@ -238,8 +238,17 @@ class TestCliInit:
         gitignore = tmp_path / ".gitignore"
         assert gitignore.exists()
         content = gitignore.read_text()
+        # Secrets excluded
         assert ".env" in content
-        assert "output/" in content
+        # Video output excluded
+        assert "output/intermediate/" in content
+        assert "output/clips/" in content
+        # Video formats excluded
+        assert "*.mp4" in content
+        # Stills kept (NOT excluded)
+        assert "!output/stills/" in content
+        # Kdenlive project kept (NOT excluded)
+        assert "!*.kdenlive" in content
 
     def test_init_refuses_if_project_yaml_exists(self, tmp_path, caplog):
         # Arrange
