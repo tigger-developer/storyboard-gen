@@ -108,7 +108,11 @@ class TestScene:
     def test_scene_creation_with_float_duration(self):
         # Arrange & Act
         scene = Scene(
-            number="1", title="Test", scene_type="still", prompt="A thing.", duration=2.5
+            number="1",
+            title="Test",
+            scene_type="still",
+            prompt="A thing.",
+            duration=2.5,
         )
 
         # Assert
@@ -190,7 +194,9 @@ class TestProject:
             style_prefix="Style.",
             characters={},
             scenes=[
-                Scene(number="1", title="S1", scene_type="still", prompt="P", duration=5)
+                Scene(
+                    number="1", title="S1", scene_type="still", prompt="P", duration=5
+                )
             ],
             still_provider=ProviderConfig(backend="fal", model="fal-ai/flux-general"),
             clip_provider=ProviderConfig(
@@ -210,7 +216,9 @@ class TestProject:
             style_prefix="Style.",
             characters={},
             scenes=[
-                Scene(number="1", title="S1", scene_type="still", prompt="P", duration=5)
+                Scene(
+                    number="1", title="S1", scene_type="still", prompt="P", duration=5
+                )
             ],
         )
 
@@ -347,7 +355,9 @@ class TestProject:
             style_prefix="Style.",
             characters={},
             scenes=[
-                Scene(number="1", title="S1", scene_type="still", prompt="P", duration=5)
+                Scene(
+                    number="1", title="S1", scene_type="still", prompt="P", duration=5
+                )
             ],
             audio=Path("audio.m4a"),
         )
@@ -363,7 +373,9 @@ class TestProject:
             style_prefix="Style.",
             characters={},
             scenes=[
-                Scene(number="1", title="S1", scene_type="still", prompt="P", duration=5)
+                Scene(
+                    number="1", title="S1", scene_type="still", prompt="P", duration=5
+                )
             ],
         )
 

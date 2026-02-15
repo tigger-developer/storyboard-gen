@@ -75,7 +75,11 @@ def _resolve_clip_path(scene: Scene, output_dir: Path) -> Path:
     Stills use the Ken Burns intermediate output; clips use clips/ directly.
     """
     if scene.scene_type == "still":
-        return output_dir / "intermediate" / f"scene_{format_scene_number(scene.number)}.mp4"
+        return (
+            output_dir
+            / "intermediate"
+            / f"scene_{format_scene_number(scene.number)}.mp4"
+        )
     return output_dir / "clips" / f"scene_{format_scene_number(scene.number)}.mp4"
 
 

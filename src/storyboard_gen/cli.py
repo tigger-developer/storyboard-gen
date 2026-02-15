@@ -333,7 +333,9 @@ def _cmd_assemble(args: argparse.Namespace) -> int:
 
     # Apply Ken Burns to all stills
     for scene in project.get_stills():
-        image_path = output_dir / "stills" / f"scene_{format_scene_number(scene.number)}.png"
+        image_path = (
+            output_dir / "stills" / f"scene_{format_scene_number(scene.number)}.png"
+        )
         if not image_path.exists():
             logging.error("Missing still for scene %s: %s", scene.number, image_path)
             return 1

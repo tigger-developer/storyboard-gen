@@ -43,9 +43,15 @@ def assemble(
     clip_paths = []
     for scene in project.scenes:
         if scene.scene_type == "still":
-            clip = output_dir / "intermediate" / f"scene_{format_scene_number(scene.number)}.mp4"
+            clip = (
+                output_dir
+                / "intermediate"
+                / f"scene_{format_scene_number(scene.number)}.mp4"
+            )
         else:
-            clip = output_dir / "clips" / f"scene_{format_scene_number(scene.number)}.mp4"
+            clip = (
+                output_dir / "clips" / f"scene_{format_scene_number(scene.number)}.mp4"
+            )
 
         if not clip.exists():
             raise FileNotFoundError(

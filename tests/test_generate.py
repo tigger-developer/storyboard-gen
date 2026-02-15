@@ -40,7 +40,11 @@ def _make_project() -> Project:
                 duration=5,
             ),
             Scene(
-                number="2", title="Clip", scene_type="clip", prompt="Action.", duration=6
+                number="2",
+                title="Clip",
+                scene_type="clip",
+                prompt="Action.",
+                duration=6,
             ),
         ],
     )
