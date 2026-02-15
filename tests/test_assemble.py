@@ -13,8 +13,8 @@ def _make_project(scenes=None):
     """Helper to create a minimal project for assembly tests."""
     if scenes is None:
         scenes = [
-            Scene(number=1, title="S1", scene_type="still", prompt="P1", duration=5),
-            Scene(number=2, title="S2", scene_type="clip", prompt="P2", duration=6),
+            Scene(number="1", title="S1", scene_type="still", prompt="P1", duration=5),
+            Scene(number="2", title="S2", scene_type="clip", prompt="P2", duration=6),
         ]
     return Project(
         title="Test",

@@ -13,6 +13,7 @@ from storyboard_gen.generate import generate_clip, generate_still
 from storyboard_gen.ken_burns import apply_ken_burns
 from storyboard_gen.assemble import assemble
 from storyboard_gen.kdenlive import generate_kdenlive
+from storyboard_gen.models import format_scene_number
 
 
 HELP_EPILOG = """\
@@ -99,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     gen_group = gen_parser.add_mutually_exclusive_group(required=True)
     gen_group.add_argument(
-        "--scene", type=int, nargs="+", metavar="N", help="Generate scene(s) by number"
+        "--scene", type=str, nargs="+", metavar="N", help="Generate scene(s) by number"
     )
     gen_group.add_argument(
         "--all-stills", action="store_true", help="Generate all stills"
@@ -332,9 +333,9 @@ def _cmd_assemble(args: argparse.Namespace) -> int:
 
     # Apply Ken Burns to all stills
     for scene in project.get_stills():
-        image_path = output_dir / "stills" / f"scene_{scene.number:02d}.png"
+        image_path = output_dir / "stills" / f"scene_{format_scene_number(scene.number)}.png"
         if not image_path.exists():
-            logging.error("Missing still for scene %d: %s", scene.number, image_path)
+            logging.error("Missing still for scene %s: %s", scene.number, image_path)
             return 1
         apply_ken_burns(image_path, scene, project.aspect_ratio, output_dir)
 

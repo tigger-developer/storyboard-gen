@@ -26,11 +26,22 @@ class Character:
     reference: Path | None = None
 
 
+def format_scene_number(number: str) -> str:
+    """Format a scene number for use in filenames.
+
+    Purely numeric numbers are zero-padded to 2 digits for backward
+    compatibility. Alphanumeric numbers are used as-is.
+    """
+    if number.isdigit():
+        return f"{int(number):02d}"
+    return number
+
+
 @dataclass(frozen=True)
 class Scene:
     """A single scene in the storyboard."""
 
-    number: int
+    number: str
     title: str
     scene_type: str  # "still" or "clip"
     prompt: str
@@ -61,10 +72,11 @@ class Project:
     clip_provider: ProviderConfig | None = None
     audio: Path | None = None
 
-    def get_scene(self, number: int) -> Scene:
+    def get_scene(self, number: str) -> Scene:
         """Return a scene by number. Raises ValueError if not found."""
+        lookup = str(number)
         for scene in self.scenes:
-            if scene.number == number:
+            if scene.number == lookup:
                 return scene
         raise ValueError(f"No scene with number {number}")
 

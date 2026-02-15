@@ -64,13 +64,14 @@ def _make_project_dir(tmp_path, scenes=None, audio=None, aspect_ratio="9:16"):
     (output / "clips").mkdir(parents=True)
 
     for scene in scenes:
-        num = scene["number"]
+        num = str(scene["number"])
+        padded = f"{int(num):02d}" if num.isdigit() else num
         if scene["type"] == "still":
-            (output / "intermediate" / f"scene_{num:02d}.mp4").write_bytes(
+            (output / "intermediate" / f"scene_{padded}.mp4").write_bytes(
                 b"fake-video"
             )
         else:
-            (output / "clips" / f"scene_{num:02d}.mp4").write_bytes(b"fake-video")
+            (output / "clips" / f"scene_{padded}.mp4").write_bytes(b"fake-video")
 
     return tmp_path
 

@@ -140,8 +140,8 @@ class TestCliGenerate:
         assert mock_gen_still.call_count == 2
         first_scene = mock_gen_still.call_args_list[0][0][0]
         second_scene = mock_gen_still.call_args_list[1][0][0]
-        assert first_scene.number == 2
-        assert second_scene.number == 1
+        assert first_scene.number == "2"
+        assert second_scene.number == "1"
 
     @patch("storyboard_gen.cli.generate_still")
     def test_generate_single_scene_still_works(
@@ -172,8 +172,8 @@ class TestCliGenerate:
         assert exit_code == 0
         mock_gen_still.assert_called_once()
         mock_gen_clip.assert_called_once()
-        assert mock_gen_still.call_args[0][0].number == 1
-        assert mock_gen_clip.call_args[0][0].number == 3
+        assert mock_gen_still.call_args[0][0].number == "1"
+        assert mock_gen_clip.call_args[0][0].number == "3"
 
 
 class TestCliInit:

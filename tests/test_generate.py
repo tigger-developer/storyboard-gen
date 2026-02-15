@@ -33,14 +33,14 @@ def _make_project() -> Project:
         characters={},
         scenes=[
             Scene(
-                number=1,
+                number="1",
                 title="Still",
                 scene_type="still",
                 prompt="A thing.",
                 duration=5,
             ),
             Scene(
-                number=2, title="Clip", scene_type="clip", prompt="Action.", duration=6
+                number="2", title="Clip", scene_type="clip", prompt="Action.", duration=6
             ),
         ],
     )
@@ -170,7 +170,7 @@ class TestGenerateStill:
             ),
         }
         scene = Scene(
-            number=1,
+            number="1",
             title="Solo hero",
             scene_type="still",
             prompt="Hero stands.",
@@ -198,7 +198,7 @@ class TestResolveProvider:
     def test_resolve_provider_scene_model_overrides_project_provider(self, monkeypatch):
         # Arrange — project has fal/flux-general, scene overrides model only
         scene = Scene(
-            number=1,
+            number="1",
             title="Kontext",
             scene_type="still",
             prompt="A portrait.",
@@ -241,7 +241,7 @@ class TestResolveProvider:
     ):
         # Arrange — no project-level provider, scene overrides model only
         scene = Scene(
-            number=1,
+            number="1",
             title="Custom model",
             scene_type="still",
             prompt="x",

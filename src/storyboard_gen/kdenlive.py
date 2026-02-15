@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from storyboard_gen.ken_burns import ASPECT_DIMENSIONS
-from storyboard_gen.models import Project, Scene
+from storyboard_gen.models import Project, Scene, format_scene_number
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +75,8 @@ def _resolve_clip_path(scene: Scene, output_dir: Path) -> Path:
     Stills use the Ken Burns intermediate output; clips use clips/ directly.
     """
     if scene.scene_type == "still":
-        return output_dir / "intermediate" / f"scene_{scene.number:02d}.mp4"
-    return output_dir / "clips" / f"scene_{scene.number:02d}.mp4"
+        return output_dir / "intermediate" / f"scene_{format_scene_number(scene.number)}.mp4"
+    return output_dir / "clips" / f"scene_{format_scene_number(scene.number)}.mp4"
 
 
 # ProducerInfo: (producer_id, length_frames, kdenlive_id, clip_name)

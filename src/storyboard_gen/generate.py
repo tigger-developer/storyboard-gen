@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PIL import Image as PILImage
 
-from storyboard_gen.models import Project, ProviderConfig, Scene
+from storyboard_gen.models import Project, ProviderConfig, Scene, format_scene_number
 from storyboard_gen.providers import ImageProvider, create_provider
 from storyboard_gen.providers.google import (
     DEFAULT_IMAGEN_MODEL,
@@ -152,11 +152,11 @@ def generate_still(
     stills_dir.mkdir(parents=True, exist_ok=True)
 
     full_prompt = project.build_prompt(scene)
-    logger.info("Generating still for scene %d: %s", scene.number, scene.title)
+    logger.info("Generating still for scene %s: %s", scene.number, scene.title)
     logger.debug("Prompt: %s", full_prompt)
 
     reference_images = project.get_reference_images(scene)
-    output_path = stills_dir / f"scene_{scene.number:02d}.png"
+    output_path = stills_dir / f"scene_{format_scene_number(scene.number)}.png"
 
     image_bytes = provider.generate_still(
         prompt=full_prompt,
@@ -176,7 +176,7 @@ def generate_still(
     _archive_existing(output_path)
     output_path.write_bytes(image_bytes)
 
-    logger.info("Saved scene %d (%s) -> %s", scene.number, scene.title, output_path)
+    logger.info("Saved scene %s (%s) -> %s", scene.number, scene.title, output_path)
     return output_path
 
 
@@ -213,11 +213,11 @@ def generate_clip(
     clips_dir.mkdir(parents=True, exist_ok=True)
 
     full_prompt = project.build_prompt(scene)
-    logger.info("Generating clip for scene %d: %s", scene.number, scene.title)
+    logger.info("Generating clip for scene %s: %s", scene.number, scene.title)
     logger.debug("Prompt: %s", full_prompt)
 
     reference_images = project.get_reference_images(scene)
-    output_path = clips_dir / f"scene_{scene.number:02d}.mp4"
+    output_path = clips_dir / f"scene_{format_scene_number(scene.number)}.mp4"
 
     video_bytes = provider.generate_clip(
         prompt=full_prompt,
@@ -231,5 +231,5 @@ def generate_clip(
     _archive_existing(output_path)
     output_path.write_bytes(video_bytes)
 
-    logger.info("Saved scene %d (%s) -> %s", scene.number, scene.title, output_path)
+    logger.info("Saved scene %s (%s) -> %s", scene.number, scene.title, output_path)
     return output_path

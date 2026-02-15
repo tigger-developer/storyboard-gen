@@ -155,7 +155,7 @@ class TestProjectScenes:
 
         # Assert
         numbers = [s.number for s in project.scenes]
-        assert numbers == [1, 2, 3]
+        assert numbers == ["1", "2", "3"]
 
     def test_scene_characters_validated(self, sample_project_dir):
         # Act

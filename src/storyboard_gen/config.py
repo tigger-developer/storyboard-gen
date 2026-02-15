@@ -199,7 +199,7 @@ def _parse_scenes(
 
         scenes.append(
             Scene(
-                number=scene_data.get("number", i + 1),
+                number=str(scene_data.get("number", i + 1)),
                 title=scene_data.get("title", f"Scene {i + 1}"),
                 scene_type=scene_type,
                 prompt=scene_data.get("prompt", ""),

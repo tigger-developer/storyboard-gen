@@ -5,7 +5,7 @@ import logging
 import subprocess
 from pathlib import Path
 
-from storyboard_gen.models import Scene
+from storyboard_gen.models import Scene, format_scene_number
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ def apply_ken_burns(
 
     intermediate_dir = output_dir / "intermediate"
     intermediate_dir.mkdir(parents=True, exist_ok=True)
-    output_path = intermediate_dir / f"scene_{scene.number:02d}.mp4"
+    output_path = intermediate_dir / f"scene_{format_scene_number(scene.number)}.mp4"
 
     filter_template = KEN_BURNS_FILTERS[effect]
     vf = filter_template.format(frames=frames, width=width, height=height, fps=fps)
@@ -110,7 +110,7 @@ def apply_ken_burns(
     ]
 
     logger.info(
-        "Applying %s to scene %d (%.1fs at %dfps)",
+        "Applying %s to scene %s (%.1fs at %dfps)",
         effect,
         scene.number,
         scene.duration,

@@ -75,11 +75,11 @@ class TestScene:
     def test_scene_creation_with_defaults(self):
         # Arrange & Act
         scene = Scene(
-            number=1, title="Test", scene_type="still", prompt="A thing.", duration=5
+            number="1", title="Test", scene_type="still", prompt="A thing.", duration=5
         )
 
         # Assert
-        assert scene.number == 1
+        assert scene.number == "1"
         assert scene.camera is None
         assert scene.ken_burns is None
         assert scene.characters == []
@@ -88,7 +88,7 @@ class TestScene:
     def test_scene_creation_with_all_fields(self):
         # Arrange & Act
         scene = Scene(
-            number=3,
+            number="3",
             title="Action",
             scene_type="clip",
             prompt="Running.",
@@ -108,7 +108,7 @@ class TestScene:
     def test_scene_creation_with_float_duration(self):
         # Arrange & Act
         scene = Scene(
-            number=1, title="Test", scene_type="still", prompt="A thing.", duration=2.5
+            number="1", title="Test", scene_type="still", prompt="A thing.", duration=2.5
         )
 
         # Assert
@@ -118,7 +118,7 @@ class TestScene:
     def test_scene_creation_with_model_override(self):
         # Arrange & Act
         scene = Scene(
-            number=1,
+            number="1",
             title="Kontext scene",
             scene_type="still",
             prompt="A portrait.",
@@ -133,7 +133,7 @@ class TestScene:
     def test_scene_model_defaults_to_none(self):
         # Arrange & Act
         scene = Scene(
-            number=1, title="Test", scene_type="still", prompt="x", duration=5
+            number="1", title="Test", scene_type="still", prompt="x", duration=5
         )
 
         # Assert
@@ -142,7 +142,7 @@ class TestScene:
     def test_scene_creation_with_reference_override(self):
         # Arrange & Act
         scene = Scene(
-            number=1,
+            number="1",
             title="Override",
             scene_type="still",
             prompt="Portrait.",
@@ -156,7 +156,7 @@ class TestScene:
     def test_scene_reference_defaults_to_none(self):
         # Arrange & Act
         scene = Scene(
-            number=1, title="Test", scene_type="still", prompt="x", duration=5
+            number="1", title="Test", scene_type="still", prompt="x", duration=5
         )
 
         # Assert
@@ -170,9 +170,9 @@ class TestProject:
             "hero": Character(id="hero", description="The hero"),
         }
         scenes = [
-            Scene(number=1, title="S1", scene_type="still", prompt="P1", duration=5),
-            Scene(number=2, title="S2", scene_type="clip", prompt="P2", duration=6),
-            Scene(number=3, title="S3", scene_type="still", prompt="P3", duration=4),
+            Scene(number="1", title="S1", scene_type="still", prompt="P1", duration=5),
+            Scene(number="2", title="S2", scene_type="clip", prompt="P2", duration=6),
+            Scene(number="3", title="S3", scene_type="still", prompt="P3", duration=4),
         ]
         return Project(
             title="Test",
@@ -190,7 +190,7 @@ class TestProject:
             style_prefix="Style.",
             characters={},
             scenes=[
-                Scene(number=1, title="S1", scene_type="still", prompt="P", duration=5)
+                Scene(number="1", title="S1", scene_type="still", prompt="P", duration=5)
             ],
             still_provider=ProviderConfig(backend="fal", model="fal-ai/flux-general"),
             clip_provider=ProviderConfig(
@@ -210,7 +210,7 @@ class TestProject:
             style_prefix="Style.",
             characters={},
             scenes=[
-                Scene(number=1, title="S1", scene_type="still", prompt="P", duration=5)
+                Scene(number="1", title="S1", scene_type="still", prompt="P", duration=5)
             ],
         )
 
@@ -223,7 +223,7 @@ class TestProject:
         project = self._make_project()
 
         # Act
-        scene = project.get_scene(2)
+        scene = project.get_scene("2")
 
         # Assert
         assert scene.title == "S2"
@@ -234,7 +234,7 @@ class TestProject:
 
         # Act & Assert
         try:
-            project.get_scene(99)
+            project.get_scene("99")
             assert False, "Should have raised ValueError"
         except ValueError as e:
             assert "99" in str(e)
@@ -264,7 +264,7 @@ class TestProject:
     def test_build_prompt_prepends_style_prefix(self):
         # Arrange
         project = self._make_project()
-        scene = project.get_scene(1)
+        scene = project.get_scene("1")
 
         # Act
         prompt = project.build_prompt(scene)
@@ -284,7 +284,7 @@ class TestProject:
             ),
         }
         scene = Scene(
-            number=1,
+            number="1",
             title="T",
             scene_type="still",
             prompt="P",
@@ -316,7 +316,7 @@ class TestProject:
             "hero": Character(id="hero", description="Hero", reference=char_ref),
         }
         scene = Scene(
-            number=1,
+            number="1",
             title="T",
             scene_type="still",
             prompt="P",
@@ -347,7 +347,7 @@ class TestProject:
             style_prefix="Style.",
             characters={},
             scenes=[
-                Scene(number=1, title="S1", scene_type="still", prompt="P", duration=5)
+                Scene(number="1", title="S1", scene_type="still", prompt="P", duration=5)
             ],
             audio=Path("audio.m4a"),
         )
@@ -363,7 +363,7 @@ class TestProject:
             style_prefix="Style.",
             characters={},
             scenes=[
-                Scene(number=1, title="S1", scene_type="still", prompt="P", duration=5)
+                Scene(number="1", title="S1", scene_type="still", prompt="P", duration=5)
             ],
         )
 
@@ -378,7 +378,7 @@ class TestProject:
             "hero": Character(id="hero", description="Hero", reference=char_ref),
         }
         scene = Scene(
-            number=1,
+            number="1",
             title="T",
             scene_type="still",
             prompt="P",
