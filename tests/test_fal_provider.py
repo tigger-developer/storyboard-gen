@@ -462,3 +462,22 @@ class TestFalGenerateClip:
                 aspect_ratio="9:16",
                 duration=5,
             )
+
+    def test_raises_not_implemented_with_new_kwargs(self, tmp_path):
+        """New Veo kwargs should not break the NotImplementedError path."""
+        from pathlib import Path
+
+        provider = FalProvider(model="fal-ai/flux-pro/v1.1")
+
+        with pytest.raises(NotImplementedError, match="does not support video"):
+            provider.generate_clip(
+                prompt="Action",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                source_frame=Path("frame.png"),
+                last_frame=Path("last.png"),
+                extend_from_video=Path("clip.mp4"),
+                seed=42,
+                number_of_videos=2,
+            )

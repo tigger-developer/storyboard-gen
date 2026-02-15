@@ -399,6 +399,309 @@ class TestSceneModelOverride:
         assert project.get_scene(1).model is None
 
 
+class TestVeoClipFields:
+    """Tests for new Veo 3.1 clip generation fields (source_frame, last_frame, etc.)."""
+
+    def test_load_scene_with_source_frame(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Source Frame",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "clip",
+                    "prompt": "Animate.",
+                    "duration": 5,
+                    "source_frame": "output/stills/scene_01.png",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert — path resolved relative to project_dir
+        scene = project.get_scene(1)
+        assert scene.source_frame == tmp_path / "output/stills/scene_01.png"
+
+    def test_source_frame_on_still_raises(self, tmp_path):
+        # Arrange — source_frame only valid on clips
+        data = {
+            "title": "Bad",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "source_frame": "output/stills/scene_01.png",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="source_frame.*only valid on clip"):
+            load_project(tmp_path)
+
+    def test_load_scene_with_last_frame(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Last Frame",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "clip",
+                    "prompt": "Interpolate.",
+                    "duration": 5,
+                    "source_frame": "output/stills/scene_01.png",
+                    "last_frame": "output/stills/scene_02.png",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        scene = project.get_scene(1)
+        assert scene.last_frame == tmp_path / "output/stills/scene_02.png"
+
+    def test_last_frame_without_source_frame_raises(self, tmp_path):
+        # Arrange — last_frame requires source_frame
+        data = {
+            "title": "Bad",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "clip",
+                    "prompt": "x",
+                    "duration": 3,
+                    "last_frame": "output/stills/scene_02.png",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="last_frame.*requires source_frame"):
+            load_project(tmp_path)
+
+    def test_last_frame_on_still_raises(self, tmp_path):
+        # Arrange — last_frame only valid on clips
+        data = {
+            "title": "Bad",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "source_frame": "x.png",
+                    "last_frame": "y.png",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="source_frame.*only valid on clip"):
+            load_project(tmp_path)
+
+    def test_load_scene_with_extend_from(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Extend",
+            "scenes": [
+                {
+                    "number": 2,
+                    "type": "clip",
+                    "prompt": "Continue.",
+                    "duration": 5,
+                    "extend_from": "1",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        scene = project.get_scene(2)
+        assert scene.extend_from == "1"
+
+    def test_extend_from_on_still_raises(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Bad",
+            "scenes": [
+                {
+                    "number": 2,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "extend_from": "1",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="extend_from.*only valid on clip"):
+            load_project(tmp_path)
+
+    def test_extend_from_and_source_frame_mutually_exclusive(self, tmp_path):
+        # Arrange — both set on the same scene
+        data = {
+            "title": "Bad",
+            "scenes": [
+                {
+                    "number": 2,
+                    "type": "clip",
+                    "prompt": "x",
+                    "duration": 3,
+                    "source_frame": "output/stills/scene_01.png",
+                    "extend_from": "1",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="mutually exclusive"):
+            load_project(tmp_path)
+
+    def test_load_scene_with_seed(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Seeded",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "clip",
+                    "prompt": "Deterministic.",
+                    "duration": 5,
+                    "seed": 42,
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.get_scene(1).seed == 42
+
+    def test_load_scene_with_variants(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Variants",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "clip",
+                    "prompt": "Multi-take.",
+                    "duration": 5,
+                    "variants": 3,
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.get_scene(1).variants == 3
+
+    def test_variants_below_one_raises(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Bad",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "clip",
+                    "prompt": "x",
+                    "duration": 3,
+                    "variants": 0,
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="variants.*must be between 1 and 4"):
+            load_project(tmp_path)
+
+    def test_variants_above_four_raises(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Bad",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "clip",
+                    "prompt": "x",
+                    "duration": 3,
+                    "variants": 5,
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="variants.*must be between 1 and 4"):
+            load_project(tmp_path)
+
+    def test_scene_without_new_fields_defaults_correctly(self, tmp_path):
+        # Arrange — backward compatibility: no new fields
+        data = {
+            "title": "Compat",
+            "scenes": [
+                {"number": 1, "type": "clip", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert — all new fields at defaults
+        scene = project.get_scene(1)
+        assert scene.source_frame is None
+        assert scene.last_frame is None
+        assert scene.extend_from is None
+        assert scene.seed is None
+        assert scene.variants == 1
+
+    def test_extend_from_integer_parsed_as_string(self, tmp_path):
+        # Arrange — YAML may parse "1" as integer
+        data = {
+            "title": "Int Extend",
+            "scenes": [
+                {
+                    "number": 2,
+                    "type": "clip",
+                    "prompt": "Continue.",
+                    "duration": 5,
+                    "extend_from": 1,
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert — parsed as string
+        assert project.get_scene(2).extend_from == "1"
+
+
 class TestProjectDuration:
     def test_load_project_preserves_float_duration(self, tmp_path):
         # Arrange

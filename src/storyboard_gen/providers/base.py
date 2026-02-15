@@ -42,7 +42,13 @@ class ImageProvider(ABC):
         duration: float,
         reference_images: list[Path] | None = None,
         options: dict | None = None,
-    ) -> bytes:
+        *,
+        source_frame: Path | None = None,
+        last_frame: Path | None = None,
+        extend_from_video: Path | None = None,
+        seed: int | None = None,
+        number_of_videos: int = 1,
+    ) -> list[bytes]:
         """Generate a video clip from a prompt.
 
         Args:
@@ -52,9 +58,14 @@ class ImageProvider(ABC):
             duration: Target duration in seconds.
             reference_images: Optional list of reference image paths.
             options: Provider-specific options from project.yaml.
+            source_frame: Image to use as first frame (image-to-video).
+            last_frame: Image to interpolate to (requires source_frame).
+            extend_from_video: Path to video to extend from.
+            seed: Reproducibility seed.
+            number_of_videos: Number of variant takes to generate (1-4).
 
         Returns:
-            Raw video bytes (MP4).
+            List of raw video bytes (MP4), one per variant.
 
         Raises:
             RuntimeError: On generation failure.

@@ -3,6 +3,8 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from storyboard_gen.providers.google import (
     GoogleProvider,
     IMAGEN_CAPABILITY_MODEL,
@@ -18,6 +20,34 @@ def _make_mock_client(image_bytes: bytes = b"png-bytes"):
     client.models.generate_images.return_value = MagicMock(
         generated_images=[mock_image]
     )
+    return client
+
+
+def _make_mock_video_client(video_bytes_list: list[bytes] | None = None):
+    """Create a mock Google GenAI client that returns video bytes from Veo.
+
+    Args:
+        video_bytes_list: List of bytes for each generated video.
+            Defaults to a single video with b"video-bytes".
+    """
+    if video_bytes_list is None:
+        video_bytes_list = [b"video-bytes"]
+
+    client = MagicMock()
+    mock_videos = []
+    for vb in video_bytes_list:
+        mock_video = MagicMock()
+        mock_video.video.video_bytes = vb
+        mock_video.video.uri = None
+        mock_videos.append(mock_video)
+
+    operation = MagicMock()
+    operation.done = True
+    if video_bytes_list:
+        operation.result.generated_videos = mock_videos
+    else:
+        operation.result.generated_videos = []
+    client.models.generate_videos.return_value = operation
     return client
 
 
@@ -166,3 +196,222 @@ class TestGoogleMultiReference:
         # Assert — falls back to generate_images
         client.models.generate_images.assert_called_once()
         client.models.edit_image.assert_not_called()
+
+
+class TestGoogleClipGeneration:
+    """Tests for Veo clip generation with full parameter support."""
+
+    def test_clip_passes_aspect_ratio(self, tmp_path):
+        """aspect_ratio should be included in GenerateVideosConfig."""
+        # Arrange
+        client = _make_mock_video_client()
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act
+        provider.generate_clip(
+            prompt="A boy running",
+            output_path=tmp_path / "scene_01.mp4",
+            aspect_ratio="9:16",
+            duration=5,
+            client=client,
+        )
+
+        # Assert
+        call_kwargs = client.models.generate_videos.call_args.kwargs
+        config = call_kwargs["config"]
+        assert config.aspect_ratio == "9:16"
+
+    def test_clip_passes_reference_images(self, tmp_path):
+        """reference_images should be passed as types.Image objects in config."""
+        # Arrange
+        ref = tmp_path / "ref.png"
+        ref.write_bytes(b"fake-image")
+        client = _make_mock_video_client()
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act
+        provider.generate_clip(
+            prompt="A boy running",
+            output_path=tmp_path / "scene_01.mp4",
+            aspect_ratio="9:16",
+            duration=5,
+            reference_images=[ref],
+            client=client,
+        )
+
+        # Assert
+        call_kwargs = client.models.generate_videos.call_args.kwargs
+        config = call_kwargs["config"]
+        assert len(config.reference_images) == 1
+
+    def test_clip_skips_nonexistent_references(self, tmp_path):
+        """Non-existent reference files should be skipped."""
+        # Arrange
+        missing = tmp_path / "missing.png"
+        client = _make_mock_video_client()
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act
+        provider.generate_clip(
+            prompt="A boy running",
+            output_path=tmp_path / "scene_01.mp4",
+            aspect_ratio="9:16",
+            duration=5,
+            reference_images=[missing],
+            client=client,
+        )
+
+        # Assert — no reference_images in config (or empty list)
+        call_kwargs = client.models.generate_videos.call_args.kwargs
+        config = call_kwargs["config"]
+        assert not config.reference_images
+
+    def test_clip_passes_source_frame_as_image(self, tmp_path):
+        """source_frame should be passed as image= kwarg."""
+        # Arrange
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"fake-frame")
+        client = _make_mock_video_client()
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act
+        provider.generate_clip(
+            prompt="Animate this",
+            output_path=tmp_path / "scene_01.mp4",
+            aspect_ratio="9:16",
+            duration=5,
+            source_frame=frame,
+            client=client,
+        )
+
+        # Assert
+        call_kwargs = client.models.generate_videos.call_args.kwargs
+        assert call_kwargs["image"] is not None
+
+    def test_clip_passes_last_frame_in_config(self, tmp_path):
+        """last_frame should be passed in GenerateVideosConfig."""
+        # Arrange
+        frame = tmp_path / "first.png"
+        frame.write_bytes(b"fake-first")
+        last = tmp_path / "last.png"
+        last.write_bytes(b"fake-last")
+        client = _make_mock_video_client()
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act
+        provider.generate_clip(
+            prompt="Interpolate",
+            output_path=tmp_path / "scene_01.mp4",
+            aspect_ratio="9:16",
+            duration=5,
+            source_frame=frame,
+            last_frame=last,
+            client=client,
+        )
+
+        # Assert
+        call_kwargs = client.models.generate_videos.call_args.kwargs
+        config = call_kwargs["config"]
+        assert config.last_frame is not None
+
+    def test_clip_passes_extend_from_video(self, tmp_path):
+        """extend_from_video should be passed as video= kwarg."""
+        # Arrange
+        video = tmp_path / "prev_clip.mp4"
+        video.write_bytes(b"fake-video")
+        client = _make_mock_video_client()
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act
+        provider.generate_clip(
+            prompt="Continue scene",
+            output_path=tmp_path / "scene_02.mp4",
+            aspect_ratio="9:16",
+            duration=5,
+            extend_from_video=video,
+            client=client,
+        )
+
+        # Assert
+        call_kwargs = client.models.generate_videos.call_args.kwargs
+        assert call_kwargs["video"] is not None
+
+    def test_clip_passes_seed_in_config(self, tmp_path):
+        """seed should be passed in GenerateVideosConfig."""
+        # Arrange
+        client = _make_mock_video_client()
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act
+        provider.generate_clip(
+            prompt="Deterministic",
+            output_path=tmp_path / "scene_01.mp4",
+            aspect_ratio="9:16",
+            duration=5,
+            seed=42,
+            client=client,
+        )
+
+        # Assert
+        call_kwargs = client.models.generate_videos.call_args.kwargs
+        config = call_kwargs["config"]
+        assert config.seed == 42
+
+    def test_clip_passes_number_of_videos_in_config(self, tmp_path):
+        """number_of_videos should be passed in GenerateVideosConfig."""
+        # Arrange
+        client = _make_mock_video_client()
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act
+        provider.generate_clip(
+            prompt="Multi-take",
+            output_path=tmp_path / "scene_01.mp4",
+            aspect_ratio="9:16",
+            duration=5,
+            number_of_videos=3,
+            client=client,
+        )
+
+        # Assert
+        call_kwargs = client.models.generate_videos.call_args.kwargs
+        config = call_kwargs["config"]
+        assert config.number_of_videos == 3
+
+    def test_clip_returns_list_of_bytes(self, tmp_path):
+        """generate_clip should return a list of video bytes."""
+        # Arrange
+        client = _make_mock_video_client(video_bytes_list=[b"video-1", b"video-2"])
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act
+        result = provider.generate_clip(
+            prompt="Multi-take",
+            output_path=tmp_path / "scene_01.mp4",
+            aspect_ratio="9:16",
+            duration=5,
+            number_of_videos=2,
+            client=client,
+        )
+
+        # Assert
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert result[0] == b"video-1"
+        assert result[1] == b"video-2"
+
+    def test_clip_no_video_generated_raises(self, tmp_path):
+        """RuntimeError when no videos are generated."""
+        # Arrange
+        client = _make_mock_video_client(video_bytes_list=[])
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match="No video generated"):
+            provider.generate_clip(
+                prompt="Fail",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                client=client,
+            )

@@ -197,6 +197,57 @@ def _parse_scenes(
         if ref_str:
             scene_reference = project_dir / ref_str
 
+        # Veo 3.1 clip generation fields
+        source_frame = None
+        source_frame_str = scene_data.get("source_frame")
+        if source_frame_str:
+            if scene_type != "clip":
+                raise ConfigError(
+                    f"Scene {i + 1}: source_frame is only valid on clip scenes"
+                )
+            source_frame = project_dir / source_frame_str
+
+        last_frame = None
+        last_frame_str = scene_data.get("last_frame")
+        if last_frame_str:
+            if scene_type != "clip":
+                raise ConfigError(
+                    f"Scene {i + 1}: last_frame is only valid on clip scenes"
+                )
+            if not source_frame_str:
+                raise ConfigError(
+                    f"Scene {i + 1}: last_frame requires source_frame to be set"
+                )
+            last_frame = project_dir / last_frame_str
+
+        extend_from = None
+        extend_from_raw = scene_data.get("extend_from")
+        if extend_from_raw is not None:
+            if scene_type != "clip":
+                raise ConfigError(
+                    f"Scene {i + 1}: extend_from is only valid on clip scenes"
+                )
+            if source_frame_str:
+                raise ConfigError(
+                    f"Scene {i + 1}: extend_from and source_frame are "
+                    f"mutually exclusive"
+                )
+            extend_from = str(extend_from_raw)
+
+        seed = None
+        seed_raw = scene_data.get("seed")
+        if seed_raw is not None:
+            seed = int(seed_raw)
+
+        variants = 1
+        variants_raw = scene_data.get("variants")
+        if variants_raw is not None:
+            variants = int(variants_raw)
+            if variants < 1 or variants > 4:
+                raise ConfigError(
+                    f"Scene {i + 1}: variants must be between 1 and 4, got {variants}"
+                )
+
         scenes.append(
             Scene(
                 number=str(scene_data.get("number", i + 1)),
@@ -210,6 +261,11 @@ def _parse_scenes(
                 provider=scene_provider,
                 model=scene_model,
                 reference=scene_reference,
+                source_frame=source_frame,
+                last_frame=last_frame,
+                extend_from=extend_from,
+                seed=seed,
+                variants=variants,
             )
         )
 

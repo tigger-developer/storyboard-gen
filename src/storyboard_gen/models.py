@@ -52,6 +52,11 @@ class Scene:
     provider: ProviderConfig | None = None  # per-scene provider override
     model: str | None = None  # per-scene model-only override (shorthand)
     reference: Path | None = None  # per-scene reference image override
+    source_frame: Path | None = None  # image-to-video first frame (clips only)
+    last_frame: Path | None = None  # interpolation end frame (requires source_frame)
+    extend_from: str | None = None  # scene number to extend from (clips only)
+    seed: int | None = None  # reproducibility seed
+    variants: int = 1  # number of video takes (1-4)
 
 
 VALID_SCENE_TYPES = {"still", "clip"}

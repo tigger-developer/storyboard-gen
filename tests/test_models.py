@@ -166,6 +166,122 @@ class TestScene:
         # Assert
         assert scene.reference is None
 
+    def test_scene_source_frame_defaults_to_none(self):
+        # Arrange & Act
+        scene = Scene(
+            number="1", title="Test", scene_type="clip", prompt="x", duration=5
+        )
+
+        # Assert
+        assert scene.source_frame is None
+
+    def test_scene_creation_with_source_frame(self):
+        # Arrange & Act
+        scene = Scene(
+            number="1",
+            title="Animated",
+            scene_type="clip",
+            prompt="Action.",
+            duration=5,
+            source_frame=Path("output/stills/scene_01.png"),
+        )
+
+        # Assert
+        assert scene.source_frame == Path("output/stills/scene_01.png")
+
+    def test_scene_last_frame_defaults_to_none(self):
+        # Arrange & Act
+        scene = Scene(
+            number="1", title="Test", scene_type="clip", prompt="x", duration=5
+        )
+
+        # Assert
+        assert scene.last_frame is None
+
+    def test_scene_creation_with_last_frame(self):
+        # Arrange & Act
+        scene = Scene(
+            number="1",
+            title="Interpolated",
+            scene_type="clip",
+            prompt="Transition.",
+            duration=5,
+            source_frame=Path("output/stills/scene_01.png"),
+            last_frame=Path("output/stills/scene_02.png"),
+        )
+
+        # Assert
+        assert scene.last_frame == Path("output/stills/scene_02.png")
+
+    def test_scene_extend_from_defaults_to_none(self):
+        # Arrange & Act
+        scene = Scene(
+            number="2", title="Test", scene_type="clip", prompt="x", duration=5
+        )
+
+        # Assert
+        assert scene.extend_from is None
+
+    def test_scene_creation_with_extend_from(self):
+        # Arrange & Act
+        scene = Scene(
+            number="2",
+            title="Continuation",
+            scene_type="clip",
+            prompt="Continue.",
+            duration=5,
+            extend_from="1",
+        )
+
+        # Assert
+        assert scene.extend_from == "1"
+
+    def test_scene_seed_defaults_to_none(self):
+        # Arrange & Act
+        scene = Scene(
+            number="1", title="Test", scene_type="clip", prompt="x", duration=5
+        )
+
+        # Assert
+        assert scene.seed is None
+
+    def test_scene_creation_with_seed(self):
+        # Arrange & Act
+        scene = Scene(
+            number="1",
+            title="Seeded",
+            scene_type="clip",
+            prompt="Deterministic.",
+            duration=5,
+            seed=42,
+        )
+
+        # Assert
+        assert scene.seed == 42
+
+    def test_scene_variants_defaults_to_one(self):
+        # Arrange & Act
+        scene = Scene(
+            number="1", title="Test", scene_type="clip", prompt="x", duration=5
+        )
+
+        # Assert
+        assert scene.variants == 1
+
+    def test_scene_creation_with_variants(self):
+        # Arrange & Act
+        scene = Scene(
+            number="1",
+            title="Multi-take",
+            scene_type="clip",
+            prompt="Action.",
+            duration=5,
+            variants=3,
+        )
+
+        # Assert
+        assert scene.variants == 3
+
 
 class TestProject:
     def _make_project(self) -> Project:

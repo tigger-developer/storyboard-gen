@@ -180,6 +180,36 @@ def generate_still(
     return output_path
 
 
+def _resolve_extend_from(scene: Scene, output_dir: Path) -> Path | None:
+    """Resolve extend_from scene number to an actual .mp4 path.
+
+    Checks clips/ first, then intermediate/. Returns None if extend_from
+    is not set on the scene.
+
+    Raises:
+        RuntimeError: If extend_from is set but the source clip is not found.
+    """
+    if scene.extend_from is None:
+        return None
+
+    scene_num = format_scene_number(scene.extend_from)
+    filename = f"scene_{scene_num}.mp4"
+
+    clips_path = output_dir / "clips" / filename
+    if clips_path.exists():
+        return clips_path
+
+    intermediate_path = output_dir / "intermediate" / filename
+    if intermediate_path.exists():
+        return intermediate_path
+
+    raise RuntimeError(
+        f"Cannot extend from scene {scene.extend_from}: "
+        f"no clip found at {clips_path} or {intermediate_path}. "
+        f"Generate that scene first."
+    )
+
+
 def generate_clip(
     scene: Scene,
     project: Project,
@@ -195,7 +225,7 @@ def generate_clip(
         provider: Optional pre-created provider (for testing).
 
     Returns:
-        Path to the saved MP4 file.
+        Path to the saved MP4 file (first variant if multiple).
 
     Raises:
         ValueError: If the scene is not a clip type.
@@ -217,19 +247,48 @@ def generate_clip(
     logger.debug("Prompt: %s", full_prompt)
 
     reference_images = project.get_reference_images(scene)
-    output_path = clips_dir / f"scene_{format_scene_number(scene.number)}.mp4"
+    scene_num = format_scene_number(scene.number)
 
-    video_bytes = provider.generate_clip(
+    # Resolve extend_from to an actual video path
+    extend_from_video = _resolve_extend_from(scene, output_dir)
+
+    video_bytes_list = provider.generate_clip(
         prompt=full_prompt,
-        output_path=output_path,
+        output_path=clips_dir / f"scene_{scene_num}.mp4",
         aspect_ratio=project.aspect_ratio,
         duration=scene.duration,
         reference_images=reference_images or None,
         options=provider.options,
+        source_frame=scene.source_frame,
+        last_frame=scene.last_frame,
+        extend_from_video=extend_from_video,
+        seed=scene.seed,
+        number_of_videos=scene.variants,
     )
 
-    _archive_existing(output_path)
-    output_path.write_bytes(video_bytes)
+    if scene.variants > 1:
+        # Archive existing variant files and bare file
+        bare_path = clips_dir / f"scene_{scene_num}.mp4"
+        _archive_existing(bare_path)
+        for vi in range(4):
+            variant_path = clips_dir / f"scene_{scene_num}_v{vi}.mp4"
+            _archive_existing(variant_path)
 
-    logger.info("Saved scene %s (%s) -> %s", scene.number, scene.title, output_path)
-    return output_path
+        # Save variant files
+        first_path = None
+        for vi, vb in enumerate(video_bytes_list):
+            variant_path = clips_dir / f"scene_{scene_num}_v{vi}.mp4"
+            variant_path.write_bytes(vb)
+            logger.info(
+                "Saved variant %d for scene %s -> %s", vi, scene.number, variant_path
+            )
+            if first_path is None:
+                first_path = variant_path
+        return first_path
+    else:
+        # Single variant — save as bare file (existing behaviour)
+        output_path = clips_dir / f"scene_{scene_num}.mp4"
+        _archive_existing(output_path)
+        output_path.write_bytes(video_bytes_list[0])
+        logger.info("Saved scene %s (%s) -> %s", scene.number, scene.title, output_path)
+        return output_path

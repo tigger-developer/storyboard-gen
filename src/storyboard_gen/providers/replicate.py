@@ -116,7 +116,13 @@ class ReplicateProvider(ImageProvider):
         duration: float,
         reference_images: list[Path] | None = None,
         options: dict | None = None,
-    ) -> bytes:
+        *,
+        source_frame: Path | None = None,
+        last_frame: Path | None = None,
+        extend_from_video: Path | None = None,
+        seed: int | None = None,
+        number_of_videos: int = 1,
+    ) -> list[bytes]:
         """Replicate provider does not support video generation.
 
         Raises:

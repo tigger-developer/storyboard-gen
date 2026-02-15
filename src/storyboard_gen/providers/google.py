@@ -138,18 +138,64 @@ class GoogleProvider(ImageProvider):
         reference_images: list[Path] | None = None,
         options: dict | None = None,
         *,
+        source_frame: Path | None = None,
+        last_frame: Path | None = None,
+        extend_from_video: Path | None = None,
+        seed: int | None = None,
+        number_of_videos: int = 1,
         client: object | None = None,
         poll_interval: int = 10,
         max_wait: int = 600,
-    ) -> bytes:
-        """Generate a video clip via Veo."""
+    ) -> list[bytes]:
+        """Generate a video clip via Veo.
+
+        Builds a GenerateVideosConfig with aspect_ratio, reference_images,
+        last_frame, seed, and number_of_videos. Optionally passes
+        source_frame as image= or extend_from_video as video=.
+        """
+        from google.genai import types
+
         if client is None:
             client = self._get_client()
 
-        operation = client.models.generate_videos(
-            model=self.model,
-            prompt=prompt,
+        # Build reference images list for config
+        ref_images = []
+        if reference_images:
+            for ref_path in reference_images:
+                if ref_path.exists():
+                    ref_images.append(types.Image.from_file(location=str(ref_path)))
+                    logger.info("Clip reference: %s", ref_path)
+                else:
+                    logger.warning("Reference image not found, skipping: %s", ref_path)
+
+        # Build config
+        config = types.GenerateVideosConfig(
+            aspect_ratio=aspect_ratio,
+            reference_images=ref_images or None,
+            number_of_videos=number_of_videos,
         )
+        if last_frame is not None:
+            config.last_frame = types.Image.from_file(location=str(last_frame))
+        if seed is not None:
+            config.seed = seed
+
+        # Build generate_videos kwargs
+        gen_kwargs = {
+            "model": self.model,
+            "prompt": prompt,
+            "config": config,
+        }
+
+        if source_frame is not None:
+            gen_kwargs["image"] = types.Image.from_file(location=str(source_frame))
+            logger.info("Image-to-video source frame: %s", source_frame)
+
+        if extend_from_video is not None:
+            video_bytes = extend_from_video.read_bytes()
+            gen_kwargs["video"] = types.Video(video_bytes=video_bytes)
+            logger.info("Extending from video: %s", extend_from_video)
+
+        operation = client.models.generate_videos(**gen_kwargs)
 
         elapsed = 0
         while not operation.done:
@@ -162,16 +208,23 @@ class GoogleProvider(ImageProvider):
         if not operation.result or not operation.result.generated_videos:
             raise RuntimeError("No video generated")
 
-        video = operation.result.generated_videos[0]
+        results = []
+        for video_entry in operation.result.generated_videos:
+            if hasattr(video_entry, "video") and hasattr(
+                video_entry.video, "video_bytes"
+            ):
+                if video_entry.video.video_bytes:
+                    results.append(video_entry.video.video_bytes)
+                    continue
+            if hasattr(video_entry, "video") and hasattr(video_entry.video, "uri"):
+                if video_entry.video.uri:
+                    logger.info("Downloading from %s", video_entry.video.uri)
+                    _download_gcs(video_entry.video.uri, output_path)
+                    results.append(output_path.read_bytes())
+                    continue
+            raise RuntimeError("Unexpected video response format")
 
-        if hasattr(video, "video") and hasattr(video.video, "video_bytes"):
-            return video.video.video_bytes
-        if hasattr(video, "video") and hasattr(video.video, "uri"):
-            logger.info("Downloading from %s", video.video.uri)
-            _download_gcs(video.video.uri, output_path)
-            return output_path.read_bytes()
-
-        raise RuntimeError("Unexpected video response format")
+        return results
 
 
 def _download_gcs(uri: str, dest: Path) -> None:
