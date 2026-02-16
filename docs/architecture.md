@@ -1,4 +1,4 @@
-<!-- Version: 1.0 | Last updated: 2026-02-16 -->
+<!-- Version: 1.1 | Last updated: 2026-02-16 -->
 
 # Architecture: storyboard-gen
 
@@ -49,7 +49,7 @@ Concatenates all scene outputs (Ken Burns stills + video clips) in order using F
 
 ### Kdenlive export (`kdenlive.py`)
 
-Generates a Kdenlive project file (MLT XML format) for timeline editing. References still PNGs directly (not pre-rendered intermediate MP4s), with Ken Burns pan/zoom effects applied via Kdenlive's native `qtblend` transform filter. Includes the audio track if configured. The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adjusting Ken Burns keyframes, and adding transitions before final render.
+Generates a Kdenlive project file (MLT XML format) for timeline editing. References still PNGs directly (not pre-rendered intermediate MP4s), with Ken Burns pan/zoom effects applied via Kdenlive's native `qtblend` transform filter. Audio producers are tagged with `video_index=-1`, `audio_index=0`, and `kdenlive:clip_type=1` so MLT handles them as audio-only clips. When ffprobe is available, audio metadata (sample rate, channels, codec) is probed at export time. The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adjusting Ken Burns keyframes, and adding transitions before final render.
 
 ## Data flow
 
@@ -73,7 +73,7 @@ assemble.py ──▶ output/final/assembled.mp4
     │
     ▼
 kdenlive.py ──▶ output/final/{title}.kdenlive
-              ──▶ MLT XML with stills (affine Ken Burns), clips, dissolves, audio
+              ──▶ MLT XML with stills (qtblend Ken Burns), clips, audio
 ```
 
 ## Audio resolution

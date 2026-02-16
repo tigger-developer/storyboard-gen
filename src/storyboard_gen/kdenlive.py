@@ -1,7 +1,9 @@
 # ABOUTME: Kdenlive project file generator for storyboard-gen.
 # ABOUTME: Exports an MLT XML project for timeline editing with Ken Burns transform effects.
 
+import json
 import logging
+import subprocess
 import uuid
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
@@ -130,9 +132,12 @@ def _build_mlt(
     # Audio producer
     audio_info: ProducerInfo | None = None
     if audio_path is not None:
-        _add_scene_producer(
+        audio_producer = _add_scene_producer(
             mlt, "audio_producer", audio_path.resolve(), 0, kdenlive_id, "Audio"
         )
+        _set_prop(audio_producer, "video_index", "-1")
+        _set_prop(audio_producer, "audio_index", "0")
+        _set_prop(audio_producer, "kdenlive:clip_type", "1")
         audio_info = ("audio_producer", 0, kdenlive_id, "Audio")
         kdenlive_id += 1
 
@@ -355,6 +360,62 @@ def _build_project_tractor(mlt: ET.Element, total_frames: int) -> None:
         producer="sequence_tractor",
         **{"in": "0", "out": str(max(total_frames - 1, 0))},
     )
+
+
+# --- Audio probing ---
+
+
+def _probe_audio(audio_path: Path) -> dict | None:
+    """Probe an audio file with ffprobe to extract stream metadata.
+
+    Returns a dict with sample_rate, channels, codec_name on success,
+    or None if ffprobe is unavailable or the probe fails.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-select_streams",
+                "a:0",
+                str(audio_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except FileNotFoundError:
+        logger.debug("ffprobe not found, skipping audio probe")
+        return None
+    except subprocess.TimeoutExpired:
+        logger.warning("ffprobe timed out probing %s", audio_path)
+        return None
+
+    if result.returncode != 0:
+        logger.debug("ffprobe returned %d for %s", result.returncode, audio_path)
+        return None
+
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        logger.debug("ffprobe output not valid JSON for %s", audio_path)
+        return None
+
+    streams = data.get("streams", [])
+    if not streams:
+        logger.debug("No audio streams found in %s", audio_path)
+        return None
+
+    stream = streams[0]
+    return {
+        "sample_rate": stream.get("sample_rate", "48000"),
+        "channels": stream.get("channels", 2),
+        "codec_name": stream.get("codec_name", "unknown"),
+    }
 
 
 # --- Ken Burns filter ---

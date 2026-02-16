@@ -1,9 +1,11 @@
 # ABOUTME: Tests for storyboard_gen.kdenlive.
 # ABOUTME: Validates Kdenlive MLT XML project generation with Ken Burns transform effects.
 
+import json
 import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -13,6 +15,7 @@ from storyboard_gen.config import load_project
 from storyboard_gen.kdenlive import (
     _build_mlt,
     _frames,
+    _probe_audio,
     _resolve_clip_path,
     generate_kdenlive,
 )
@@ -753,3 +756,141 @@ class TestKenBurnsFilter:
         assert transform is not None
         rect = _get_prop(transform, "rect")
         assert rect == "0=0 0 1920 1080 1;149=-192 -108 2304 1296 1"
+
+
+class TestAudioProducer:
+    """Tests for audio-specific producer properties in Kdenlive export."""
+
+    def _build_with_audio(self, tmp_path):
+        """Build an MLT document with an audio file."""
+        audio_file = tmp_path / "audio.m4a"
+        audio_file.write_bytes(b"fake-audio")
+        project_dir = _make_project_dir(tmp_path)
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+        return _build_mlt(project, output_dir, 30, audio_file)
+
+    def test_audio_producer_has_video_index_minus_one(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build_with_audio(tmp_path)
+        audio = mlt.find("producer[@id='audio_producer']")
+
+        # Assert — tells MLT not to probe for video in audio-only files
+        assert _get_prop(audio, "video_index") == "-1"
+
+    def test_audio_producer_has_audio_index_zero(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build_with_audio(tmp_path)
+        audio = mlt.find("producer[@id='audio_producer']")
+
+        # Assert — explicitly selects first audio stream
+        assert _get_prop(audio, "audio_index") == "0"
+
+    def test_audio_producer_has_clip_type_audio(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build_with_audio(tmp_path)
+        audio = mlt.find("producer[@id='audio_producer']")
+
+        # Assert — Kdenlive audio clip classification
+        assert _get_prop(audio, "kdenlive:clip_type") == "1"
+
+    def test_scene_producers_no_audio_properties(self, tmp_path):
+        # Arrange & Act — scene producers should NOT have audio-only properties
+        project_dir = _make_project_dir(tmp_path)
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+        mlt = _build_mlt(project, output_dir, 30, None)
+
+        # Assert
+        for producer in mlt.findall("producer"):
+            pid = producer.get("id")
+            if pid == "black_track":
+                continue
+            assert _get_prop(producer, "video_index") is None
+            assert _get_prop(producer, "kdenlive:clip_type") is None
+
+
+class TestProbeAudio:
+    """Tests for ffprobe audio metadata probing."""
+
+    def test_probe_returns_metadata_on_success(self, tmp_path):
+        # Arrange
+        audio_file = tmp_path / "test.m4a"
+        audio_file.write_bytes(b"fake")
+        fake_output = json.dumps(
+            {
+                "streams": [
+                    {
+                        "sample_rate": "44100",
+                        "channels": 1,
+                        "codec_name": "aac",
+                    }
+                ]
+            }
+        )
+
+        # Act
+        with patch("storyboard_gen.kdenlive.subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = fake_output
+            result = _probe_audio(audio_file)
+
+        # Assert
+        assert result == {"sample_rate": "44100", "channels": 1, "codec_name": "aac"}
+
+    def test_probe_returns_none_when_ffprobe_missing(self, tmp_path):
+        # Arrange
+        audio_file = tmp_path / "test.m4a"
+        audio_file.write_bytes(b"fake")
+
+        # Act
+        with patch(
+            "storyboard_gen.kdenlive.subprocess.run", side_effect=FileNotFoundError
+        ):
+            result = _probe_audio(audio_file)
+
+        # Assert
+        assert result is None
+
+    def test_probe_returns_none_on_nonzero_exit(self, tmp_path):
+        # Arrange
+        audio_file = tmp_path / "test.m4a"
+        audio_file.write_bytes(b"fake")
+
+        # Act
+        with patch("storyboard_gen.kdenlive.subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 1
+            mock_run.return_value.stdout = ""
+            result = _probe_audio(audio_file)
+
+        # Assert
+        assert result is None
+
+    def test_probe_returns_none_on_timeout(self, tmp_path):
+        # Arrange
+        audio_file = tmp_path / "test.m4a"
+        audio_file.write_bytes(b"fake")
+
+        # Act
+        with patch(
+            "storyboard_gen.kdenlive.subprocess.run",
+            side_effect=__import__("subprocess").TimeoutExpired("ffprobe", 10),
+        ):
+            result = _probe_audio(audio_file)
+
+        # Assert
+        assert result is None
+
+    def test_probe_returns_none_on_empty_streams(self, tmp_path):
+        # Arrange
+        audio_file = tmp_path / "test.m4a"
+        audio_file.write_bytes(b"fake")
+
+        # Act
+        with patch("storyboard_gen.kdenlive.subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = json.dumps({"streams": []})
+            result = _probe_audio(audio_file)
+
+        # Assert
+        assert result is None
