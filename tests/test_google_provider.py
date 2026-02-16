@@ -221,8 +221,10 @@ class TestGoogleClipGeneration:
         config = call_kwargs["config"]
         assert config.aspect_ratio == "9:16"
 
-    def test_clip_passes_reference_images(self, tmp_path):
-        """reference_images should be passed as types.Image objects in config."""
+    def test_clip_passes_reference_images_as_wrapped_objects(self, tmp_path):
+        """reference_images should be wrapped in VideoGenerationReferenceImage."""
+        from google.genai import types
+
         # Arrange
         ref = tmp_path / "ref.png"
         ref.write_bytes(b"fake-image")
@@ -243,6 +245,63 @@ class TestGoogleClipGeneration:
         call_kwargs = client.models.generate_videos.call_args.kwargs
         config = call_kwargs["config"]
         assert len(config.reference_images) == 1
+        ref_img = config.reference_images[0]
+        assert isinstance(ref_img, types.VideoGenerationReferenceImage)
+        assert ref_img.reference_type == "ASSET"
+
+    def test_clip_skips_references_when_source_frame_set(self, tmp_path):
+        """reference_images should be omitted when source_frame is provided."""
+        # Arrange
+        ref = tmp_path / "ref.png"
+        ref.write_bytes(b"fake-image")
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"fake-frame")
+        client = _make_mock_video_client()
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act
+        provider.generate_clip(
+            prompt="Animate with ref",
+            output_path=tmp_path / "scene_01.mp4",
+            aspect_ratio="9:16",
+            duration=5,
+            reference_images=[ref],
+            source_frame=frame,
+            client=client,
+        )
+
+        # Assert — reference_images not set, image kwarg IS set
+        call_kwargs = client.models.generate_videos.call_args.kwargs
+        config = call_kwargs["config"]
+        assert not config.reference_images
+        assert call_kwargs["image"] is not None
+
+    def test_clip_skips_references_when_extend_from_video_set(self, tmp_path):
+        """reference_images should be omitted when extend_from_video is provided."""
+        # Arrange
+        ref = tmp_path / "ref.png"
+        ref.write_bytes(b"fake-image")
+        video = tmp_path / "prev.mp4"
+        video.write_bytes(b"fake-video")
+        client = _make_mock_video_client()
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act
+        provider.generate_clip(
+            prompt="Extend with ref",
+            output_path=tmp_path / "scene_01.mp4",
+            aspect_ratio="9:16",
+            duration=5,
+            reference_images=[ref],
+            extend_from_video=video,
+            client=client,
+        )
+
+        # Assert — reference_images not set, video kwarg IS set
+        call_kwargs = client.models.generate_videos.call_args.kwargs
+        config = call_kwargs["config"]
+        assert not config.reference_images
+        assert call_kwargs["video"] is not None
 
     def test_clip_skips_nonexistent_references(self, tmp_path):
         """Non-existent reference files should be skipped."""

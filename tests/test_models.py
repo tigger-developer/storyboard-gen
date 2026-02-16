@@ -498,6 +498,91 @@ class TestProject:
         # Assert
         assert project.audio is None
 
+    def test_build_prompt_includes_character_descriptions(self):
+        """build_prompt should inject character descriptions when scene has characters."""
+        # Arrange
+        chars = {
+            "hero": Character(id="hero", description="A tall boy with red hair"),
+            "mum": Character(id="mum", description="A kind woman in a blue dress"),
+        }
+        scene = Scene(
+            number="1",
+            title="Meeting",
+            scene_type="still",
+            prompt="They meet at the gate.",
+            duration=5,
+            characters=["hero", "mum"],
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Watercolour.",
+            characters=chars,
+            scenes=[scene],
+        )
+
+        # Act
+        prompt = project.build_prompt(scene)
+
+        # Assert — character descriptions are included
+        assert "A tall boy with red hair" in prompt
+        assert "A kind woman in a blue dress" in prompt
+        assert "Watercolour." in prompt
+        assert "They meet at the gate." in prompt
+
+    def test_build_prompt_no_characters_unchanged(self):
+        """build_prompt without characters should work as before (style + scene prompt)."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Empty",
+            scene_type="still",
+            prompt="A sunset.",
+            duration=5,
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Painterly.",
+            characters={},
+            scenes=[scene],
+        )
+
+        # Act
+        prompt = project.build_prompt(scene)
+
+        # Assert — no character block, just style + prompt
+        assert prompt == "Painterly. A sunset."
+
+    def test_build_prompt_character_not_in_project_is_skipped(self):
+        """build_prompt should skip character IDs not found in project.characters."""
+        # Arrange
+        chars = {
+            "hero": Character(id="hero", description="A tall boy"),
+        }
+        scene = Scene(
+            number="1",
+            title="Ghost",
+            scene_type="still",
+            prompt="Walking alone.",
+            duration=5,
+            characters=["hero", "nonexistent"],
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters=chars,
+            scenes=[scene],
+        )
+
+        # Act
+        prompt = project.build_prompt(scene)
+
+        # Assert — hero included, nonexistent skipped
+        assert "A tall boy" in prompt
+        assert "nonexistent" not in prompt
+
     def test_get_reference_images_falls_back_to_characters(self, tmp_path):
         # Arrange — no scene.reference, falls back to character refs
         char_ref = tmp_path / "hero.png"

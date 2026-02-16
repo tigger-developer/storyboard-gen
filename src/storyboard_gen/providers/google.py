@@ -158,15 +158,27 @@ class GoogleProvider(ImageProvider):
         if client is None:
             client = self._get_client()
 
-        # Build reference images list for config
+        # Build reference images list for config.
+        # Veo requires VideoGenerationReferenceImage wrappers (not bare Image).
+        # reference_images is not supported when image= or video= is set.
         ref_images = []
-        if reference_images:
+        if reference_images and source_frame is None and extend_from_video is None:
             for ref_path in reference_images:
                 if ref_path.exists():
-                    ref_images.append(types.Image.from_file(location=str(ref_path)))
+                    ref_images.append(
+                        types.VideoGenerationReferenceImage(
+                            image=types.Image.from_file(location=str(ref_path)),
+                            reference_type="ASSET",
+                        )
+                    )
                     logger.info("Clip reference: %s", ref_path)
                 else:
                     logger.warning("Reference image not found, skipping: %s", ref_path)
+        elif reference_images and (source_frame or extend_from_video):
+            logger.info(
+                "Skipping reference_images — not supported with %s",
+                "source_frame" if source_frame else "extend_from_video",
+            )
 
         # Build config
         config = types.GenerateVideosConfig(

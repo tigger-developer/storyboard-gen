@@ -94,8 +94,21 @@ class Project:
         return [s for s in self.scenes if s.scene_type == "clip"]
 
     def build_prompt(self, scene: Scene) -> str:
-        """Prepend the style prefix to a scene's prompt."""
-        return f"{self.style_prefix.strip()} {scene.prompt.strip()}"
+        """Build the full prompt: style prefix + character descriptions + scene prompt.
+
+        Character descriptions are injected when the scene lists characters,
+        providing textual context even when reference images cannot be sent.
+        """
+        parts = [self.style_prefix.strip()]
+        char_descs = []
+        for char_id in scene.characters:
+            char = self.characters.get(char_id)
+            if char:
+                char_descs.append(f"{char.id}: {char.description.strip()}")
+        if char_descs:
+            parts.append("Characters: " + "; ".join(char_descs) + ".")
+        parts.append(scene.prompt.strip())
+        return " ".join(parts)
 
     def get_reference_images(self, scene: Scene) -> list[Path]:
         """Return reference image paths for a scene.
