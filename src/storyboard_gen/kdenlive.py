@@ -224,6 +224,8 @@ def _build_video_track(mlt: ET.Element, producers: list[ProducerInfo]) -> None:
     """Build sequential video playlists wrapped in a tractor."""
     playlist0 = ET.SubElement(mlt, "playlist", id="playlist0")
     for producer_id, length, kdenlive_id, _name in producers:
+        if length <= 0:
+            continue
         entry = ET.SubElement(
             playlist0,
             "entry",

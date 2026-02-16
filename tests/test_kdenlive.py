@@ -810,6 +810,137 @@ class TestAudioProducer:
             assert _get_prop(producer, "kdenlive:clip_type") is None
 
 
+class TestZeroDurationScene:
+    """Tests for scenes with duration: 0 (e.g. pre-roll title cards).
+
+    Fixes #40: 0-duration scenes produce out="-1" in playlist entries,
+    which MLT interprets as natural duration (~30s for stills).
+    """
+
+    def _build(self, tmp_path, scenes=None):
+        """Build an MLT document from a test project."""
+        project_dir = _make_project_dir(tmp_path, scenes=scenes)
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+        return _build_mlt(project, output_dir, 30, None)
+
+    def test_zero_duration_scene_excluded_from_playlist(self, tmp_path):
+        """A scene with duration 0 must not appear in playlist0 entries."""
+        # Arrange — scene 0 has 0 duration, scene 1 has 5s
+        scenes = [
+            {
+                "number": 0,
+                "title": "Pre-roll",
+                "type": "still",
+                "duration": 0,
+                "prompt": "Title card.",
+            },
+            {
+                "number": 1,
+                "title": "Opening",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "zoom_in",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        playlist0 = mlt.find("playlist[@id='playlist0']")
+        entries = playlist0.findall("entry")
+
+        # Assert — only scene 1 should be on the timeline
+        entry_producers = [e.get("producer") for e in entries]
+        assert "producer_0" not in entry_producers
+        assert "producer_1" in entry_producers
+        assert len(entries) == 1
+
+    def test_zero_duration_scene_still_in_main_bin(self, tmp_path):
+        """A scene with duration 0 should still be registered in main_bin."""
+        # Arrange
+        scenes = [
+            {
+                "number": 0,
+                "title": "Pre-roll",
+                "type": "still",
+                "duration": 0,
+                "prompt": "Title card.",
+            },
+            {
+                "number": 1,
+                "title": "Opening",
+                "type": "still",
+                "duration": 5,
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        main_bin = mlt.find("playlist[@id='main_bin']")
+        entry_producers = [e.get("producer") for e in main_bin.findall("entry")]
+
+        # Assert — both producers registered in main_bin
+        assert "producer_0" in entry_producers
+        assert "producer_1" in entry_producers
+
+    def test_zero_duration_scene_producer_still_created(self, tmp_path):
+        """A scene with duration 0 should still have a producer element."""
+        # Arrange
+        scenes = [
+            {
+                "number": 0,
+                "title": "Pre-roll",
+                "type": "still",
+                "duration": 0,
+                "prompt": "Title card.",
+            },
+            {
+                "number": 1,
+                "title": "Opening",
+                "type": "still",
+                "duration": 5,
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+
+        # Assert — producer element exists even though it's not on the timeline
+        producer_0 = mlt.find("producer[@id='producer_0']")
+        assert producer_0 is not None
+        assert _get_prop(producer_0, "kdenlive:clipname") == "Pre-roll"
+
+    def test_zero_duration_excluded_from_timeline_total(self, tmp_path):
+        """Timeline total frames should not include 0-duration scenes."""
+        # Arrange — scene 0 (0s) + scene 1 (5s) = 150 frames at 30fps
+        scenes = [
+            {
+                "number": 0,
+                "title": "Pre-roll",
+                "type": "still",
+                "duration": 0,
+                "prompt": "Title card.",
+            },
+            {
+                "number": 1,
+                "title": "Opening",
+                "type": "still",
+                "duration": 5,
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+
+        # Assert — total = 150 frames, out = 149
+        assert seq.get("out") == "149"
+
+
 class TestProbeAudio:
     """Tests for ffprobe audio metadata probing."""
 
