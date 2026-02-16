@@ -1,4 +1,4 @@
 # ABOUTME: storyboard-gen package.
 # ABOUTME: CLI tool for generating video assets from YAML storyboards.
 
-__version__ = "0.41.0"
+__version__ = "0.42.0"
