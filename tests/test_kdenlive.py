@@ -1,5 +1,5 @@
 # ABOUTME: Tests for storyboard_gen.kdenlive.
-# ABOUTME: Validates Kdenlive MLT XML project generation with dissolve transitions.
+# ABOUTME: Validates Kdenlive MLT XML project generation with Ken Burns transform effects.
 
 import os
 import xml.etree.ElementTree as ET
@@ -139,12 +139,12 @@ class TestResolveClipPath:
 
 
 class TestBuildMlt:
-    def _build(self, tmp_path, dissolve_frames=15, audio_path=None, **kwargs):
+    def _build(self, tmp_path, audio_path=None, **kwargs):
         """Helper to build an MLT document from a test project."""
         project_dir = _make_project_dir(tmp_path, **kwargs)
         project = _load_project_from(project_dir)
         output_dir = project_dir / "output"
-        mlt = _build_mlt(project, output_dir, dissolve_frames, 30, audio_path)
+        mlt = _build_mlt(project, output_dir, 30, audio_path)
         return mlt
 
     def test_mlt_root_element(self, tmp_path):
@@ -216,11 +216,11 @@ class TestBuildMlt:
 class TestKdenliveStructure:
     """Kdenlive-specific structural requirements."""
 
-    def _build(self, tmp_path, dissolve_frames=15, audio_path=None, **kwargs):
+    def _build(self, tmp_path, audio_path=None, **kwargs):
         project_dir = _make_project_dir(tmp_path, **kwargs)
         project = _load_project_from(project_dir)
         output_dir = project_dir / "output"
-        return _build_mlt(project, output_dir, dissolve_frames, 30, audio_path)
+        return _build_mlt(project, output_dir, 30, audio_path)
 
     def test_black_track_producer_present(self, tmp_path):
         # Arrange & Act
@@ -354,184 +354,17 @@ class TestKdenliveStructure:
             assert kid is not None
 
 
-class TestDissolveLayout:
-    def _build_with_dissolves(self, tmp_path, dissolve_frames=15, **kwargs):
-        """Build an MLT with dissolves enabled."""
+class TestVideoTrackLayout:
+    def _build(self, tmp_path, **kwargs):
+        """Build an MLT document."""
         project_dir = _make_project_dir(tmp_path, **kwargs)
         project = _load_project_from(project_dir)
         output_dir = project_dir / "output"
-        return _build_mlt(project, output_dir, dissolve_frames, 30, None)
+        return _build_mlt(project, output_dir, 30, None)
 
-    def test_two_playlists_with_dissolves(self, tmp_path):
+    def test_single_playlist_has_all_entries(self, tmp_path):
         # Arrange & Act
-        mlt = self._build_with_dissolves(tmp_path)
-
-        # Assert
-        playlists = mlt.findall("playlist")
-        playlist_ids = [p.get("id") for p in playlists]
-        assert "playlist0" in playlist_ids
-        assert "playlist1" in playlist_ids
-
-    def test_blank_entries_in_alternating_playlists(self, tmp_path):
-        # Arrange & Act
-        mlt = self._build_with_dissolves(tmp_path)
-
-        # Assert — each playlist should have blanks for the other track's clips
-        playlist0 = mlt.find("playlist[@id='playlist0']")
-        playlist1 = mlt.find("playlist[@id='playlist1']")
-        blanks0 = playlist0.findall("blank")
-        blanks1 = playlist1.findall("blank")
-        assert len(blanks0) > 0
-        assert len(blanks1) > 0
-
-    def test_transition_count_equals_scene_count_minus_one(self, tmp_path):
-        # Arrange & Act
-        mlt = self._build_with_dissolves(tmp_path)
-
-        # Assert — dissolve transitions live inside the video track tractor
-        video_tractor = mlt.find("tractor[@id='video_tractor']")
-        transitions = video_tractor.findall("transition")
-        luma_transitions = [
-            t for t in transitions if t.get("id", "").startswith("dissolve_")
-        ]
-        assert len(luma_transitions) == 2  # 3 scenes - 1
-
-    def test_transition_dissolve_length(self, tmp_path):
-        # Arrange & Act
-        mlt = self._build_with_dissolves(tmp_path, dissolve_frames=30)
-
-        # Assert
-        video_tractor = mlt.find("tractor[@id='video_tractor']")
-        transitions = video_tractor.findall("transition")
-        for t in transitions:
-            if t.get("id", "").startswith("dissolve_"):
-                length = _get_prop(t, "length")
-                assert length == "30"
-
-    def test_luma_and_mix_transitions_paired(self, tmp_path):
-        # Arrange & Act
-        mlt = self._build_with_dissolves(tmp_path)
-
-        # Assert
-        video_tractor = mlt.find("tractor[@id='video_tractor']")
-        transitions = video_tractor.findall("transition")
-        luma_count = sum(
-            1 for t in transitions if t.get("id", "").startswith("dissolve_")
-        )
-        mix_count = sum(1 for t in transitions if t.get("id", "").startswith("mix_"))
-        assert luma_count == mix_count
-        assert luma_count == 2  # 3 scenes - 1
-
-    def test_dissolve_direction_outgoing_to_incoming(self, tmp_path):
-        # Arrange & Act
-        mlt = self._build_with_dissolves(tmp_path)
-
-        # Assert — dissolve_0 goes from scene 1 (track 0) to scene 2 (track 1)
-        # a_track = outgoing clip's track, b_track = incoming clip's track
-        video_tractor = mlt.find("tractor[@id='video_tractor']")
-
-        dissolve_0 = video_tractor.find("transition[@id='dissolve_0']")
-        assert dissolve_0 is not None
-        # Scene 1 on playlist0 (track 0), scene 2 on playlist1 (track 1)
-        assert _get_prop(dissolve_0, "a_track") == "0"
-        assert _get_prop(dissolve_0, "b_track") == "1"
-
-        dissolve_1 = video_tractor.find("transition[@id='dissolve_1']")
-        assert dissolve_1 is not None
-        # Scene 2 on playlist1 (track 1), scene 3 on playlist0 (track 0)
-        assert _get_prop(dissolve_1, "a_track") == "1"
-        assert _get_prop(dissolve_1, "b_track") == "0"
-
-    def test_timeline_total_equals_sum_of_durations_with_dissolves(self, tmp_path):
-        # Arrange — 3 scenes: 5s + 4s + 6s = 15s = 450 frames at 30fps
-        # With dissolves, the total should STILL be 450 frames because
-        # non-first clips are extended to compensate for overlap
-        mlt = self._build_with_dissolves(tmp_path, dissolve_frames=15)
-
-        # Assert — sequence_tractor out attribute = total_frames - 1 = 449
-        seq = mlt.find("tractor[@id='sequence_tractor']")
-        assert seq.get("out") == "449"
-
-    def test_non_first_producers_extended_by_dissolve_frames(self, tmp_path):
-        # Arrange — scenes: 5s (150f), 4s (120f), 6s (180f) at 30fps
-        # With 15-frame dissolves, producers 2 and 3 should be extended by 15
-        mlt = self._build_with_dissolves(tmp_path, dissolve_frames=15)
-
-        # Assert — first producer unchanged, others extended
-        p1 = mlt.find("producer[@id='producer_1']")
-        assert p1.get("out") == "149"  # 150 - 1 (no extension)
-
-        p2 = mlt.find("producer[@id='producer_2']")
-        assert p2.get("out") == "134"  # 120 + 15 - 1 (extended)
-
-        p3 = mlt.find("producer[@id='producer_3']")
-        assert p3.get("out") == "194"  # 180 + 15 - 1 (extended)
-
-    def test_playlist_entries_use_extended_lengths(self, tmp_path):
-        # Arrange
-        mlt = self._build_with_dissolves(tmp_path, dissolve_frames=15)
-
-        # Assert — playlist entries for non-first clips use extended out values
-        playlist1 = mlt.find("playlist[@id='playlist1']")
-        entries = playlist1.findall("entry")
-        # Scene 2 is on playlist1, extended by 15 frames
-        scene2_entry = entries[0]
-        assert scene2_entry.get("out") == "134"  # 120 + 15 - 1
-
-    def test_no_extension_without_dissolves(self, tmp_path):
-        # Arrange — dissolve_frames=0 means no extension
-        project_dir = _make_project_dir(tmp_path)
-        project = _load_project_from(project_dir)
-        output_dir = project_dir / "output"
-        mlt = _build_mlt(project, output_dir, 0, 30, None)
-
-        # Assert — all producers have original lengths
-        p2 = mlt.find("producer[@id='producer_2']")
-        assert p2.get("out") == "119"  # 120 - 1 (no extension)
-
-        # Total timeline = sum of durations = 450 frames
-        seq = mlt.find("tractor[@id='sequence_tractor']")
-        assert seq.get("out") == "449"
-
-    def test_single_scene_no_transitions(self, tmp_path):
-        # Arrange
-        scenes = [
-            {
-                "number": 1,
-                "title": "Only scene",
-                "type": "still",
-                "duration": 5,
-                "ken_burns": "zoom_in",
-                "prompt": "Solo.",
-            },
-        ]
-
-        # Act
-        project_dir = _make_project_dir(tmp_path, scenes=scenes)
-        project = _load_project_from(project_dir)
-        output_dir = project_dir / "output"
-        mlt = _build_mlt(project, output_dir, 15, 30, None)
-
-        # Assert — single scene: no dissolve transitions in video tractor
-        video_tractor = mlt.find("tractor[@id='video_tractor']")
-        transitions = video_tractor.findall("transition")
-        dissolve_transitions = [
-            t for t in transitions if t.get("id", "").startswith("dissolve_")
-        ]
-        assert len(dissolve_transitions) == 0
-
-
-class TestNoDissolveLayout:
-    def _build_no_dissolves(self, tmp_path, **kwargs):
-        """Build an MLT with dissolve_frames=0 (no transitions)."""
-        project_dir = _make_project_dir(tmp_path, **kwargs)
-        project = _load_project_from(project_dir)
-        output_dir = project_dir / "output"
-        return _build_mlt(project, output_dir, 0, 30, None)
-
-    def test_single_playlist_has_content_when_no_dissolve(self, tmp_path):
-        # Arrange & Act
-        mlt = self._build_no_dissolves(tmp_path)
+        mlt = self._build(tmp_path)
 
         # Assert — playlist0 has entries, playlist1 is empty
         playlist0 = mlt.find("playlist[@id='playlist0']")
@@ -542,16 +375,36 @@ class TestNoDissolveLayout:
         assert playlist1 is not None
         assert len(playlist1.findall("entry")) == 0
 
-    def test_all_clips_on_single_playlist(self, tmp_path):
+    def test_no_blanks_on_playlist(self, tmp_path):
         # Arrange & Act
-        mlt = self._build_no_dissolves(tmp_path)
+        mlt = self._build(tmp_path)
 
-        # Assert — all 3 scenes on playlist0, no blanks
+        # Assert — sequential clips, no blanks
         playlist = mlt.find("playlist[@id='playlist0']")
-        entries = playlist.findall("entry")
-        assert len(entries) == 3
         blanks = playlist.findall("blank")
         assert len(blanks) == 0
+
+    def test_producers_have_original_lengths(self, tmp_path):
+        # Arrange & Act — scenes: 5s (150f), 4s (120f), 6s (180f) at 30fps
+        mlt = self._build(tmp_path)
+
+        # Assert — all producers have original lengths
+        p1 = mlt.find("producer[@id='producer_1']")
+        assert p1.get("out") == "149"  # 150 - 1
+
+        p2 = mlt.find("producer[@id='producer_2']")
+        assert p2.get("out") == "119"  # 120 - 1
+
+        p3 = mlt.find("producer[@id='producer_3']")
+        assert p3.get("out") == "179"  # 180 - 1
+
+    def test_timeline_total_equals_sum_of_durations(self, tmp_path):
+        # Arrange & Act — 5s + 4s + 6s = 15s = 450 frames at 30fps
+        mlt = self._build(tmp_path)
+
+        # Assert — sequence_tractor out attribute = total_frames - 1 = 449
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        assert seq.get("out") == "449"
 
 
 class TestGenerateKdenlive:
@@ -645,28 +498,6 @@ class TestCliKdenlive:
         # Assert
         assert exit_code == 0
 
-    def test_dissolve_flag_parsed(self, tmp_path):
-        # Arrange
-        _make_project_dir(tmp_path)
-        os.chdir(tmp_path)
-
-        # Act — should succeed with custom dissolve value
-        exit_code = main(["kdenlive", "--dissolve", "30"])
-
-        # Assert
-        assert exit_code == 0
-
-    def test_no_dissolve_flag_parsed(self, tmp_path):
-        # Arrange
-        _make_project_dir(tmp_path)
-        os.chdir(tmp_path)
-
-        # Act
-        exit_code = main(["kdenlive", "--no-dissolve"])
-
-        # Assert
-        assert exit_code == 0
-
     def test_output_flag_parsed(self, tmp_path):
         # Arrange
         _make_project_dir(tmp_path)
@@ -681,25 +512,25 @@ class TestCliKdenlive:
 
 
 class TestKenBurnsFilter:
-    """Tests for Ken Burns effects via Kdenlive's native affine filter."""
+    """Tests for Ken Burns effects via Kdenlive's native qtblend transform filter."""
 
-    def _build(self, tmp_path, scenes=None, aspect_ratio="9:16", dissolve_frames=0):
+    def _build(self, tmp_path, scenes=None, aspect_ratio="9:16"):
         """Build an MLT document from a test project."""
         project_dir = _make_project_dir(
             tmp_path, scenes=scenes, aspect_ratio=aspect_ratio
         )
         project = _load_project_from(project_dir)
         output_dir = project_dir / "output"
-        return _build_mlt(project, output_dir, dissolve_frames, 30, None)
+        return _build_mlt(project, output_dir, 30, None)
 
     def _find_producer(self, mlt, scene_number):
         """Find a producer element by scene number."""
         return mlt.find(f"producer[@id='producer_{scene_number}']")
 
-    def _find_affine_filter(self, producer):
-        """Find an affine filter child element of a producer."""
+    def _find_transform_filter(self, producer):
+        """Find a qtblend transform filter child element of a producer."""
         for f in producer.findall("filter"):
-            if _get_prop(f, "mlt_service") == "affine":
+            if _get_prop(f, "mlt_service") == "qtblend":
                 return f
         return None
 
@@ -742,7 +573,7 @@ class TestKenBurnsFilter:
         # Assert
         assert _get_prop(producer, "loop") is None
 
-    def test_still_zoom_in_has_affine_filter(self, tmp_path):
+    def test_still_zoom_in_has_transform_filter(self, tmp_path):
         # Arrange — 9:16 → 1080x1920, 5s = 150 frames, last frame = 149
         scenes = [
             {
@@ -758,16 +589,16 @@ class TestKenBurnsFilter:
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
         producer = self._find_producer(mlt, 1)
-        affine = self._find_affine_filter(producer)
+        transform = self._find_transform_filter(producer)
 
         # Assert — start full, end 1.2x centered
         # 1080*1.2=1296, 1920*1.2=2304
         # x_offset=(1080-1296)/2=-108, y_offset=(1920-2304)/2=-192
-        assert affine is not None
-        rect = _get_prop(affine, "transition.rect")
+        assert transform is not None
+        rect = _get_prop(transform, "rect")
         assert rect == "0=0 0 1080 1920 1;149=-108 -192 1296 2304 1"
 
-    def test_still_zoom_out_has_affine_filter(self, tmp_path):
+    def test_still_zoom_out_has_transform_filter(self, tmp_path):
         # Arrange
         scenes = [
             {
@@ -783,14 +614,14 @@ class TestKenBurnsFilter:
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
         producer = self._find_producer(mlt, 1)
-        affine = self._find_affine_filter(producer)
+        transform = self._find_transform_filter(producer)
 
         # Assert — start 1.2x centered, end full
-        assert affine is not None
-        rect = _get_prop(affine, "transition.rect")
+        assert transform is not None
+        rect = _get_prop(transform, "rect")
         assert rect == "0=-108 -192 1296 2304 1;149=0 0 1080 1920 1"
 
-    def test_still_pan_ltr_has_affine_filter(self, tmp_path):
+    def test_still_pan_ltr_has_transform_filter(self, tmp_path):
         # Arrange
         scenes = [
             {
@@ -806,16 +637,16 @@ class TestKenBurnsFilter:
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
         producer = self._find_producer(mlt, 1)
-        affine = self._find_affine_filter(producer)
+        transform = self._find_transform_filter(producer)
 
         # Assert — 1.2x scale, pan from left edge to right edge
         # At start: x=0, y centered at -192
         # At end: x=1080-1296=-216, y centered at -192
-        assert affine is not None
-        rect = _get_prop(affine, "transition.rect")
+        assert transform is not None
+        rect = _get_prop(transform, "rect")
         assert rect == "0=0 -192 1296 2304 1;149=-216 -192 1296 2304 1"
 
-    def test_still_pan_rtl_has_affine_filter(self, tmp_path):
+    def test_still_pan_rtl_has_transform_filter(self, tmp_path):
         # Arrange
         scenes = [
             {
@@ -831,14 +662,14 @@ class TestKenBurnsFilter:
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
         producer = self._find_producer(mlt, 1)
-        affine = self._find_affine_filter(producer)
+        transform = self._find_transform_filter(producer)
 
         # Assert — 1.2x scale, pan from right edge to left edge
-        assert affine is not None
-        rect = _get_prop(affine, "transition.rect")
+        assert transform is not None
+        rect = _get_prop(transform, "rect")
         assert rect == "0=-216 -192 1296 2304 1;149=0 -192 1296 2304 1"
 
-    def test_still_static_no_affine_filter(self, tmp_path):
+    def test_still_static_no_transform_filter(self, tmp_path):
         # Arrange
         scenes = [
             {
@@ -854,12 +685,12 @@ class TestKenBurnsFilter:
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
         producer = self._find_producer(mlt, 1)
-        affine = self._find_affine_filter(producer)
+        transform = self._find_transform_filter(producer)
 
         # Assert — static means no pan/zoom animation
-        assert affine is None
+        assert transform is None
 
-    def test_still_no_ken_burns_no_affine_filter(self, tmp_path):
+    def test_still_no_ken_burns_no_transform_filter(self, tmp_path):
         # Arrange — no ken_burns key at all
         scenes = [
             {
@@ -874,12 +705,12 @@ class TestKenBurnsFilter:
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
         producer = self._find_producer(mlt, 1)
-        affine = self._find_affine_filter(producer)
+        transform = self._find_transform_filter(producer)
 
         # Assert
-        assert affine is None
+        assert transform is None
 
-    def test_clip_no_affine_filter(self, tmp_path):
+    def test_clip_no_transform_filter(self, tmp_path):
         # Arrange — clips never get Ken Burns effects
         scenes = [
             {
@@ -894,12 +725,12 @@ class TestKenBurnsFilter:
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
         producer = self._find_producer(mlt, 1)
-        affine = self._find_affine_filter(producer)
+        transform = self._find_transform_filter(producer)
 
         # Assert
-        assert affine is None
+        assert transform is None
 
-    def test_affine_keyframes_16_9_aspect(self, tmp_path):
+    def test_transform_keyframes_16_9_aspect(self, tmp_path):
         # Arrange — 16:9 → 1920x1080
         scenes = [
             {
@@ -915,41 +746,10 @@ class TestKenBurnsFilter:
         # Act
         mlt = self._build(tmp_path, scenes=scenes, aspect_ratio="16:9")
         producer = self._find_producer(mlt, 1)
-        affine = self._find_affine_filter(producer)
+        transform = self._find_transform_filter(producer)
 
         # Assert — 1920*1.2=2304, 1080*1.2=1296
         # x_offset=(1920-2304)/2=-192, y_offset=(1080-1296)/2=-108
-        assert affine is not None
-        rect = _get_prop(affine, "transition.rect")
+        assert transform is not None
+        rect = _get_prop(transform, "rect")
         assert rect == "0=0 0 1920 1080 1;149=-192 -108 2304 1296 1"
-
-    def test_affine_keyframes_account_for_dissolve_extension(self, tmp_path):
-        # Arrange — with dissolves, non-first still gets extended length
-        scenes = [
-            {
-                "number": 1,
-                "title": "First",
-                "type": "still",
-                "duration": 5,
-                "ken_burns": "zoom_in",
-                "prompt": "A.",
-            },
-            {
-                "number": 2,
-                "title": "Second",
-                "type": "still",
-                "duration": 4,
-                "ken_burns": "zoom_out",
-                "prompt": "B.",
-            },
-        ]
-
-        # Act
-        mlt = self._build(tmp_path, scenes=scenes, dissolve_frames=15)
-        producer = self._find_producer(mlt, 2)
-        affine = self._find_affine_filter(producer)
-
-        # Assert — scene 2: 4s=120f extended by 15=135f, last frame=134
-        assert affine is not None
-        rect = _get_prop(affine, "transition.rect")
-        assert rect == "0=-108 -192 1296 2304 1;134=0 0 1080 1920 1"

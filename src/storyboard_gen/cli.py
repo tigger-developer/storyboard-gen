@@ -147,30 +147,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Export a Kdenlive project for timeline editing",
         description=(
             "Generate a Kdenlive (.kdenlive) project file from the storyboard. "
-            "Includes dissolve transitions between scenes and an audio track if "
+            "Includes Ken Burns transform effects on stills and an audio track if "
             "configured. Open the result in Kdenlive for fine-tuning."
         ),
         epilog=(
             "examples:\n"
-            "  storyboard-gen kdenlive                          Default: 15-frame dissolves\n"
-            "  storyboard-gen kdenlive --dissolve 30            30-frame dissolves (1s at 30fps)\n"
-            "  storyboard-gen kdenlive --no-dissolve            Hard cuts, no transitions\n"
-            "  storyboard-gen kdenlive --output my_project.kdenlive  Custom output name"
+            "  storyboard-gen kdenlive                              Export with Ken Burns effects\n"
+            "  storyboard-gen kdenlive --output my_project.kdenlive Custom output name\n"
+            "  storyboard-gen kdenlive --preview                    Export without audio"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    kdenlive_group = kdenlive_parser.add_mutually_exclusive_group()
-    kdenlive_group.add_argument(
-        "--dissolve",
-        type=int,
-        default=15,
-        metavar="FRAMES",
-        help="Number of frames for dissolve transitions (default: 15)",
-    )
-    kdenlive_group.add_argument(
-        "--no-dissolve",
-        action="store_true",
-        help="Hard cuts with no dissolve transitions",
     )
     kdenlive_parser.add_argument(
         "--output",
@@ -366,8 +352,6 @@ def _cmd_kdenlive(args: argparse.Namespace) -> int:
     project = load_project()
     output_dir = Path.cwd() / "output"
 
-    dissolve_frames = 0 if args.no_dissolve else args.dissolve
-
     # Resolve audio: --preview → None; --audio → override; project.yaml → default
     audio_path = None
     if not args.preview:
@@ -386,7 +370,6 @@ def _cmd_kdenlive(args: argparse.Namespace) -> int:
         project,
         output_dir,
         output_filename=args.output,
-        dissolve_frames=dissolve_frames,
         audio_path=audio_path,
     )
     print(f"Kdenlive project: {output_path}")

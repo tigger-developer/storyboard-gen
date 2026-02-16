@@ -1,5 +1,5 @@
 # ABOUTME: Kdenlive project file generator for storyboard-gen.
-# ABOUTME: Exports an MLT XML project for timeline editing with dissolve transitions.
+# ABOUTME: Exports an MLT XML project for timeline editing with Ken Burns transform effects.
 
 import logging
 import uuid
@@ -17,7 +17,6 @@ def generate_kdenlive(
     project: Project,
     output_dir: Path,
     output_filename: str | None = None,
-    dissolve_frames: int = 15,
     audio_path: Path | None = None,
     fps: int = 30,
 ) -> Path:
@@ -25,9 +24,8 @@ def generate_kdenlive(
 
     Args:
         project: The project definition.
-        output_dir: Base output directory (contains stills/, clips/, intermediate/).
+        output_dir: Base output directory (contains stills/, clips/).
         output_filename: Custom output filename. Defaults to "{title}.kdenlive".
-        dissolve_frames: Number of frames for dissolve transitions (0 = no dissolves).
         audio_path: Optional path to an audio file to include.
         fps: Frames per second.
 
@@ -45,7 +43,7 @@ def generate_kdenlive(
                 f"Missing clip for scene {scene.number} ({scene.title}): {clip_path}"
             )
 
-    mlt = _build_mlt(project, output_dir, dissolve_frames, fps, audio_path)
+    mlt = _build_mlt(project, output_dir, fps, audio_path)
 
     if output_filename is None:
         output_filename = f"{project.title}.kdenlive"
@@ -86,7 +84,6 @@ ProducerInfo = tuple[str, int, int, str]
 def _build_mlt(
     project: Project,
     output_dir: Path,
-    dissolve_frames: int,
     fps: int,
     audio_path: Path | None,
 ) -> ET.Element:
@@ -109,17 +106,11 @@ def _build_mlt(
     _add_black_track(mlt)
 
     # Scene producers (kdenlive:id starts at 2; 1 is reserved for the sequence)
-    # When dissolves are enabled, non-first clips are extended by dissolve_frames
-    # so that the dissolve overlap is absorbed by extra frames at the end,
-    # keeping the total timeline equal to sum(scene_durations).
-    use_dissolves = dissolve_frames > 0 and len(project.scenes) > 1
     kdenlive_id = 2
     producers: list[ProducerInfo] = []
-    for i, scene in enumerate(project.scenes):
+    for _i, scene in enumerate(project.scenes):
         clip_path = _resolve_clip_path(scene, output_dir)
         length = _frames(scene.duration, fps)
-        if use_dissolves and i > 0:
-            length += dissolve_frames
         producer_id = f"producer_{scene.number}"
         is_still = scene.scene_type == "still"
         producer_el = _add_scene_producer(
@@ -145,11 +136,8 @@ def _build_mlt(
         audio_info = ("audio_producer", 0, kdenlive_id, "Audio")
         kdenlive_id += 1
 
-    # Video track: A/B playlists wrapped in a tractor
-    if use_dissolves:
-        _build_video_track_with_dissolves(mlt, producers, dissolve_frames)
-    else:
-        _build_video_track_no_dissolves(mlt, producers)
+    # Video track
+    _build_video_track(mlt, producers)
 
     # Audio track (if configured)
     has_audio = audio_info is not None
@@ -157,12 +145,7 @@ def _build_mlt(
         _build_audio_track(mlt, audio_info)
 
     # Total timeline length in frames
-    if use_dissolves:
-        total_frames = sum(p[1] for p in producers) - (
-            (len(producers) - 1) * dissolve_frames
-        )
-    else:
-        total_frames = sum(p[1] for p in producers)
+    total_frames = sum(p[1] for p in producers)
 
     # Sequence tractor (combines all tracks)
     seq_uuid = str(uuid.uuid4())
@@ -232,92 +215,8 @@ def _add_scene_producer(
     return producer
 
 
-def _build_video_track_with_dissolves(
-    mlt: ET.Element,
-    producers: list[ProducerInfo],
-    dissolve_frames: int,
-) -> None:
-    """Build A/B video playlists and wrap them in a video track tractor.
-
-    Clips alternate between playlist0 and playlist1. During a dissolve,
-    clip N (ending on A) overlaps with clip N+1 (starting on B). A luma
-    transition handles the video crossfade, a mix transition handles audio.
-    """
-    playlist0 = ET.SubElement(mlt, "playlist", id="playlist0")
-    playlist1 = ET.SubElement(mlt, "playlist", id="playlist1")
-
-    transitions = []
-    timeline_pos = 0
-
-    for i, (producer_id, length, kdenlive_id, _name) in enumerate(producers):
-        is_even = i % 2 == 0
-        active_playlist = playlist0 if is_even else playlist1
-        other_playlist = playlist1 if is_even else playlist0
-
-        if i == 0:
-            entry = ET.SubElement(
-                active_playlist,
-                "entry",
-                producer=producer_id,
-                **{"in": "0", "out": str(length - 1)},
-            )
-            _set_prop(entry, "kdenlive:id", str(kdenlive_id))
-            blank_length = length - dissolve_frames
-            ET.SubElement(other_playlist, "blank", length=str(blank_length))
-            timeline_pos = length
-        else:
-            overlap_start = timeline_pos - dissolve_frames
-
-            if i >= 2:
-                # Blank between the end of the last clip on this playlist
-                # and the start of this one
-                prev_same_idx = i - 2
-                gap_frames = 0
-                for j in range(prev_same_idx + 1, i):
-                    gap_frames += producers[j][1] - dissolve_frames
-                blank_length = gap_frames - dissolve_frames
-                if blank_length > 0:
-                    ET.SubElement(active_playlist, "blank", length=str(blank_length))
-
-            entry = ET.SubElement(
-                active_playlist,
-                "entry",
-                producer=producer_id,
-                **{"in": "0", "out": str(length - 1)},
-            )
-            _set_prop(entry, "kdenlive:id", str(kdenlive_id))
-
-            # Dissolve FROM previous clip (other playlist) TO this clip (active)
-            transitions.append(
-                {
-                    "a_track": "1" if is_even else "0",
-                    "b_track": "0" if is_even else "1",
-                    "in": str(overlap_start),
-                    "out": str(overlap_start + dissolve_frames),
-                    "index": i - 1,
-                }
-            )
-
-            timeline_pos = overlap_start + length
-
-    # Video track tractor wrapping the A/B playlists
-    tractor = ET.SubElement(mlt, "tractor", id="video_tractor")
-    ET.SubElement(tractor, "track", hide="audio", producer="playlist0")
-    ET.SubElement(tractor, "track", hide="audio", producer="playlist1")
-
-    # Internal transitions for base compositing (blanks become transparent)
-    _add_internal_mix(tractor, "video_track_mix", a_track=0, b_track=1)
-    _add_internal_qtblend(tractor, "video_track_blend", a_track=0, b_track=1)
-
-    for t in transitions:
-        _add_dissolve_transition(tractor, t)
-        _add_mix_transition(tractor, t)
-
-
-def _build_video_track_no_dissolves(
-    mlt: ET.Element, producers: list[ProducerInfo]
-) -> None:
-    """Build sequential video playlists (no transitions) wrapped in a tractor."""
+def _build_video_track(mlt: ET.Element, producers: list[ProducerInfo]) -> None:
+    """Build sequential video playlists wrapped in a tractor."""
     playlist0 = ET.SubElement(mlt, "playlist", id="playlist0")
     for producer_id, length, kdenlive_id, _name in producers:
         entry = ET.SubElement(
@@ -471,11 +370,11 @@ def _add_ken_burns_filter(
     height: int,
     length_frames: int,
 ) -> None:
-    """Add a Kdenlive affine filter for Ken Burns pan/zoom effects.
+    """Add a Kdenlive transform (qtblend) filter for Ken Burns pan/zoom effects.
 
-    The affine filter's transition.rect property defines keyframed output
-    rectangles: ``frame=x y w h opacity``. Scaling the image beyond the
-    canvas dimensions and shifting it creates zoom and pan effects.
+    The qtblend filter's rect property defines keyframed output rectangles:
+    ``frame=x y w h opacity``. Scaling the image beyond the canvas
+    dimensions and shifting it creates zoom and pan effects.
     """
     if ken_burns is None or ken_burns == "static":
         return
@@ -508,32 +407,11 @@ def _add_ken_burns_filter(
 
     rect_value = f"0={start};{last_frame}={end}"
     filt = ET.SubElement(producer, "filter")
-    _set_prop(filt, "mlt_service", "affine")
-    _set_prop(filt, "transition.rect", rect_value)
+    _set_prop(filt, "mlt_service", "qtblend")
+    _set_prop(filt, "rect", rect_value)
 
 
 # --- Transition helpers ---
-
-
-def _add_dissolve_transition(tractor: ET.Element, t: dict) -> None:
-    """Add a luma (video dissolve) transition to a tractor."""
-    dissolve = ET.SubElement(tractor, "transition", id=f"dissolve_{t['index']}")
-    dissolve.set("in", t["in"])
-    dissolve.set("out", t["out"])
-    _set_prop(dissolve, "mlt_service", "luma")
-    _set_prop(dissolve, "a_track", t["a_track"])
-    _set_prop(dissolve, "b_track", t["b_track"])
-    _set_prop(dissolve, "length", str(int(t["out"]) - int(t["in"])))
-
-
-def _add_mix_transition(tractor: ET.Element, t: dict) -> None:
-    """Add a mix (audio crossfade) transition to a tractor."""
-    mix = ET.SubElement(tractor, "transition", id=f"mix_{t['index']}")
-    mix.set("in", t["in"])
-    mix.set("out", t["out"])
-    _set_prop(mix, "mlt_service", "mix")
-    _set_prop(mix, "a_track", t["a_track"])
-    _set_prop(mix, "b_track", t["b_track"])
 
 
 def _add_internal_mix(
