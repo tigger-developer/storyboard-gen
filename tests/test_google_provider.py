@@ -44,6 +44,7 @@ def _make_mock_video_client(video_bytes_list: list[bytes] | None = None):
 
     operation = MagicMock()
     operation.done = True
+    operation.response = None  # direct return uses .result, not .response
     if video_bytes_list:
         operation.result.generated_videos = mock_videos
     else:
@@ -491,10 +492,11 @@ class TestClipPollingRefresh:
 
         refreshed_op = MagicMock()
         refreshed_op.done = True
+        refreshed_op.result = None  # polled ops use .response, not .result
         mock_video = MagicMock()
         mock_video.video.video_bytes = b"video-bytes"
         mock_video.video.uri = None
-        refreshed_op.result.generated_videos = [mock_video]
+        refreshed_op.response.generated_videos = [mock_video]
 
         client.models.generate_videos.return_value = initial_op
         client.operations.get.return_value = refreshed_op
@@ -597,6 +599,7 @@ class TestClipOutputGcsUri:
 
         operation = MagicMock()
         operation.done = True
+        operation.response = None  # direct return path
         operation.result.generated_videos = [mock_video]
         client.models.generate_videos.return_value = operation
 
@@ -844,7 +847,8 @@ class TestClipOperationLog:
         assert entries[1]["status"] == "completed"
         assert entries[1]["operation_id"] == "operations/test123"
 
-    def test_clip_logs_timed_out(self, tmp_path):
+    @patch("storyboard_gen.providers.google.time.sleep")
+    def test_clip_logs_timed_out(self, mock_sleep, tmp_path):
         """Timeout should log 'submitted' and 'timed_out' entries."""
         # Arrange
         client = MagicMock()

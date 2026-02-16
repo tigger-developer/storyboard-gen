@@ -282,11 +282,13 @@ class GoogleProvider(ImageProvider):
                 status="completed",
             )
 
-        if not operation.result or not operation.result.generated_videos:
+        # operations.get() populates 'response'; direct return populates 'result'
+        video_response = operation.response or operation.result
+        if not video_response or not video_response.generated_videos:
             raise RuntimeError("No video generated")
 
         results = []
-        for video_entry in operation.result.generated_videos:
+        for video_entry in video_response.generated_videos:
             if hasattr(video_entry, "video") and hasattr(
                 video_entry.video, "video_bytes"
             ):
