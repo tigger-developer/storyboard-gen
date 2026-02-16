@@ -9,7 +9,11 @@ from dotenv import load_dotenv
 
 from storyboard_gen import __version__
 from storyboard_gen.config import ConfigError, load_project
-from storyboard_gen.generate import generate_clip, generate_still
+from storyboard_gen.generate import (
+    generate_clip,
+    generate_still,
+    resolve_provider_config,
+)
 from storyboard_gen.ken_burns import apply_ken_burns
 from storyboard_gen.assemble import assemble
 from storyboard_gen.kdenlive import generate_kdenlive
@@ -97,6 +101,11 @@ def main(argv: list[str] | None = None) -> int:
             "  storyboard-gen generate --all            Generate all stills and clips"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    gen_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be sent to the API without generating",
     )
     gen_group = gen_parser.add_mutually_exclusive_group(required=True)
     gen_group.add_argument(
@@ -293,31 +302,66 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     project_dir = Path.cwd()
     output_dir = project_dir / "output"
 
+    # Collect target scenes
+    scenes = []
     if args.scene:
-        for scene_num in args.scene:
-            scene = project.get_scene(scene_num)
-            if scene.scene_type == "still":
-                generate_still(scene, project, output_dir)
-            else:
-                generate_clip(scene, project, output_dir, project_dir=project_dir)
+        scenes = [project.get_scene(n) for n in args.scene]
     elif args.all_stills:
-        stills = project.get_stills()
-        print(f"Generating {len(stills)} stills...")
-        for scene in stills:
-            generate_still(scene, project, output_dir)
+        scenes = project.get_stills()
     elif args.all_clips:
-        clips = project.get_clips()
-        print(f"Generating {len(clips)} clips...")
-        for scene in clips:
-            generate_clip(scene, project, output_dir, project_dir=project_dir)
+        scenes = project.get_clips()
     elif args.all:
-        stills = project.get_stills()
-        clips = project.get_clips()
-        print(f"Generating {len(stills)} stills and {len(clips)} clips...")
-        for scene in stills:
+        scenes = list(project.scenes)
+
+    if args.dry_run:
+        return _dry_run(project, scenes)
+
+    if not args.scene:
+        stills = [s for s in scenes if s.scene_type == "still"]
+        clips = [s for s in scenes if s.scene_type == "clip"]
+        if stills and clips:
+            print(f"Generating {len(stills)} stills and {len(clips)} clips...")
+        elif stills:
+            print(f"Generating {len(stills)} stills...")
+        elif clips:
+            print(f"Generating {len(clips)} clips...")
+
+    for scene in scenes:
+        if scene.scene_type == "still":
             generate_still(scene, project, output_dir)
-        for scene in clips:
+        else:
             generate_clip(scene, project, output_dir, project_dir=project_dir)
+
+    return 0
+
+
+def _dry_run(project, scenes) -> int:
+    """Print what would be sent to the API for each scene."""
+    for i, scene in enumerate(scenes):
+        if i > 0:
+            print()
+
+        provider_cfg = resolve_provider_config(scene, project, scene.scene_type)
+        prompt = project.build_prompt(scene)
+        refs = project.get_reference_images(scene)
+
+        print(f"Scene {scene.number}: {scene.title}")
+        print(f"  Type:       {scene.scene_type}")
+        print(f"  Duration:   {scene.duration:g}s")
+        if scene.camera:
+            print(f"  Camera:     {scene.camera}")
+        if scene.ken_burns:
+            print(f"  Ken Burns:  {scene.ken_burns}")
+        print(f"  Provider:   {provider_cfg.backend} / {provider_cfg.model}")
+        if provider_cfg.options:
+            print(f"  Options:    {provider_cfg.options}")
+        if refs:
+            print("  References:")
+            for ref in refs:
+                status = "ok" if ref.exists() else "MISSING"
+                print(f"    [{status}] {ref}")
+        print("  Prompt:")
+        print(f"    {prompt}")
 
     return 0
 

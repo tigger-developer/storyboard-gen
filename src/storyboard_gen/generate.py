@@ -18,10 +18,13 @@ from storyboard_gen.providers.google import (
 logger = logging.getLogger(__name__)
 
 
-def _resolve_provider(scene: Scene, project: Project, scene_type: str) -> ImageProvider:
-    """Resolve the provider for a scene, checking overrides then project defaults.
+def resolve_provider_config(
+    scene: Scene, project: Project, scene_type: str
+) -> ProviderConfig:
+    """Resolve the provider config for a scene without instantiating it.
 
-    Falls back to Google with default models if no provider is configured.
+    Checks per-scene overrides, then project defaults, then Google defaults.
+    Returns a ProviderConfig that can be inspected (dry-run) or instantiated.
     """
     # Per-scene full provider override takes precedence
     provider_cfg = scene.provider
@@ -59,6 +62,12 @@ def _resolve_provider(scene: Scene, project: Project, scene_type: str) -> ImageP
         else:
             provider_cfg = ProviderConfig(backend="google", model=DEFAULT_VEO_MODEL)
 
+    return provider_cfg
+
+
+def _resolve_provider(scene: Scene, project: Project, scene_type: str) -> ImageProvider:
+    """Resolve and instantiate the provider for a scene."""
+    provider_cfg = resolve_provider_config(scene, project, scene_type)
     return create_provider(
         backend=provider_cfg.backend,
         model=provider_cfg.model,

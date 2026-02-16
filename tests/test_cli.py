@@ -288,6 +288,105 @@ class TestCliInit:
         assert "logs/" in output
 
 
+class TestCliDryRun:
+    def test_dry_run_returns_zero(self, sample_project_dir, capsys):
+        # Arrange
+        os.chdir(sample_project_dir)
+
+        # Act
+        exit_code = main(["generate", "--dry-run", "--all"])
+
+        # Assert
+        assert exit_code == 0
+
+    def test_dry_run_shows_prompt(self, sample_project_dir, capsys):
+        # Arrange
+        os.chdir(sample_project_dir)
+
+        # Act
+        main(["generate", "--dry-run", "--scene", "1"])
+        output = capsys.readouterr().out
+
+        # Assert — assembled prompt visible (style prefix + camera + scene prompt)
+        assert "Watercolour" in output
+        assert "A boy stands on a hill" in output
+
+    def test_dry_run_shows_provider(self, sample_project_dir, capsys):
+        # Arrange
+        os.chdir(sample_project_dir)
+
+        # Act
+        main(["generate", "--dry-run", "--scene", "1"])
+        output = capsys.readouterr().out
+
+        # Assert — provider backend and model shown
+        assert "google" in output
+        assert "imagen" in output
+
+    def test_dry_run_shows_camera_phrasing(self, sample_project_dir, capsys):
+        # Arrange
+        os.chdir(sample_project_dir)
+
+        # Act
+        main(["generate", "--dry-run", "--scene", "1"])
+        output = capsys.readouterr().out
+
+        # Assert — camera value shown
+        assert "WIDE" in output
+
+    def test_dry_run_shows_reference_images(self, sample_project_dir, capsys):
+        # Arrange
+        os.chdir(sample_project_dir)
+
+        # Act
+        main(["generate", "--dry-run", "--scene", "1"])
+        output = capsys.readouterr().out
+
+        # Assert — reference image path shown
+        assert "hero.png" in output
+
+    @patch("storyboard_gen.cli.generate_still")
+    @patch("storyboard_gen.cli.generate_clip")
+    def test_dry_run_does_not_call_api(
+        self, mock_clip, mock_still, sample_project_dir, capsys
+    ):
+        # Arrange
+        os.chdir(sample_project_dir)
+
+        # Act
+        main(["generate", "--dry-run", "--all"])
+
+        # Assert — no API calls
+        mock_still.assert_not_called()
+        mock_clip.assert_not_called()
+
+    def test_dry_run_shows_all_scenes(self, sample_project_dir, capsys):
+        # Arrange
+        os.chdir(sample_project_dir)
+
+        # Act
+        main(["generate", "--dry-run", "--all"])
+        output = capsys.readouterr().out
+
+        # Assert — all 3 scenes shown
+        assert "Scene 1" in output
+        assert "Scene 2" in output
+        assert "Scene 3" in output
+
+    def test_dry_run_shows_scene_metadata(self, sample_project_dir, capsys):
+        # Arrange
+        os.chdir(sample_project_dir)
+
+        # Act
+        main(["generate", "--dry-run", "--scene", "1"])
+        output = capsys.readouterr().out
+
+        # Assert — type, duration, ken_burns shown
+        assert "still" in output
+        assert "5" in output
+        assert "zoom_in" in output
+
+
 class TestCliSchema:
     def test_schema_subcommand_returns_zero(self, capsys):
         # Arrange & Act
