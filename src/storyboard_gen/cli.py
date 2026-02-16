@@ -414,11 +414,25 @@ characters:
     reference: []
 
 scenes:
+  # Camera values (injected into AI prompt automatically):
+  #   EWS      — extreme wide establishing shot
+  #   WIDE     — wide shot, full body in environment
+  #   MEDIUM   — waist up
+  #   MCU      — chest up (medium close-up)
+  #   CLOSE    — face, tightly framed
+  #   ECU      — extreme close-up, single detail
+  #   POV      — first-person point of view
+  #   LOW      — low angle, looking up
+  #   HIGH     — high angle, looking down
+  #   OVERHEAD — bird's-eye, straight down
+  #   OTS      — over-the-shoulder
+  #   DUTCH    — tilted camera, unease
+
   # === ACT 1 ===
 
   - number: 1
     title: "Opening shot"
-    camera: "WIDE"
+    camera: "EWS"
     type: still
     duration: 8
     ken_burns: "zoom_in"
@@ -439,7 +453,7 @@ scenes:
 
   - number: 3
     title: "Action sequence"
-    camera: "WIDE"
+    camera: "MEDIUM"
     type: clip
     duration: 7
     characters: [character_one, character_two]

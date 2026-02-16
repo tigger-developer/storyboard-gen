@@ -218,7 +218,7 @@ scenes:
 
   - number: 1
     title: "Opening shot"
-    camera: "WIDE"         # WIDE, CLOSE, WINDOW, or custom string
+    camera: "WIDE"         # EWS, WIDE, MEDIUM, MCU, CLOSE, ECU, POV, LOW, HIGH, OVERHEAD, OTS, DUTCH
     type: still             # still or clip
     duration: 8             # seconds — match to voice-over timing
     ken_burns: "zoom_in"    # zoom_in, zoom_out, pan_ltr, pan_rtl, static, null
@@ -268,7 +268,7 @@ scenes:
 ### Schema notes
 
 - `duration` should match voice-over timing (stanza breaks)
-- `camera` is advisory — it's included in prompts for the AI, not enforced
+- `camera` is automatically injected into the AI prompt as descriptive phrasing (e.g. `WIDE` → "Wide shot, full body visible in the environment."). Must be one of the 12 standard values or null. Validated at config load time
 - `ken_burns` only applies to stills; clips are already video
 - `characters` links to character definitions for reference image lookup
 - `model` on a scene overrides only the model, inheriting backend and options from the project-level provider (or Google default). Cannot be combined with `provider` on the same scene

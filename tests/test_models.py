@@ -3,7 +3,13 @@
 
 from pathlib import Path
 
-from storyboard_gen.models import Character, Project, ProviderConfig, Scene
+from storyboard_gen.models import (
+    CAMERA_PROMPTS,
+    Character,
+    Project,
+    ProviderConfig,
+    Scene,
+)
 
 
 class TestCharacter:
@@ -423,6 +429,133 @@ class TestProject:
         # Assert
         assert prompt.startswith("Watercolour style.")
         assert "P1" in prompt
+
+    def test_build_prompt_with_standard_camera_injects_phrasing(self):
+        """Standard camera values are mapped to descriptive prompt phrasings."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Wide",
+            scene_type="still",
+            prompt="A sunset.",
+            duration=5,
+            camera="WIDE",
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Painterly.",
+            characters={},
+            scenes=[scene],
+        )
+
+        # Act
+        prompt = project.build_prompt(scene)
+
+        # Assert — camera phrasing injected between style and scene prompt
+        assert CAMERA_PROMPTS["WIDE"] in prompt
+        assert prompt.startswith("Painterly.")
+        assert prompt.endswith("A sunset.")
+
+    def test_build_prompt_with_camera_none_unchanged(self):
+        """No camera → no camera phrasing injected (backwards compatible)."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="No cam",
+            scene_type="still",
+            prompt="A sunset.",
+            duration=5,
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Painterly.",
+            characters={},
+            scenes=[scene],
+        )
+
+        # Act
+        prompt = project.build_prompt(scene)
+
+        # Assert — same as before: style + scene prompt
+        assert prompt == "Painterly. A sunset."
+
+    def test_build_prompt_camera_before_characters(self):
+        """Camera phrasing should appear before character descriptions."""
+        # Arrange
+        chars = {
+            "hero": Character(id="hero", description="A tall boy"),
+        }
+        scene = Scene(
+            number="1",
+            title="Ordered",
+            scene_type="still",
+            prompt="Walking.",
+            duration=5,
+            camera="CLOSE",
+            characters=["hero"],
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters=chars,
+            scenes=[scene],
+        )
+
+        # Act
+        prompt = project.build_prompt(scene)
+
+        # Assert — order: style, camera, characters, scene prompt
+        camera_pos = prompt.index(CAMERA_PROMPTS["CLOSE"])
+        chars_pos = prompt.index("Characters:")
+        scene_pos = prompt.index("Walking.")
+        assert camera_pos < chars_pos < scene_pos
+
+    def test_build_prompt_camera_case_insensitive(self):
+        """Camera lookup should be case-insensitive."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Case",
+            scene_type="still",
+            prompt="A scene.",
+            duration=5,
+            camera="wide",
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[scene],
+        )
+
+        # Act
+        prompt = project.build_prompt(scene)
+
+        # Assert — same phrasing as uppercase WIDE
+        assert CAMERA_PROMPTS["WIDE"] in prompt
+
+    def test_camera_prompts_contains_all_standard_values(self):
+        """CAMERA_PROMPTS dict should contain all 12 standard camera values."""
+        # Arrange & Act & Assert
+        expected = {
+            "EWS",
+            "WIDE",
+            "MEDIUM",
+            "MCU",
+            "CLOSE",
+            "ECU",
+            "POV",
+            "LOW",
+            "HIGH",
+            "OVERHEAD",
+            "OTS",
+            "DUTCH",
+        }
+        assert set(CAMERA_PROMPTS.keys()) == expected
 
     def test_get_reference_images_returns_existing_refs(self, tmp_path):
         # Arrange

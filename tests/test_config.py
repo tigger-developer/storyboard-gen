@@ -107,6 +107,70 @@ class TestLoadProject:
         with pytest.raises(ConfigError, match="invalid ken_burns"):
             load_project(tmp_path)
 
+    def test_load_yaml_with_invalid_camera_raises_config_error(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Bad Camera",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "camera": "WDIE",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="invalid camera"):
+            load_project(tmp_path)
+
+    def test_load_yaml_with_valid_camera_succeeds(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Good Camera",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "camera": "WIDE",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.scenes[0].camera == "WIDE"
+
+    def test_load_yaml_with_lowercase_camera_normalizes(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Lowercase Camera",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "camera": "close",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert — stored as uppercase
+        assert project.scenes[0].camera == "CLOSE"
+
     def test_load_yaml_with_unknown_character_ref_raises_config_error(self, tmp_path):
         # Arrange
         data = {

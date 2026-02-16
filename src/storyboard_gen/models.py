@@ -63,6 +63,24 @@ VALID_SCENE_TYPES = {"still", "clip"}
 VALID_KEN_BURNS = {"zoom_in", "zoom_out", "pan_ltr", "pan_rtl", "static", None}
 VALID_ASPECT_RATIOS = {"9:16", "16:9", "4:3", "1:1"}
 
+# Standard camera values and their prompt phrasings for AI generation.
+# Keys are uppercase; lookup in build_prompt() is case-insensitive.
+CAMERA_PROMPTS: dict[str, str] = {
+    "EWS": "Extreme wide establishing shot showing the full environment.",
+    "WIDE": "Wide shot, full body visible in the environment.",
+    "MEDIUM": "Medium shot framed from the waist up.",
+    "MCU": "Medium close-up framed from the chest up.",
+    "CLOSE": "Close-up of the face, tightly framed.",
+    "ECU": "Extreme close-up, tightly cropped to a single detail.",
+    "POV": "First-person point of view, seen through the character's eyes.",
+    "LOW": "Low angle shot looking upward, character appears dominant.",
+    "HIGH": "High angle shot looking downward, character appears small.",
+    "OVERHEAD": "Bird's-eye overhead shot looking straight down.",
+    "OTS": "Over-the-shoulder shot, shallow depth of field, foreground shoulder blurred.",
+    "DUTCH": "Camera tilted 20 degrees off-axis, creating unease.",
+}
+VALID_CAMERAS = set(CAMERA_PROMPTS.keys()) | {None}
+
 
 @dataclass(frozen=True)
 class Project:
@@ -94,12 +112,17 @@ class Project:
         return [s for s in self.scenes if s.scene_type == "clip"]
 
     def build_prompt(self, scene: Scene) -> str:
-        """Build the full prompt: style prefix + character descriptions + scene prompt.
+        """Build the full prompt: style prefix + camera + characters + scene prompt.
 
-        Character descriptions are injected when the scene lists characters,
-        providing textual context even when reference images cannot be sent.
+        Camera phrasing is injected from CAMERA_PROMPTS when the scene has a
+        camera value. Character descriptions are injected when the scene lists
+        characters, providing textual context even when reference images cannot
+        be sent.
         """
         parts = [self.style_prefix.strip()]
+        if scene.camera is not None:
+            camera_key = scene.camera.upper()
+            parts.append(CAMERA_PROMPTS[camera_key])
         char_descs = []
         for char_id in scene.characters:
             char = self.characters.get(char_id)

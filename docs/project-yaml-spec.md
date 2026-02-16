@@ -1,4 +1,4 @@
-<!-- Version: 1.5 | Last updated: 2026-02-16 -->
+<!-- Version: 1.6 | Last updated: 2026-02-16 -->
 
 # project.yaml Specification
 
@@ -231,7 +231,7 @@ scenes:
 | `type` | string | no | `"still"` | `"still"` or `"clip"` |
 | `prompt` | string | no | `""` | Scene description for the AI model |
 | `duration` | number | no | `5` | Duration in seconds (supports decimals, e.g. `2.5`) — match to voice-over timing |
-| `camera` | string | no | `null` | Advisory camera angle: `"WIDE"`, `"CLOSE"`, `"WINDOW"`, or any string |
+| `camera` | string | no | `null` | Camera angle — injected into AI prompt automatically (see table below) |
 | `ken_burns` | string | no | `null` | Ken Burns effect for stills (ignored for clips) |
 | `characters` | list | no | `[]` | Character IDs from the `characters` section |
 | `provider` | object | no | `null` | Per-scene provider override (same format as `providers.still`) |
@@ -258,7 +258,25 @@ Only applies to stills. Ignored for clips.
 
 ### `camera`
 
-Advisory only — included in the prompt text sent to the AI model. The tool does not enforce framing. Common values: `"WIDE"`, `"CLOSE"`, `"WINDOW"`, `"MEDIUM"`, `"OVERHEAD"`. Any string is accepted.
+Standard camera values are automatically injected into the AI prompt as descriptive phrasing. Case-insensitive (e.g. `"wide"` and `"WIDE"` are equivalent). Invalid values are rejected at validation time.
+
+| Value | Injected prompt phrasing |
+|-------|--------------------------|
+| `EWS` | Extreme wide establishing shot showing the full environment. |
+| `WIDE` | Wide shot, full body visible in the environment. |
+| `MEDIUM` | Medium shot framed from the waist up. |
+| `MCU` | Medium close-up framed from the chest up. |
+| `CLOSE` | Close-up of the face, tightly framed. |
+| `ECU` | Extreme close-up, tightly cropped to a single detail. |
+| `POV` | First-person point of view, seen through the character's eyes. |
+| `LOW` | Low angle shot looking upward, character appears dominant. |
+| `HIGH` | High angle shot looking downward, character appears small. |
+| `OVERHEAD` | Bird's-eye overhead shot looking straight down. |
+| `OTS` | Over-the-shoulder shot, shallow depth of field, foreground shoulder blurred. |
+| `DUTCH` | Camera tilted 20 degrees off-axis, creating unease. |
+| `null` (omitted) | No camera phrasing injected. |
+
+The camera phrasing is inserted between the `style_prefix` and character descriptions in the assembled prompt. Prompt assembly order: **style prefix → camera → characters → scene prompt**.
 
 ---
 

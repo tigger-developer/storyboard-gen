@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from storyboard_gen.models import (
     VALID_ASPECT_RATIOS,
     VALID_BACKENDS,
+    VALID_CAMERAS,
     VALID_KEN_BURNS,
     VALID_SCENE_TYPES,
     Character,
@@ -181,6 +182,15 @@ def _parse_scenes(
                 f"Must be one of: {', '.join(str(v) for v in sorted(VALID_KEN_BURNS, key=str))}"
             )
 
+        camera_raw = scene_data.get("camera")
+        camera = camera_raw.upper() if isinstance(camera_raw, str) else camera_raw
+        if camera not in VALID_CAMERAS:
+            valid_names = sorted(v for v in VALID_CAMERAS if v is not None)
+            raise ConfigError(
+                f"Scene {i + 1}: invalid camera '{camera_raw}'. "
+                f"Must be one of: {', '.join(valid_names)}"
+            )
+
         char_ids = scene_data.get("characters", [])
         for cid in char_ids:
             if cid not in characters:
@@ -276,7 +286,7 @@ def _parse_scenes(
                 scene_type=scene_type,
                 prompt=scene_data.get("prompt", ""),
                 duration=float(scene_data.get("duration", 5)),
-                camera=scene_data.get("camera"),
+                camera=camera,
                 ken_burns=ken_burns,
                 characters=char_ids,
                 provider=scene_provider,
