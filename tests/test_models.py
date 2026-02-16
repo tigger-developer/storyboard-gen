@@ -562,11 +562,79 @@ class TestProject:
         # Act
         refs = project.get_reference_images(scene)
 
-        # Assert — all existing refs from both characters
+        # Assert — round-robin: hero1, villain1, hero2
         assert len(refs) == 3
-        assert hero_front in refs
-        assert hero_side in refs
-        assert villain_ref in refs
+        assert refs == [hero_front, villain_ref, hero_side]
+
+    def test_get_reference_images_interleaves_three_characters(self, tmp_path):
+        """Three characters: A(2 refs), B(2 refs), C(1 ref) → A1, B1, C1, A2, B2."""
+        # Arrange
+        a1 = tmp_path / "a1.png"
+        a2 = tmp_path / "a2.png"
+        b1 = tmp_path / "b1.png"
+        b2 = tmp_path / "b2.png"
+        c1 = tmp_path / "c1.png"
+        for p in [a1, a2, b1, b2, c1]:
+            p.write_bytes(b"fake")
+        chars = {
+            "a": Character(id="a", description="A", reference=[a1, a2]),
+            "b": Character(id="b", description="B", reference=[b1, b2]),
+            "c": Character(id="c", description="C", reference=[c1]),
+        }
+        scene = Scene(
+            number="1",
+            title="T",
+            scene_type="still",
+            prompt="P",
+            duration=5,
+            characters=["a", "b", "c"],
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="",
+            characters=chars,
+            scenes=[scene],
+        )
+
+        # Act
+        refs = project.get_reference_images(scene)
+
+        # Assert — round-robin interleaving
+        assert refs == [a1, b1, c1, a2, b2]
+
+    def test_get_reference_images_single_character_preserves_order(self, tmp_path):
+        """Single character with multiple refs — order unchanged."""
+        # Arrange
+        r1 = tmp_path / "r1.png"
+        r2 = tmp_path / "r2.png"
+        r3 = tmp_path / "r3.png"
+        for p in [r1, r2, r3]:
+            p.write_bytes(b"fake")
+        chars = {
+            "hero": Character(id="hero", description="Hero", reference=[r1, r2, r3]),
+        }
+        scene = Scene(
+            number="1",
+            title="T",
+            scene_type="still",
+            prompt="P",
+            duration=5,
+            characters=["hero"],
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="",
+            characters=chars,
+            scenes=[scene],
+        )
+
+        # Act
+        refs = project.get_reference_images(scene)
+
+        # Assert — single character: original order preserved
+        assert refs == [r1, r2, r3]
 
     def test_project_creation_with_audio_path(self):
         # Arrange & Act

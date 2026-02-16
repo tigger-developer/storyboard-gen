@@ -115,13 +115,27 @@ class Project:
 
         If the scene has reference overrides, return those (filtering to
         existing paths).  Otherwise fall back to character-level reference
-        images, flattening all characters' reference lists.
+        images, interleaved round-robin across characters so each character
+        gets at least one ref before any character gets a second.
         """
         if scene.reference:
             return [r for r in scene.reference if r.exists()]
-        refs = []
+        per_char = []
         for char_id in scene.characters:
             char = self.characters.get(char_id)
             if char:
-                refs.extend(r for r in char.reference if r.exists())
+                existing = [r for r in char.reference if r.exists()]
+                if existing:
+                    per_char.append(existing)
+        refs = []
+        idx = 0
+        while True:
+            added = False
+            for char_refs in per_char:
+                if idx < len(char_refs):
+                    refs.append(char_refs[idx])
+                    added = True
+            if not added:
+                break
+            idx += 1
         return refs
