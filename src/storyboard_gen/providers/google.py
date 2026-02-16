@@ -205,13 +205,13 @@ class GoogleProvider(ImageProvider):
             )
             ref_images = ref_images[:MAX_VEO_REFS]
 
-        # Build config
-        veo_duration = max(5, min(8, int(duration)))
+        # Build config — pass duration as-is; Veo returns a clear error
+        # if the value is unsupported for the given mode.
         config = types.GenerateVideosConfig(
             aspect_ratio=aspect_ratio,
             reference_images=ref_images or None,
             number_of_videos=number_of_videos,
-            duration_seconds=veo_duration,
+            duration_seconds=int(duration),
         )
         if self._gcs_bucket:
             config.output_gcs_uri = self._gcs_bucket

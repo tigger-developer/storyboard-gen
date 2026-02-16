@@ -670,7 +670,7 @@ class TestClipDurationSeconds:
     """Tests for duration_seconds — issue #30 bug 3."""
 
     def test_clip_passes_duration_seconds(self, tmp_path):
-        """duration_seconds should be set in GenerateVideosConfig."""
+        """duration_seconds should be passed through as-is to the API."""
         # Arrange
         client = _make_mock_video_client()
         provider = GoogleProvider(model="veo-3.1-fast-generate-001")
@@ -689,48 +689,8 @@ class TestClipDurationSeconds:
         config = call_kwargs["config"]
         assert config.duration_seconds == 7
 
-    def test_clip_clamps_duration_minimum(self, tmp_path):
-        """Duration below 5 should be clamped to 5."""
-        # Arrange
-        client = _make_mock_video_client()
-        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
-
-        # Act
-        provider.generate_clip(
-            prompt="Short clip",
-            output_path=tmp_path / "scene_01.mp4",
-            aspect_ratio="9:16",
-            duration=2,
-            client=client,
-        )
-
-        # Assert
-        call_kwargs = client.models.generate_videos.call_args.kwargs
-        config = call_kwargs["config"]
-        assert config.duration_seconds == 5
-
-    def test_clip_clamps_duration_maximum(self, tmp_path):
-        """Duration above 8 should be clamped to 8."""
-        # Arrange
-        client = _make_mock_video_client()
-        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
-
-        # Act
-        provider.generate_clip(
-            prompt="Long clip",
-            output_path=tmp_path / "scene_01.mp4",
-            aspect_ratio="9:16",
-            duration=15,
-            client=client,
-        )
-
-        # Assert
-        call_kwargs = client.models.generate_videos.call_args.kwargs
-        config = call_kwargs["config"]
-        assert config.duration_seconds == 8
-
     def test_clip_duration_float_truncated_to_int(self, tmp_path):
-        """Float duration should be truncated to int before clamping."""
+        """Float duration should be truncated to int."""
         # Arrange
         client = _make_mock_video_client()
         provider = GoogleProvider(model="veo-3.1-fast-generate-001")
