@@ -452,7 +452,10 @@ class TestFalMultiReference:
 
 
 class TestFalGenerateClip:
-    def test_raises_not_implemented(self, tmp_path):
+    """Tests for FAL clip generation via Kling models (#34)."""
+
+    def test_non_video_model_raises_not_implemented(self, tmp_path):
+        """Flux/Kontext still models should still raise NotImplementedError."""
         provider = FalProvider(model="fal-ai/flux-pro/v1.1")
 
         with pytest.raises(NotImplementedError, match="does not support video"):
@@ -463,21 +466,242 @@ class TestFalGenerateClip:
                 duration=5,
             )
 
-    def test_raises_not_implemented_with_new_kwargs(self, tmp_path):
-        """New Veo kwargs should not break the NotImplementedError path."""
-        from pathlib import Path
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_calls_subscribe_with_correct_arguments(self, mock_fal, tmp_path):
+        """Text-to-video should call subscribe with prompt, duration, aspect_ratio."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/image-to-video")
 
-        provider = FalProvider(model="fal-ai/flux-pro/v1.1")
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
 
-        with pytest.raises(NotImplementedError, match="does not support video"):
-            provider.generate_clip(
-                prompt="Action",
+            # Act
+            result = provider.generate_clip(
+                prompt="A boy running",
                 output_path=tmp_path / "scene_01.mp4",
                 aspect_ratio="9:16",
                 duration=5,
-                source_frame=Path("frame.png"),
-                last_frame=Path("last.png"),
-                extend_from_video=Path("clip.mp4"),
-                seed=42,
-                number_of_videos=2,
+            )
+
+        # Assert
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/kling-video/v2.1/pro/image-to-video"
+        arguments = call_args.kwargs["arguments"]
+        assert arguments["prompt"] == "A boy running"
+        assert arguments["duration"] == "5"
+        assert arguments["aspect_ratio"] == "9:16"
+        assert result == [b"video-bytes"]
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_uploads_source_frame(self, mock_fal, tmp_path):
+        """source_frame should be uploaded to CDN and passed as image_url."""
+        # Arrange
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"fake-frame")
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="Animate this",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert
+        mock_fal.upload_file.assert_called_once_with(str(frame))
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_url"] == "https://fal.media/files/frame.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_v3_uses_start_image_url(self, mock_fal, tmp_path):
+        """v3 models should use start_image_url instead of image_url."""
+        # Arrange
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"fake-frame")
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v3/standard/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="Animate this",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["start_image_url"] == "https://fal.media/files/frame.png"
+        assert "image_url" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_passes_last_frame_v2(self, mock_fal, tmp_path):
+        """last_frame should map to tail_image_url for v2.x models."""
+        # Arrange
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"fake-frame")
+        last = tmp_path / "last.png"
+        last.write_bytes(b"fake-last")
+        mock_fal.upload_file.side_effect = [
+            "https://fal.media/files/frame.png",
+            "https://fal.media/files/last.png",
+        ]
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="Interpolate",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                source_frame=frame,
+                last_frame=last,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["tail_image_url"] == "https://fal.media/files/last.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_passes_last_frame_v3(self, mock_fal, tmp_path):
+        """last_frame should map to end_image_url for v3 models."""
+        # Arrange
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"fake-frame")
+        last = tmp_path / "last.png"
+        last.write_bytes(b"fake-last")
+        mock_fal.upload_file.side_effect = [
+            "https://fal.media/files/frame.png",
+            "https://fal.media/files/last.png",
+        ]
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v3/standard/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="Interpolate",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                source_frame=frame,
+                last_frame=last,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["end_image_url"] == "https://fal.media/files/last.png"
+        assert "tail_image_url" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_passes_options(self, mock_fal, tmp_path):
+        """Provider options should be merged into arguments."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(
+            model="fal-ai/kling-video/v2.1/pro/image-to-video",
+            options={"cfg_scale": 0.7, "negative_prompt": "blur"},
+        )
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="Action",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="16:9",
+                duration=10,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["cfg_scale"] == 0.7
+        assert arguments["negative_prompt"] == "blur"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_duration_passed_as_string(self, mock_fal, tmp_path):
+        """Duration should be converted to string for FAL API."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="Test",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=10.5,
+            )
+
+        # Assert — float truncated to int, passed as string
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["duration"] == "10"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_no_video_raises(self, mock_fal, tmp_path):
+        """RuntimeError when no video is returned."""
+        # Arrange
+        mock_fal.subscribe.return_value = {"video": None}
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/image-to-video")
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match="No video generated"):
+            provider.generate_clip(
+                prompt="Fail",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+            )
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_api_error_surfaces(self, mock_fal, tmp_path):
+        """FAL API errors should be wrapped in RuntimeError."""
+        # Arrange
+        mock_fal.subscribe.side_effect = Exception("quota exceeded")
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/image-to-video")
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match="FAL API error"):
+            provider.generate_clip(
+                prompt="Error test",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
             )

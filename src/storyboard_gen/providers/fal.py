@@ -1,5 +1,5 @@
 # ABOUTME: FAL.ai provider for storyboard-gen.
-# ABOUTME: Generates stills via Flux and Kontext models through the fal-client SDK.
+# ABOUTME: Generates stills via Flux/Kontext and clips via Kling through the fal-client SDK.
 
 import logging
 import urllib.request
@@ -220,6 +220,56 @@ class FalProvider(ImageProvider):
         logger.info("Downloading generated image from %s", image_url)
         return _download_url(image_url)
 
+    @property
+    def _is_video_model(self) -> bool:
+        """Detect whether this provider is configured for a video model."""
+        return "kling-video" in self.model.lower()
+
+    @property
+    def _is_v3(self) -> bool:
+        """Detect whether this is a Kling v3+ model (different param names)."""
+        return "/v3/" in self.model.lower()
+
+    def _build_video_args(
+        self,
+        prompt: str,
+        aspect_ratio: str,
+        duration: float,
+        source_frame_url: str | None,
+        last_frame_url: str | None,
+    ) -> dict:
+        """Build arguments for Kling video generation.
+
+        Args:
+            prompt: Full prompt text.
+            aspect_ratio: Raw "W:H" string.
+            duration: Duration in seconds.
+            source_frame_url: Uploaded source frame URL, or None.
+            last_frame_url: Uploaded last frame URL, or None.
+
+        Returns:
+            Arguments dict for fal_client.subscribe().
+        """
+        arguments: dict = {
+            "prompt": prompt,
+            "duration": str(int(duration)),
+            "aspect_ratio": aspect_ratio,
+        }
+
+        if source_frame_url:
+            if self._is_v3:
+                arguments["start_image_url"] = source_frame_url
+            else:
+                arguments["image_url"] = source_frame_url
+
+        if last_frame_url:
+            if self._is_v3:
+                arguments["end_image_url"] = last_frame_url
+            else:
+                arguments["tail_image_url"] = last_frame_url
+
+        return arguments
+
     def generate_clip(
         self,
         prompt: str,
@@ -235,12 +285,63 @@ class FalProvider(ImageProvider):
         seed: int | None = None,
         number_of_videos: int = 1,
     ) -> list[bytes]:
-        """FAL provider does not support video generation.
+        """Generate a video clip via FAL Kling models.
+
+        Uses fal_client.subscribe() for synchronous generation.
+        Supports image-to-video via source_frame and last_frame.
 
         Raises:
-            NotImplementedError: Always.
+            NotImplementedError: If model is not a video model (e.g. Flux/Kontext).
+            RuntimeError: On generation failure.
+            ImportError: If fal-client is not installed.
         """
-        raise NotImplementedError(
-            f"FAL provider ({self.model}) does not support video generation. "
-            f"Use Google (Veo) for clips."
+        if not self._is_video_model:
+            raise NotImplementedError(
+                f"FAL provider ({self.model}) does not support video generation. "
+                f"Use a Kling model or Google (Veo) for clips."
+            )
+
+        if fal_client is None:
+            raise ImportError(
+                "fal-client is not installed. Run: pip install fal-client"
+            )
+
+        # Upload source_frame and last_frame to CDN
+        source_frame_url = None
+        if source_frame is not None and source_frame.exists():
+            source_frame_url = fal_client.upload_file(str(source_frame))
+            logger.info("Uploaded source frame -> %s", source_frame_url)
+
+        last_frame_url = None
+        if last_frame is not None and last_frame.exists():
+            last_frame_url = fal_client.upload_file(str(last_frame))
+            logger.info("Uploaded last frame -> %s", last_frame_url)
+
+        arguments = self._build_video_args(
+            prompt, aspect_ratio, duration, source_frame_url, last_frame_url
         )
+
+        # Merge provider options (cfg_scale, negative_prompt, etc.)
+        merged_options = self.options.copy()
+        if options:
+            merged_options.update(options)
+        arguments.update(merged_options)
+
+        logger.info("Generating clip via FAL model=%s", self.model)
+        logger.debug("Arguments: %s", arguments)
+
+        try:
+            result = fal_client.subscribe(self.model, arguments=arguments)
+        except Exception as exc:
+            raise RuntimeError(f"FAL API error: {exc}") from exc
+
+        video = result.get("video")
+        if not video or not video.get("url"):
+            raise RuntimeError(
+                f"No video generated. The FAL {self.model} safety filter likely "
+                f"rejected the prompt or source image. Try revising them."
+            )
+
+        video_url = video["url"]
+        logger.info("Downloading generated video from %s", video_url)
+        return [_download_url(video_url)]
