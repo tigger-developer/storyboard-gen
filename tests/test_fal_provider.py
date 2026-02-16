@@ -473,7 +473,7 @@ class TestFalGenerateClip:
         mock_fal.subscribe.return_value = {
             "video": {"url": "https://fal.media/files/video.mp4"},
         }
-        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/image-to-video")
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/text-to-video")
 
         with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
             mock_dl.return_value = b"video-bytes"
@@ -488,7 +488,7 @@ class TestFalGenerateClip:
 
         # Assert
         call_args = mock_fal.subscribe.call_args
-        assert call_args.args[0] == "fal-ai/kling-video/v2.1/pro/image-to-video"
+        assert call_args.args[0] == "fal-ai/kling-video/v2.1/pro/text-to-video"
         arguments = call_args.kwargs["arguments"]
         assert arguments["prompt"] == "A boy running"
         assert arguments["duration"] == "5"
@@ -705,3 +705,186 @@ class TestFalGenerateClip:
                 aspect_ratio="9:16",
                 duration=5,
             )
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_defaults_generate_audio_false(self, mock_fal, tmp_path):
+        """generate_audio should default to False (#35)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A boy running",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["generate_audio"] is False
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_generate_audio_overridable_via_options(self, mock_fal, tmp_path):
+        """User can override generate_audio to True via options (#35)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(
+            model="fal-ai/kling-video/v2.1/pro/image-to-video",
+            options={"generate_audio": True},
+        )
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A boy running",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+            )
+
+        # Assert — options override the default
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["generate_audio"] is True
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_swaps_i2v_to_t2v_when_no_source_frame(self, mock_fal, tmp_path):
+        """image-to-video endpoint should swap to text-to-video when no source_frame (#36)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act — no source_frame
+            provider.generate_clip(
+                prompt="A boy running",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+            )
+
+        # Assert — endpoint swapped to text-to-video
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/kling-video/v2.1/pro/text-to-video"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_swaps_t2v_to_i2v_when_source_frame_set(self, mock_fal, tmp_path):
+        """text-to-video endpoint should swap to image-to-video when source_frame is set (#36)."""
+        # Arrange
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"fake-frame")
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act — source_frame provided
+            provider.generate_clip(
+                prompt="Animate this",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert — endpoint swapped to image-to-video
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/kling-video/v2.1/pro/image-to-video"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_no_swap_i2v_with_source_frame(self, mock_fal, tmp_path):
+        """image-to-video with source_frame should not swap (#36)."""
+        # Arrange
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"fake-frame")
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="Animate this",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert — no swap, stays as image-to-video
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/kling-video/v2.1/pro/image-to-video"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_no_swap_t2v_without_source_frame(self, mock_fal, tmp_path):
+        """text-to-video without source_frame should not swap (#36)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A boy running",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+            )
+
+        # Assert — no swap, stays as text-to-video
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/kling-video/v2.1/pro/text-to-video"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_clip_endpoint_swap_logged(self, mock_fal, tmp_path, caplog):
+        """Endpoint swap should be logged at INFO level (#36)."""
+        import logging
+
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/image-to-video")
+
+        with (
+            caplog.at_level(logging.INFO),
+            patch("storyboard_gen.providers.fal._download_url") as mock_dl,
+        ):
+            mock_dl.return_value = b"video-bytes"
+
+            # Act — no source_frame triggers swap
+            provider.generate_clip(
+                prompt="A boy running",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+            )
+
+        # Assert — swap logged
+        assert any("text-to-video" in r.message for r in caplog.records)

@@ -254,6 +254,7 @@ class FalProvider(ImageProvider):
             "prompt": prompt,
             "duration": str(int(duration)),
             "aspect_ratio": aspect_ratio,
+            "generate_audio": False,
         }
 
         if source_frame_url:
@@ -327,11 +328,23 @@ class FalProvider(ImageProvider):
             merged_options.update(options)
         arguments.update(merged_options)
 
-        logger.info("Generating clip via FAL model=%s", self.model)
+        # Auto-route endpoint based on whether source_frame is set (#36)
+        endpoint = self.model
+        has_source = source_frame_url is not None
+        if has_source and "text-to-video" in endpoint:
+            endpoint = endpoint.replace("text-to-video", "image-to-video")
+            logger.info("Auto-routed endpoint to image-to-video (source_frame set)")
+        elif not has_source and "image-to-video" in endpoint:
+            endpoint = endpoint.replace("image-to-video", "text-to-video")
+            logger.info("Auto-routed endpoint to text-to-video (no source_frame)")
+
+        logger.info(
+            "Generating clip via FAL model=%s endpoint=%s", self.model, endpoint
+        )
         logger.debug("Arguments: %s", arguments)
 
         try:
-            result = fal_client.subscribe(self.model, arguments=arguments)
+            result = fal_client.subscribe(endpoint, arguments=arguments)
         except Exception as exc:
             raise RuntimeError(f"FAL API error: {exc}") from exc
 
