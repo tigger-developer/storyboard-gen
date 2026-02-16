@@ -14,7 +14,7 @@ SAMPLE_PROJECT_YAML = {
     "characters": {
         "hero": {
             "description": "A young boy with red hair",
-            "reference": "references/hero.png",
+            "reference": ["references/hero.png"],
         },
         "sidekick": {
             "description": "A tall woman in a blue coat",

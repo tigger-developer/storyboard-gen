@@ -137,15 +137,101 @@ class TestProjectCharacters:
 
         # Assert
         hero = project.characters["hero"]
-        assert hero.reference == sample_project_dir / "references" / "hero.png"
+        assert hero.reference == [sample_project_dir / "references" / "hero.png"]
 
-    def test_character_without_reference_has_none(self, sample_project_dir):
+    def test_character_without_reference_has_empty_list(self, sample_project_dir):
         # Act
         project = load_project(sample_project_dir)
 
         # Assert
         sidekick = project.characters["sidekick"]
-        assert sidekick.reference is None
+        assert sidekick.reference == []
+
+    def test_character_with_multiple_references(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Multi Ref",
+            "characters": {
+                "hero": {
+                    "description": "A hero",
+                    "reference": [
+                        "references/front.png",
+                        "references/side.png",
+                    ],
+                },
+            },
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "characters": ["hero"],
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        hero = project.characters["hero"]
+        assert len(hero.reference) == 2
+        assert hero.reference[0] == tmp_path / "references" / "front.png"
+        assert hero.reference[1] == tmp_path / "references" / "side.png"
+
+    def test_character_string_reference_raises_config_error(self, tmp_path):
+        # Arrange — string reference (old format) should produce clear error
+        data = {
+            "title": "Old Format",
+            "characters": {
+                "hero": {
+                    "description": "A hero",
+                    "reference": "references/hero.png",
+                },
+            },
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "characters": ["hero"],
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="must be a list since v0.29.0"):
+            load_project(tmp_path)
+
+    def test_character_string_reference_error_includes_migration_hint(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Old Format",
+            "characters": {
+                "hero": {
+                    "description": "A hero",
+                    "reference": "references/hero.png",
+                },
+            },
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "characters": ["hero"],
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert — error message includes migration instructions
+        with pytest.raises(ConfigError, match="references/hero.png"):
+            load_project(tmp_path)
 
 
 class TestProjectScenes:
@@ -286,7 +372,7 @@ class TestProjectProviders:
 
 class TestSceneReferenceOverride:
     def test_load_scene_with_reference_override(self, tmp_path):
-        # Arrange — scene has reference: key
+        # Arrange — scene has reference: list
         ref_file = tmp_path / "references" / "mum.png"
         ref_file.parent.mkdir()
         ref_file.write_bytes(b"fake-png")
@@ -298,7 +384,7 @@ class TestSceneReferenceOverride:
                     "type": "still",
                     "prompt": "Portrait of mum.",
                     "duration": 5,
-                    "reference": "references/mum.png",
+                    "reference": ["references/mum.png"],
                 },
             ],
         }
@@ -309,9 +395,34 @@ class TestSceneReferenceOverride:
 
         # Assert — reference resolved relative to project_dir
         scene = project.get_scene(1)
-        assert scene.reference == tmp_path / "references" / "mum.png"
+        assert scene.reference == [tmp_path / "references" / "mum.png"]
 
-    def test_load_scene_without_reference_defaults_to_none(self, tmp_path):
+    def test_load_scene_with_multiple_references(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Multi Ref Scene",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "reference": ["refs/front.png", "refs/side.png"],
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        scene = project.get_scene(1)
+        assert len(scene.reference) == 2
+        assert scene.reference[0] == tmp_path / "refs" / "front.png"
+        assert scene.reference[1] == tmp_path / "refs" / "side.png"
+
+    def test_load_scene_without_reference_defaults_to_empty_list(self, tmp_path):
         # Arrange — no reference key
         data = {
             "title": "No Ref",
@@ -325,7 +436,27 @@ class TestSceneReferenceOverride:
         project = load_project(tmp_path)
 
         # Assert
-        assert project.get_scene(1).reference is None
+        assert project.get_scene(1).reference == []
+
+    def test_scene_string_reference_raises_config_error(self, tmp_path):
+        # Arrange — string reference (old format) should produce clear error
+        data = {
+            "title": "Old Format",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "prompt": "x",
+                    "duration": 3,
+                    "reference": "references/mum.png",
+                },
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="must be a list since v0.29.0"):
+            load_project(tmp_path)
 
 
 class TestSceneModelOverride:

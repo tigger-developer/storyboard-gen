@@ -19,11 +19,11 @@ class ProviderConfig:
 
 @dataclass(frozen=True)
 class Character:
-    """A named character with a description and optional reference image."""
+    """A named character with a description and optional reference images."""
 
     id: str
     description: str
-    reference: Path | None = None
+    reference: list[Path] = field(default_factory=list)
 
 
 def format_scene_number(number: str) -> str:
@@ -51,7 +51,7 @@ class Scene:
     characters: list[str] = field(default_factory=list)  # character IDs
     provider: ProviderConfig | None = None  # per-scene provider override
     model: str | None = None  # per-scene model-only override (shorthand)
-    reference: Path | None = None  # per-scene reference image override
+    reference: list[Path] = field(default_factory=list)  # per-scene reference override
     source_frame: Path | None = None  # image-to-video first frame (clips only)
     last_frame: Path | None = None  # interpolation end frame (requires source_frame)
     extend_from: str | None = None  # scene number to extend from (clips only)
@@ -113,14 +113,15 @@ class Project:
     def get_reference_images(self, scene: Scene) -> list[Path]:
         """Return reference image paths for a scene.
 
-        If the scene has a reference override, return that single path.
-        Otherwise fall back to character-level reference images.
+        If the scene has reference overrides, return those (filtering to
+        existing paths).  Otherwise fall back to character-level reference
+        images, flattening all characters' reference lists.
         """
-        if scene.reference and scene.reference.exists():
-            return [scene.reference]
+        if scene.reference:
+            return [r for r in scene.reference if r.exists()]
         refs = []
         for char_id in scene.characters:
             char = self.characters.get(char_id)
-            if char and char.reference and char.reference.exists():
-                refs.append(char.reference)
+            if char:
+                refs.extend(r for r in char.reference if r.exists())
         return refs

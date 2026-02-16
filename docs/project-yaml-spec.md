@@ -1,4 +1,4 @@
-<!-- Version: 1.3 | Last updated: 2026-02-13 -->
+<!-- Version: 1.4 | Last updated: 2026-02-16 -->
 
 # project.yaml Specification
 
@@ -132,27 +132,31 @@ characters:
     description: >
       A 10-year-old boy with messy red hair, freckles, green eyes.
       Wearing a blue hoodie and worn jeans. Energetic expression.
-    reference: "references/hero.jpg"
+    reference:
+      - "references/hero_front.jpg"
+      - "references/hero_side.jpg"
 
   villain:
     description: >
       Tall woman in a dark cloak, silver hair, piercing grey eyes.
       Angular features, commanding presence.
-    reference: null
+    reference: []
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `description` | string | no | Physical description included in prompts for consistency |
-| `reference` | string or null | no | Path to reference image, relative to project directory |
+| `reference` | list | no | List of reference image paths, relative to project directory |
 
 ### Notes
 
 - Character IDs are used in scene `characters` lists.
 - Reference images are uploaded to the provider for style-consistent generation.
-- Only single-reference scenes use the reference image (to avoid blending artefacts).
-- The reference path is resolved relative to the project directory.
+- Multiple reference images per character are supported (e.g. front/side/detail views). Veo supports up to 3 asset references.
+- FAL and Replicate providers use only the first reference image and log a warning when multiple are provided.
+- The reference paths are resolved relative to the project directory.
 - Missing reference files are silently skipped at generation time (not at validation).
+- **Breaking change (v0.29.0):** `reference` must be a list. A bare string value produces a `ConfigError` with migration instructions.
 
 ---
 
@@ -256,14 +260,15 @@ characters:
       A 10-year-old boy with messy auburn hair, round green eyes,
       scattered freckles across his nose. Wears a faded blue hoodie
       two sizes too big, rolled-up sleeves, muddy canvas trainers.
-    reference: "references/hero.png"
+    reference:
+      - "references/hero.png"
 
   guide:
     description: >
       An elderly woman, weathered face, kind brown eyes behind
       round spectacles. White hair in a loose bun. Wears a worn
       green cardigan with patches on the elbows.
-    reference: null
+    reference: []
 
 scenes:
   # === ACT 1: THE BRIDGE ===

@@ -202,13 +202,15 @@ characters:
       Physical description for prompt consistency. Include clothing,
       hair, distinguishing features. Be detailed enough that the AI
       renders the same character across scenes.
-    reference: "references/boy.jpg"    # optional path to reference image
+    reference:                         # list of reference image paths
+      - "references/boy_front.jpg"
+      - "references/boy_side.jpg"
 
   mum:
     description: >
-      Another character description. Reference can be null if no
-      reference image is available.
-    reference: null
+      Another character description. Omit reference or use empty
+      list if no reference images are available.
+    reference: []
 
 scenes:
   # Comments can organise scenes into stanzas/acts/sections
@@ -256,7 +258,8 @@ scenes:
     type: still
     duration: 5
     characters: [mum]
-    reference: "references/mum.png"  # overrides character-level reference for this scene
+    reference:                        # overrides character-level references for this scene
+      - "references/mum.png"
     prompt: >
       When reference is set on a scene, it replaces the
       character-based reference lookup entirely for that scene.
@@ -270,7 +273,7 @@ scenes:
 - `characters` links to character definitions for reference image lookup
 - `model` on a scene overrides only the model, inheriting backend and options from the project-level provider (or Google default). Cannot be combined with `provider` on the same scene
 - `provider` on a scene fully overrides the project-level provider for that scene
-- `reference` on a scene overrides the character-level reference image lookup entirely; all providers receive this single path instead of character refs
+- `reference` on a scene overrides the character-level reference image lookup entirely; all providers receive this list instead of character refs. Must be a list (breaking change in v0.29.0)
 - Scene 1 should be generated first and used as style reference for subsequent scenes
 
 ## TDD approach

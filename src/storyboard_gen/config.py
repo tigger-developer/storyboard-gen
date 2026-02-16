@@ -131,16 +131,26 @@ def _parse_characters(raw: dict, project_dir: Path) -> dict[str, Character]:
         if not isinstance(char_data, dict):
             raise ConfigError(f"Character '{char_id}' must be a mapping")
 
-        ref_path = None
-        ref_str = char_data.get("reference")
-        if ref_str:
-            ref_path = project_dir / ref_str
-            # Don't raise if missing — warn at generation time
+        ref_raw = char_data.get("reference")
+        if ref_raw is not None:
+            if isinstance(ref_raw, str):
+                raise ConfigError(
+                    f"Character '{char_id}': 'reference' must be a list "
+                    f"since v0.29.0. "
+                    f'Change:\n  reference: "{ref_raw}"\n'
+                    f"to:\n  reference:\n"
+                    f'    - "{ref_raw}"'
+                )
+            if not isinstance(ref_raw, list):
+                raise ConfigError(f"Character '{char_id}': 'reference' must be a list")
+            ref_paths = [project_dir / r for r in ref_raw]
+        else:
+            ref_paths = []
 
         characters[char_id] = Character(
             id=char_id,
             description=char_data.get("description", ""),
-            reference=ref_path,
+            reference=ref_paths,
         )
     return characters
 
@@ -192,10 +202,21 @@ def _parse_scenes(
                 f"Scene {i + 1}: cannot specify both 'model' and 'provider'"
             )
 
-        scene_reference = None
-        ref_str = scene_data.get("reference")
-        if ref_str:
-            scene_reference = project_dir / ref_str
+        ref_raw = scene_data.get("reference")
+        if ref_raw is not None:
+            if isinstance(ref_raw, str):
+                raise ConfigError(
+                    f"Scene {i + 1}: 'reference' must be a list "
+                    f"since v0.29.0. "
+                    f'Change:\n  reference: "{ref_raw}"\n'
+                    f"to:\n  reference:\n"
+                    f'    - "{ref_raw}"'
+                )
+            if not isinstance(ref_raw, list):
+                raise ConfigError(f"Scene {i + 1}: 'reference' must be a list")
+            scene_reference = [project_dir / r for r in ref_raw]
+        else:
+            scene_reference = []
 
         # Veo 3.1 clip generation fields
         source_frame = None

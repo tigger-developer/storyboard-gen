@@ -10,20 +10,33 @@ class TestCharacter:
     def test_character_creation_with_all_fields(self):
         # Arrange & Act
         char = Character(
-            id="hero", description="A brave lad", reference=Path("ref.png")
+            id="hero", description="A brave lad", reference=[Path("ref.png")]
         )
 
         # Assert
         assert char.id == "hero"
         assert char.description == "A brave lad"
-        assert char.reference == Path("ref.png")
+        assert char.reference == [Path("ref.png")]
 
     def test_character_creation_without_reference(self):
         # Arrange & Act
         char = Character(id="extra", description="Background character")
 
         # Assert
-        assert char.reference is None
+        assert char.reference == []
+
+    def test_character_creation_with_multiple_references(self):
+        # Arrange & Act
+        char = Character(
+            id="hero",
+            description="A brave lad",
+            reference=[Path("front.png"), Path("side.png"), Path("detail.png")],
+        )
+
+        # Assert
+        assert len(char.reference) == 3
+        assert char.reference[0] == Path("front.png")
+        assert char.reference[2] == Path("detail.png")
 
     def test_character_is_frozen(self):
         # Arrange
@@ -151,20 +164,34 @@ class TestScene:
             scene_type="still",
             prompt="Portrait.",
             duration=5,
-            reference=Path("references/mum.png"),
+            reference=[Path("references/mum.png")],
         )
 
         # Assert
-        assert scene.reference == Path("references/mum.png")
+        assert scene.reference == [Path("references/mum.png")]
 
-    def test_scene_reference_defaults_to_none(self):
+    def test_scene_creation_with_multiple_references(self):
+        # Arrange & Act
+        scene = Scene(
+            number="1",
+            title="Multi-ref",
+            scene_type="still",
+            prompt="Portrait.",
+            duration=5,
+            reference=[Path("front.png"), Path("side.png")],
+        )
+
+        # Assert
+        assert len(scene.reference) == 2
+
+    def test_scene_reference_defaults_to_empty_list(self):
         # Arrange & Act
         scene = Scene(
             number="1", title="Test", scene_type="still", prompt="x", duration=5
         )
 
         # Assert
-        assert scene.reference is None
+        assert scene.reference == []
 
     def test_scene_source_frame_defaults_to_none(self):
         # Arrange & Act
@@ -402,9 +429,11 @@ class TestProject:
         ref_path = tmp_path / "hero.png"
         ref_path.write_bytes(b"fake")
         chars = {
-            "hero": Character(id="hero", description="Hero", reference=ref_path),
+            "hero": Character(id="hero", description="Hero", reference=[ref_path]),
             "ghost": Character(
-                id="ghost", description="Ghost", reference=tmp_path / "nope.png"
+                id="ghost",
+                description="Ghost",
+                reference=[tmp_path / "nope.png"],
             ),
         }
         scene = Scene(
@@ -426,7 +455,7 @@ class TestProject:
         # Act
         refs = project.get_reference_images(scene)
 
-        # Assert
+        # Assert — only existing ref returned
         assert len(refs) == 1
         assert refs[0] == ref_path
 
@@ -437,7 +466,7 @@ class TestProject:
         char_ref = tmp_path / "hero.png"
         char_ref.write_bytes(b"fake")
         chars = {
-            "hero": Character(id="hero", description="Hero", reference=char_ref),
+            "hero": Character(id="hero", description="Hero", reference=[char_ref]),
         }
         scene = Scene(
             number="1",
@@ -446,7 +475,7 @@ class TestProject:
             prompt="P",
             duration=5,
             characters=["hero"],
-            reference=scene_ref,
+            reference=[scene_ref],
         )
         project = Project(
             title="T",
@@ -462,6 +491,82 @@ class TestProject:
         # Assert — scene override replaces character refs
         assert len(refs) == 1
         assert refs[0] == scene_ref
+
+    def test_get_reference_images_multi_scene_refs(self, tmp_path):
+        # Arrange — scene with multiple reference images
+        ref1 = tmp_path / "front.png"
+        ref2 = tmp_path / "side.png"
+        ref3 = tmp_path / "missing.png"
+        ref1.write_bytes(b"fake")
+        ref2.write_bytes(b"fake")
+        scene = Scene(
+            number="1",
+            title="T",
+            scene_type="still",
+            prompt="P",
+            duration=5,
+            reference=[ref1, ref2, ref3],
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="",
+            characters={},
+            scenes=[scene],
+        )
+
+        # Act
+        refs = project.get_reference_images(scene)
+
+        # Assert — only existing refs returned
+        assert len(refs) == 2
+        assert refs[0] == ref1
+        assert refs[1] == ref2
+
+    def test_get_reference_images_multi_character_refs(self, tmp_path):
+        # Arrange — two characters each with multiple refs
+        hero_front = tmp_path / "hero_front.png"
+        hero_side = tmp_path / "hero_side.png"
+        villain_ref = tmp_path / "villain.png"
+        hero_front.write_bytes(b"fake")
+        hero_side.write_bytes(b"fake")
+        villain_ref.write_bytes(b"fake")
+        chars = {
+            "hero": Character(
+                id="hero",
+                description="Hero",
+                reference=[hero_front, hero_side],
+            ),
+            "villain": Character(
+                id="villain",
+                description="Villain",
+                reference=[villain_ref],
+            ),
+        }
+        scene = Scene(
+            number="1",
+            title="T",
+            scene_type="still",
+            prompt="P",
+            duration=5,
+            characters=["hero", "villain"],
+        )
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="",
+            characters=chars,
+            scenes=[scene],
+        )
+
+        # Act
+        refs = project.get_reference_images(scene)
+
+        # Assert — all existing refs from both characters
+        assert len(refs) == 3
+        assert hero_front in refs
+        assert hero_side in refs
+        assert villain_ref in refs
 
     def test_project_creation_with_audio_path(self):
         # Arrange & Act
@@ -588,7 +693,7 @@ class TestProject:
         char_ref = tmp_path / "hero.png"
         char_ref.write_bytes(b"fake")
         chars = {
-            "hero": Character(id="hero", description="Hero", reference=char_ref),
+            "hero": Character(id="hero", description="Hero", reference=[char_ref]),
         }
         scene = Scene(
             number="1",

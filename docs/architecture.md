@@ -1,4 +1,4 @@
-<!-- Version: 0.7 | Last updated: 2026-02-13 -->
+<!-- Version: 0.8 | Last updated: 2026-02-16 -->
 
 # Architecture: storyboard-gen
 
@@ -91,8 +91,10 @@ If the resolved path doesn't exist, a warning is logged and assembly proceeds wi
 
 `Project.get_reference_images(scene)` is the single chokepoint for reference images. All code paths (generate_still, generate_clip, all providers) consume its output.
 
-1. **Scene-level override**: If `scene.reference` is set and the file exists, return that single path. This replaces character-based lookup entirely for the scene.
-2. **Character-level fallback**: Otherwise, collect reference images from each character listed in the scene.
+1. **Scene-level override**: If `scene.reference` is non-empty, return those paths (filtering to existing files). This replaces character-based lookup entirely for the scene.
+2. **Character-level fallback**: Otherwise, flatten all reference lists from characters listed in the scene, filtering to existing files.
+
+Both `Character.reference` and `Scene.reference` are `list[Path]` (empty list when unset). Multiple references per character/scene are supported — e.g. front/side/detail views for better consistency. Veo supports up to 3 asset references; FAL and Replicate use only the first and log a warning.
 
 ## Provider selection
 

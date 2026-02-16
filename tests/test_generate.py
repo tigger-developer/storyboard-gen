@@ -176,7 +176,7 @@ class TestGenerateStill:
 
         chars = {
             "hero": Character(
-                id="hero", description="A boy with red hair", reference=ref_path
+                id="hero", description="A boy with red hair", reference=[ref_path]
             ),
         }
         scene = Scene(

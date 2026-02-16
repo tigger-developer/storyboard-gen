@@ -420,12 +420,14 @@ characters:
     description: >
       Physical description for prompt consistency. Include clothing,
       hair, distinguishing features.
-    reference: "references/character_one.jpg"
+    reference:
+      - "references/character_one.jpg"
 
   character_two:
     description: >
-      Another character. Set reference to null if no reference image.
-    reference: null
+      Another character. Omit reference or use empty list if no
+      reference images are available.
+    reference: []
 
 scenes:
   # === ACT 1 ===
