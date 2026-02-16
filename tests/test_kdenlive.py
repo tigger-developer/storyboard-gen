@@ -60,14 +60,14 @@ def _make_project_dir(tmp_path, scenes=None, audio=None, aspect_ratio="9:16"):
 
     # Create the output files the module expects
     output = tmp_path / "output"
-    (output / "intermediate").mkdir(parents=True)
+    (output / "stills").mkdir(parents=True)
     (output / "clips").mkdir(parents=True)
 
     for scene in scenes:
         num = str(scene["number"])
         padded = f"{int(num):02d}" if num.isdigit() else num
         if scene["type"] == "still":
-            (output / "intermediate" / f"scene_{padded}.mp4").write_bytes(b"fake-video")
+            (output / "stills" / f"scene_{padded}.png").write_bytes(b"fake-image")
         else:
             (output / "clips" / f"scene_{padded}.mp4").write_bytes(b"fake-video")
 
@@ -111,7 +111,7 @@ class TestFrameCalculation:
 
 
 class TestResolveClipPath:
-    def test_still_scene_resolves_to_intermediate(self, tmp_path):
+    def test_still_scene_resolves_to_stills_png(self, tmp_path):
         # Arrange
         project_dir = _make_project_dir(tmp_path)
         project = _load_project_from(project_dir)
@@ -122,7 +122,7 @@ class TestResolveClipPath:
         result = _resolve_clip_path(scene, output_dir)
 
         # Assert
-        assert result == output_dir / "intermediate" / "scene_01.mp4"
+        assert result == output_dir / "stills" / "scene_01.png"
 
     def test_clip_scene_resolves_to_clips(self, tmp_path):
         # Arrange
@@ -678,3 +678,278 @@ class TestCliKdenlive:
         # Assert
         assert exit_code == 0
         assert (tmp_path / "output" / "final" / "custom.kdenlive").exists()
+
+
+class TestKenBurnsFilter:
+    """Tests for Ken Burns effects via Kdenlive's native affine filter."""
+
+    def _build(self, tmp_path, scenes=None, aspect_ratio="9:16", dissolve_frames=0):
+        """Build an MLT document from a test project."""
+        project_dir = _make_project_dir(
+            tmp_path, scenes=scenes, aspect_ratio=aspect_ratio
+        )
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+        return _build_mlt(project, output_dir, dissolve_frames, 30, None)
+
+    def _find_producer(self, mlt, scene_number):
+        """Find a producer element by scene number."""
+        return mlt.find(f"producer[@id='producer_{scene_number}']")
+
+    def _find_affine_filter(self, producer):
+        """Find an affine filter child element of a producer."""
+        for f in producer.findall("filter"):
+            if _get_prop(f, "mlt_service") == "affine":
+                return f
+        return None
+
+    def test_still_producer_has_loop_property(self, tmp_path):
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Still",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "zoom_in",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+
+        # Assert
+        assert _get_prop(producer, "loop") == "1"
+
+    def test_clip_producer_no_loop_property(self, tmp_path):
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Clip",
+                "type": "clip",
+                "duration": 5,
+                "prompt": "Action.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+
+        # Assert
+        assert _get_prop(producer, "loop") is None
+
+    def test_still_zoom_in_has_affine_filter(self, tmp_path):
+        # Arrange — 9:16 → 1080x1920, 5s = 150 frames, last frame = 149
+        scenes = [
+            {
+                "number": 1,
+                "title": "Zoom In",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "zoom_in",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+        affine = self._find_affine_filter(producer)
+
+        # Assert — start full, end 1.2x centered
+        # 1080*1.2=1296, 1920*1.2=2304
+        # x_offset=(1080-1296)/2=-108, y_offset=(1920-2304)/2=-192
+        assert affine is not None
+        rect = _get_prop(affine, "transition.rect")
+        assert rect == "0=0 0 1080 1920 1;149=-108 -192 1296 2304 1"
+
+    def test_still_zoom_out_has_affine_filter(self, tmp_path):
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Zoom Out",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "zoom_out",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+        affine = self._find_affine_filter(producer)
+
+        # Assert — start 1.2x centered, end full
+        assert affine is not None
+        rect = _get_prop(affine, "transition.rect")
+        assert rect == "0=-108 -192 1296 2304 1;149=0 0 1080 1920 1"
+
+    def test_still_pan_ltr_has_affine_filter(self, tmp_path):
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Pan LTR",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "pan_ltr",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+        affine = self._find_affine_filter(producer)
+
+        # Assert — 1.2x scale, pan from left edge to right edge
+        # At start: x=0, y centered at -192
+        # At end: x=1080-1296=-216, y centered at -192
+        assert affine is not None
+        rect = _get_prop(affine, "transition.rect")
+        assert rect == "0=0 -192 1296 2304 1;149=-216 -192 1296 2304 1"
+
+    def test_still_pan_rtl_has_affine_filter(self, tmp_path):
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Pan RTL",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "pan_rtl",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+        affine = self._find_affine_filter(producer)
+
+        # Assert — 1.2x scale, pan from right edge to left edge
+        assert affine is not None
+        rect = _get_prop(affine, "transition.rect")
+        assert rect == "0=-216 -192 1296 2304 1;149=0 -192 1296 2304 1"
+
+    def test_still_static_no_affine_filter(self, tmp_path):
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Static",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "static",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+        affine = self._find_affine_filter(producer)
+
+        # Assert — static means no pan/zoom animation
+        assert affine is None
+
+    def test_still_no_ken_burns_no_affine_filter(self, tmp_path):
+        # Arrange — no ken_burns key at all
+        scenes = [
+            {
+                "number": 1,
+                "title": "No KB",
+                "type": "still",
+                "duration": 5,
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+        affine = self._find_affine_filter(producer)
+
+        # Assert
+        assert affine is None
+
+    def test_clip_no_affine_filter(self, tmp_path):
+        # Arrange — clips never get Ken Burns effects
+        scenes = [
+            {
+                "number": 1,
+                "title": "Clip",
+                "type": "clip",
+                "duration": 5,
+                "prompt": "Action.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+        affine = self._find_affine_filter(producer)
+
+        # Assert
+        assert affine is None
+
+    def test_affine_keyframes_16_9_aspect(self, tmp_path):
+        # Arrange — 16:9 → 1920x1080
+        scenes = [
+            {
+                "number": 1,
+                "title": "Wide Zoom",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "zoom_in",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes, aspect_ratio="16:9")
+        producer = self._find_producer(mlt, 1)
+        affine = self._find_affine_filter(producer)
+
+        # Assert — 1920*1.2=2304, 1080*1.2=1296
+        # x_offset=(1920-2304)/2=-192, y_offset=(1080-1296)/2=-108
+        assert affine is not None
+        rect = _get_prop(affine, "transition.rect")
+        assert rect == "0=0 0 1920 1080 1;149=-192 -108 2304 1296 1"
+
+    def test_affine_keyframes_account_for_dissolve_extension(self, tmp_path):
+        # Arrange — with dissolves, non-first still gets extended length
+        scenes = [
+            {
+                "number": 1,
+                "title": "First",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "zoom_in",
+                "prompt": "A.",
+            },
+            {
+                "number": 2,
+                "title": "Second",
+                "type": "still",
+                "duration": 4,
+                "ken_burns": "zoom_out",
+                "prompt": "B.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes, dissolve_frames=15)
+        producer = self._find_producer(mlt, 2)
+        affine = self._find_affine_filter(producer)
+
+        # Assert — scene 2: 4s=120f extended by 15=135f, last frame=134
+        assert affine is not None
+        rect = _get_prop(affine, "transition.rect")
+        assert rect == "0=-108 -192 1296 2304 1;134=0 0 1080 1920 1"

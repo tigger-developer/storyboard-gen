@@ -72,14 +72,10 @@ def _frames(seconds: float, fps: int) -> int:
 def _resolve_clip_path(scene: Scene, output_dir: Path) -> Path:
     """Resolve the clip path for a scene.
 
-    Stills use the Ken Burns intermediate output; clips use clips/ directly.
+    Stills use the generated PNG; clips use clips/ directly.
     """
     if scene.scene_type == "still":
-        return (
-            output_dir
-            / "intermediate"
-            / f"scene_{format_scene_number(scene.number)}.mp4"
-        )
+        return output_dir / "stills" / f"scene_{format_scene_number(scene.number)}.png"
     return output_dir / "clips" / f"scene_{format_scene_number(scene.number)}.mp4"
 
 
@@ -125,9 +121,18 @@ def _build_mlt(
         if use_dissolves and i > 0:
             length += dissolve_frames
         producer_id = f"producer_{scene.number}"
-        _add_scene_producer(
-            mlt, producer_id, clip_path.resolve(), length, kdenlive_id, scene.title
+        is_still = scene.scene_type == "still"
+        producer_el = _add_scene_producer(
+            mlt,
+            producer_id,
+            clip_path.resolve(),
+            length,
+            kdenlive_id,
+            scene.title,
+            is_still=is_still,
         )
+        if is_still:
+            _add_ken_burns_filter(producer_el, scene.ken_burns, width, height, length)
         producers.append((producer_id, length, kdenlive_id, scene.title))
         kdenlive_id += 1
 
@@ -206,8 +211,12 @@ def _add_scene_producer(
     length_frames: int,
     kdenlive_id: int,
     clip_name: str,
-) -> None:
-    """Add a <producer> element for a scene clip or audio file."""
+    is_still: bool = False,
+) -> ET.Element:
+    """Add a <producer> element for a scene clip or audio file.
+
+    Returns the producer element for further modification (e.g. adding filters).
+    """
     attrs = {"id": producer_id}
     if length_frames > 0:
         attrs["in"] = "0"
@@ -216,8 +225,11 @@ def _add_scene_producer(
     _set_prop(producer, "resource", str(path))
     if length_frames > 0:
         _set_prop(producer, "length", str(length_frames))
+    if is_still:
+        _set_prop(producer, "loop", "1")
     _set_prop(producer, "kdenlive:id", str(kdenlive_id))
     _set_prop(producer, "kdenlive:clipname", clip_name)
+    return producer
 
 
 def _build_video_track_with_dissolves(
@@ -444,6 +456,60 @@ def _build_project_tractor(mlt: ET.Element, total_frames: int) -> None:
         producer="sequence_tractor",
         **{"in": "0", "out": str(max(total_frames - 1, 0))},
     )
+
+
+# --- Ken Burns filter ---
+
+# Scale factor for pan/zoom effects (matches ken_burns.py's 1.2x for panning)
+_KB_SCALE = 1.2
+
+
+def _add_ken_burns_filter(
+    producer: ET.Element,
+    ken_burns: str | None,
+    width: int,
+    height: int,
+    length_frames: int,
+) -> None:
+    """Add a Kdenlive affine filter for Ken Burns pan/zoom effects.
+
+    The affine filter's transition.rect property defines keyframed output
+    rectangles: ``frame=x y w h opacity``. Scaling the image beyond the
+    canvas dimensions and shifting it creates zoom and pan effects.
+    """
+    if ken_burns is None or ken_burns == "static":
+        return
+
+    last_frame = length_frames - 1
+    sw = round(width * _KB_SCALE)
+    sh = round(height * _KB_SCALE)
+    cx = round((width - sw) / 2)
+    cy = round((height - sh) / 2)
+
+    if ken_burns == "zoom_in":
+        start = f"0 0 {width} {height} 1"
+        end = f"{cx} {cy} {sw} {sh} 1"
+    elif ken_burns == "zoom_out":
+        start = f"{cx} {cy} {sw} {sh} 1"
+        end = f"0 0 {width} {height} 1"
+    elif ken_burns == "pan_ltr":
+        # Left edge → right edge, vertically centered
+        x_end = width - sw
+        start = f"0 {cy} {sw} {sh} 1"
+        end = f"{x_end} {cy} {sw} {sh} 1"
+    elif ken_burns == "pan_rtl":
+        # Right edge → left edge, vertically centered
+        x_start = width - sw
+        start = f"{x_start} {cy} {sw} {sh} 1"
+        end = f"0 {cy} {sw} {sh} 1"
+    else:
+        logger.warning("Unknown ken_burns value %r, skipping filter", ken_burns)
+        return
+
+    rect_value = f"0={start};{last_frame}={end}"
+    filt = ET.SubElement(producer, "filter")
+    _set_prop(filt, "mlt_service", "affine")
+    _set_prop(filt, "transition.rect", rect_value)
 
 
 # --- Transition helpers ---

@@ -1,4 +1,4 @@
-<!-- Version: 0.9 | Last updated: 2026-02-16 -->
+<!-- Version: 1.0 | Last updated: 2026-02-16 -->
 
 # Architecture: storyboard-gen
 
@@ -49,7 +49,7 @@ Concatenates all scene outputs (Ken Burns stills + video clips) in order using F
 
 ### Kdenlive export (`kdenlive.py`)
 
-Generates a Kdenlive project file (MLT XML format) for timeline editing. Uses an A/B editing pattern for dissolve transitions: clips alternate between two playlists, with `luma` (video) and `mix` (audio) transitions at overlap points. Supports configurable dissolve length or hard cuts. Includes the audio track if configured. The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adding crossfades, and adjusting transitions before final render.
+Generates a Kdenlive project file (MLT XML format) for timeline editing. References still PNGs directly (not pre-rendered intermediate MP4s), with Ken Burns pan/zoom effects applied via Kdenlive's native `affine` filter. Uses an A/B editing pattern for dissolve transitions: clips alternate between two playlists, with `luma` (video) and `mix` (audio) transitions at overlap points. Supports configurable dissolve length or hard cuts. Includes the audio track if configured. The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adjusting Ken Burns keyframes, and adding transitions before final render.
 
 ## Data flow
 
@@ -73,7 +73,7 @@ assemble.py ──▶ output/final/assembled.mp4
     │
     ▼
 kdenlive.py ──▶ output/final/{title}.kdenlive
-              ──▶ MLT XML with A/B playlists, dissolve transitions, audio track
+              ──▶ MLT XML with stills (affine Ken Burns), clips, dissolves, audio
 ```
 
 ## Audio resolution
