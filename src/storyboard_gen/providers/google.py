@@ -282,10 +282,27 @@ class GoogleProvider(ImageProvider):
                 status="completed",
             )
 
-        # operations.get() populates 'response'; direct return populates 'result'
+        # SDK sets both 'response' and 'result' to the same GenerateVideosResponse
         video_response = operation.response or operation.result
+
+        # Surface operation errors (quota, invalid request, etc.)
+        if hasattr(operation, "error") and operation.error:
+            raise RuntimeError(f"Video generation failed: {operation.error}")
+
         if not video_response or not video_response.generated_videos:
-            raise RuntimeError("No video generated")
+            # Check for RAI (safety) filter rejection
+            rai_count = getattr(video_response, "rai_media_filtered_count", None)
+            rai_reasons = getattr(video_response, "rai_media_filtered_reasons", None)
+            if rai_count or rai_reasons:
+                reasons = ", ".join(rai_reasons) if rai_reasons else "unspecified"
+                raise RuntimeError(
+                    f"Video rejected by safety filter ({rai_count} filtered). "
+                    f"Reasons: {reasons}. Try revising the prompt or source image."
+                )
+            raise RuntimeError(
+                "No video generated. The Veo safety filter likely rejected "
+                "the prompt or source image. Try revising them."
+            )
 
         results = []
         for video_entry in video_response.generated_videos:

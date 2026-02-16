@@ -44,11 +44,14 @@ def _make_mock_video_client(video_bytes_list: list[bytes] | None = None):
 
     operation = MagicMock()
     operation.done = True
+    operation.error = None
     operation.response = None  # direct return uses .result, not .response
     if video_bytes_list:
         operation.result.generated_videos = mock_videos
     else:
         operation.result.generated_videos = []
+    operation.result.rai_media_filtered_count = None
+    operation.result.rai_media_filtered_reasons = None
     client.models.generate_videos.return_value = operation
     return client
 
@@ -468,9 +471,46 @@ class TestGoogleClipGeneration:
         provider = GoogleProvider(model="veo-3.1-fast-generate-001")
 
         # Act & Assert
-        with pytest.raises(RuntimeError, match="No video generated"):
+        with pytest.raises(RuntimeError, match="safety filter"):
             provider.generate_clip(
                 prompt="Fail",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                client=client,
+            )
+
+    def test_clip_rai_filter_surfaces_reasons(self, tmp_path):
+        """RAI filter reasons should appear in the error message."""
+        # Arrange
+        client = _make_mock_video_client(video_bytes_list=[])
+        op = client.models.generate_videos.return_value
+        op.result.rai_media_filtered_count = 1
+        op.result.rai_media_filtered_reasons = ["BLOCKED_REASON_SAFETY"]
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match="BLOCKED_REASON_SAFETY"):
+            provider.generate_clip(
+                prompt="Filtered",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                client=client,
+            )
+
+    def test_clip_operation_error_surfaces_message(self, tmp_path):
+        """Operation-level errors should be raised with details."""
+        # Arrange
+        client = _make_mock_video_client()
+        op = client.models.generate_videos.return_value
+        op.error = {"code": 400, "message": "Invalid request"}
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match="Invalid request"):
+            provider.generate_clip(
+                prompt="Error test",
                 output_path=tmp_path / "scene_01.mp4",
                 aspect_ratio="9:16",
                 duration=5,
@@ -492,6 +532,7 @@ class TestClipPollingRefresh:
 
         refreshed_op = MagicMock()
         refreshed_op.done = True
+        refreshed_op.error = None
         refreshed_op.result = None  # polled ops use .response, not .result
         mock_video = MagicMock()
         mock_video.video.video_bytes = b"video-bytes"
@@ -599,6 +640,7 @@ class TestClipOutputGcsUri:
 
         operation = MagicMock()
         operation.done = True
+        operation.error = None
         operation.response = None  # direct return path
         operation.result.generated_videos = [mock_video]
         client.models.generate_videos.return_value = operation
