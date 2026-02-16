@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_IMAGEN_MODEL = "imagen-4.0-generate-001"
 IMAGEN_CAPABILITY_MODEL = "imagen-3.0-capability-001"
 DEFAULT_VEO_MODEL = "veo-3.1-fast-generate-001"
+MAX_IMAGEN_REFS = 4
+MAX_VEO_REFS = 3
 
 
 class GoogleProvider(ImageProvider):
@@ -22,6 +24,7 @@ class GoogleProvider(ImageProvider):
         self.model = model
         self.options = options or {}
         self._client = None
+        self._gcs_bucket = None
 
     def _get_client(self):
         """Lazily create the Google GenAI client."""
@@ -31,6 +34,7 @@ class GoogleProvider(ImageProvider):
             from storyboard_gen.config import get_env_config
 
             config = get_env_config()
+            self._gcs_bucket = config.get("gcs_bucket")
             if config["use_vertex"]:
                 if not config["project"]:
                     raise ValueError(
@@ -94,6 +98,14 @@ class GoogleProvider(ImageProvider):
                 else:
                     logger.warning("Reference image not found, skipping: %s", ref_path)
 
+        if len(ref_images) > MAX_IMAGEN_REFS:
+            logger.warning(
+                "Truncating %d reference images to Imagen max of %d",
+                len(ref_images),
+                MAX_IMAGEN_REFS,
+            )
+            ref_images = ref_images[:MAX_IMAGEN_REFS]
+
         if ref_images:
             logger.info(
                 "Using edit_image with %d reference(s) on %s",
@@ -146,12 +158,17 @@ class GoogleProvider(ImageProvider):
         client: object | None = None,
         poll_interval: int = 10,
         max_wait: int = 600,
+        project_dir: Path | None = None,
+        scene_number: str | None = None,
     ) -> list[bytes]:
         """Generate a video clip via Veo.
 
         Builds a GenerateVideosConfig with aspect_ratio, reference_images,
         last_frame, seed, and number_of_videos. Optionally passes
         source_frame as image= or extend_from_video as video=.
+
+        When project_dir and scene_number are provided, writes operation
+        log entries to logs/operations.jsonl for crash recovery.
         """
         from google.genai import types
 
@@ -180,12 +197,24 @@ class GoogleProvider(ImageProvider):
                 "source_frame" if source_frame else "extend_from_video",
             )
 
+        if len(ref_images) > MAX_VEO_REFS:
+            logger.warning(
+                "Truncating %d reference images to Veo max of %d",
+                len(ref_images),
+                MAX_VEO_REFS,
+            )
+            ref_images = ref_images[:MAX_VEO_REFS]
+
         # Build config
+        veo_duration = max(5, min(8, int(duration)))
         config = types.GenerateVideosConfig(
             aspect_ratio=aspect_ratio,
             reference_images=ref_images or None,
             number_of_videos=number_of_videos,
+            duration_seconds=veo_duration,
         )
+        if self._gcs_bucket:
+            config.output_gcs_uri = self._gcs_bucket
         if last_frame is not None:
             config.last_frame = types.Image.from_file(location=str(last_frame))
         if seed is not None:
@@ -209,13 +238,49 @@ class GoogleProvider(ImageProvider):
 
         operation = client.models.generate_videos(**gen_kwargs)
 
+        op_id = getattr(operation, "name", None) or "unknown"
+        if project_dir and scene_number:
+            from storyboard_gen.operation_log import log_operation
+
+            log_operation(
+                project_dir=project_dir,
+                scene_number=scene_number,
+                scene_type="clip",
+                provider="google",
+                model=self.model,
+                operation_id=op_id,
+                status="submitted",
+            )
+
         elapsed = 0
         while not operation.done:
             if elapsed >= max_wait:
+                if project_dir and scene_number:
+                    log_operation(
+                        project_dir=project_dir,
+                        scene_number=scene_number,
+                        scene_type="clip",
+                        provider="google",
+                        model=self.model,
+                        operation_id=op_id,
+                        status="timed_out",
+                    )
                 raise RuntimeError(f"Video generation timed out after {max_wait}s")
             logger.info("Waiting for video generation (%ds elapsed)...", elapsed)
             time.sleep(poll_interval)
             elapsed += poll_interval
+            operation = client.operations.get(operation)
+
+        if project_dir and scene_number:
+            log_operation(
+                project_dir=project_dir,
+                scene_number=scene_number,
+                scene_type="clip",
+                provider="google",
+                model=self.model,
+                operation_id=op_id,
+                status="completed",
+            )
 
         if not operation.result or not operation.result.generated_videos:
             raise RuntimeError("No video generated")
