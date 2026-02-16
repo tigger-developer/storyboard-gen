@@ -1,5 +1,5 @@
 # ABOUTME: Command-line interface for storyboard-gen.
-# ABOUTME: Subcommands: generate, assemble, kdenlive, validate, list, init.
+# ABOUTME: Subcommands: generate, assemble, kdenlive, validate, list, init, schema.
 
 import argparse
 import logging
@@ -13,7 +13,7 @@ from storyboard_gen.generate import generate_clip, generate_still
 from storyboard_gen.ken_burns import apply_ken_burns
 from storyboard_gen.assemble import assemble
 from storyboard_gen.kdenlive import generate_kdenlive
-from storyboard_gen.models import format_scene_number
+from storyboard_gen.models import CAMERA_PROMPTS, format_scene_number
 
 
 HELP_EPILOG = """\
@@ -212,6 +212,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Directory to create project in (default: current directory)",
     )
 
+    # schema subcommand
+    subparsers.add_parser(
+        "schema",
+        help="Show project.yaml field reference",
+        description="Display a complete reference of all project.yaml fields, valid values, and defaults.",
+    )
+
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -246,6 +253,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_kdenlive(args)
     if args.command == "init":
         return _cmd_init(args)
+    if args.command == "schema":
+        return _cmd_schema()
     return 1
 
 
@@ -373,6 +382,96 @@ def _cmd_kdenlive(args: argparse.Namespace) -> int:
         audio_path=audio_path,
     )
     print(f"Kdenlive project: {output_path}")
+    return 0
+
+
+def _cmd_schema() -> int:
+    """Print the complete project.yaml field reference."""
+    # Build camera table from CAMERA_PROMPTS (stays in sync automatically)
+    camera_lines = []
+    for key in [
+        "EWS",
+        "WIDE",
+        "MEDIUM",
+        "MCU",
+        "CLOSE",
+        "ECU",
+        "POV",
+        "LOW",
+        "HIGH",
+        "OVERHEAD",
+        "OTS",
+        "DUTCH",
+    ]:
+        camera_lines.append(f"    {key:<10} {CAMERA_PROMPTS[key]}")
+    camera_table = "\n".join(camera_lines)
+
+    print(f"""\
+project.yaml field reference (storyboard-gen {__version__})
+{"=" * 56}
+
+TOP-LEVEL FIELDS
+  title           (string, required)  Project title.
+  aspect_ratio    (string)            Output ratio. Default: "16:9".
+                                      Values: 9:16, 16:9, 4:3, 1:1
+  audio           (string)            Audio file path, relative to project dir.
+                                      Muxed into assembled video.
+  style_prefix    (string)            Visual style prepended to every prompt.
+  providers       (object)            AI provider config (see below).
+  characters      (object)            Named characters (see below).
+  scenes          (list, required)    Scene definitions (see below).
+
+PROVIDERS
+  Configured under providers.still and providers.clip.
+  If omitted, defaults to Google (Imagen for stills, Veo for clips).
+
+  Fields per provider:
+    backend       (string, required)  google, fal, or replicate
+    model         (string, required)  Provider-specific model ID
+    options       (object)            Provider-specific options
+
+  Google models:    imagen-4.0-generate-001 (still), veo-3.1-fast-generate-001 (clip)
+  FAL.ai models:    fal-ai/flux-general, fal-ai/flux-pro/kontext, fal-ai/kling-video/*
+  Replicate models: black-forest-labs/flux-1.1-pro, black-forest-labs/flux-dev
+
+CHARACTERS
+  Keyed by character ID (used in scene characters lists).
+
+  Fields:
+    description   (string)            Physical description for prompt consistency.
+    reference     (list)              Reference image paths (relative to project dir).
+
+SCENE FIELDS
+  number          (int)               Scene number. Default: auto (1-indexed).
+  title           (string)            Human-readable title. Default: "Scene N".
+  type            (string)            "still" or "clip". Default: "still".
+  prompt          (string)            Scene description for the AI model.
+  duration        (number)            Seconds (supports decimals). Default: 5.
+  camera          (string)            Camera angle (see values below).
+  ken_burns       (string)            Pan/zoom effect for stills (see values below).
+  characters      (list)              Character IDs for reference image lookup.
+  provider        (object)            Per-scene provider override (same as providers.*).
+  model           (string)            Per-scene model override (inherits backend/options).
+  reference       (list)              Per-scene reference images (overrides character refs).
+  source_frame    (path, clips only)  Image for image-to-video first frame.
+  last_frame      (path, clips only)  Interpolation end frame (requires source_frame).
+  extend_from     (string, clips only) Scene number to extend from.
+  seed            (int)               Reproducibility seed.
+  variants        (int)               Number of video takes, 1-4. Default: 1.
+
+CAMERA VALUES
+  Injected into AI prompt automatically. Case-insensitive.
+  Prompt assembly order: style_prefix -> camera -> characters -> scene prompt.
+
+{camera_table}
+
+KEN BURNS VALUES (stills only)
+    zoom_in     Slow zoom into the image.
+    zoom_out    Slow zoom out from the image.
+    pan_ltr     Pan left to right.
+    pan_rtl     Pan right to left.
+    static      No movement.
+    (omitted)   No Ken Burns processing.""")
     return 0
 
 

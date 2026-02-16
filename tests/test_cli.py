@@ -288,6 +288,79 @@ class TestCliInit:
         assert "logs/" in output
 
 
+class TestCliSchema:
+    def test_schema_subcommand_returns_zero(self, capsys):
+        # Arrange & Act
+        exit_code = main(["schema"])
+
+        # Assert
+        assert exit_code == 0
+
+    def test_schema_includes_top_level_fields(self, capsys):
+        # Arrange & Act
+        main(["schema"])
+        output = capsys.readouterr().out
+
+        # Assert — key top-level fields documented
+        assert "title" in output
+        assert "aspect_ratio" in output
+        assert "style_prefix" in output
+        assert "audio" in output
+
+    def test_schema_includes_scene_fields(self, capsys):
+        # Arrange & Act
+        main(["schema"])
+        output = capsys.readouterr().out
+
+        # Assert — key scene fields documented
+        assert "duration" in output
+        assert "ken_burns" in output
+        assert "camera" in output
+        assert "characters" in output
+        assert "provider" in output
+
+    def test_schema_includes_camera_values(self, capsys):
+        # Arrange & Act
+        main(["schema"])
+        output = capsys.readouterr().out
+
+        # Assert — all 12 camera values listed
+        for value in [
+            "EWS",
+            "WIDE",
+            "MEDIUM",
+            "MCU",
+            "CLOSE",
+            "ECU",
+            "POV",
+            "LOW",
+            "HIGH",
+            "OVERHEAD",
+            "OTS",
+            "DUTCH",
+        ]:
+            assert value in output
+
+    def test_schema_includes_ken_burns_values(self, capsys):
+        # Arrange & Act
+        main(["schema"])
+        output = capsys.readouterr().out
+
+        # Assert — ken_burns values listed
+        for value in ["zoom_in", "zoom_out", "pan_ltr", "pan_rtl", "static"]:
+            assert value in output
+
+    def test_schema_includes_provider_info(self, capsys):
+        # Arrange & Act
+        main(["schema"])
+        output = capsys.readouterr().out
+
+        # Assert — provider backends mentioned
+        assert "google" in output
+        assert "fal" in output
+        assert "replicate" in output
+
+
 class TestCliAssemble:
     def _make_assemblable_project(self, project_dir, audio=None):
         """Create a project dir with stills and clips ready for assembly."""
