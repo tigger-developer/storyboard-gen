@@ -295,7 +295,8 @@ def _cmd_list() -> int:
 def _cmd_generate(args: argparse.Namespace) -> int:
     """Generate stills and/or clips."""
     project = load_project()
-    output_dir = Path.cwd() / "output"
+    project_dir = Path.cwd()
+    output_dir = project_dir / "output"
 
     if args.scene:
         for scene_num in args.scene:
@@ -303,7 +304,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
             if scene.scene_type == "still":
                 generate_still(scene, project, output_dir)
             else:
-                generate_clip(scene, project, output_dir)
+                generate_clip(scene, project, output_dir, project_dir=project_dir)
     elif args.all_stills:
         stills = project.get_stills()
         print(f"Generating {len(stills)} stills...")
@@ -313,7 +314,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         clips = project.get_clips()
         print(f"Generating {len(clips)} clips...")
         for scene in clips:
-            generate_clip(scene, project, output_dir)
+            generate_clip(scene, project, output_dir, project_dir=project_dir)
     elif args.all:
         stills = project.get_stills()
         clips = project.get_clips()
@@ -321,7 +322,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         for scene in stills:
             generate_still(scene, project, output_dir)
         for scene in clips:
-            generate_clip(scene, project, output_dir)
+            generate_clip(scene, project, output_dir, project_dir=project_dir)
 
     return 0
 
@@ -485,6 +486,9 @@ _TEMPLATE_GITIGNORE = """\
 # Secrets
 .env
 
+# Operation logs (crash recovery, not needed in source control)
+logs/
+
 # Generated video (large, regenerable from stills + project.yaml)
 output/intermediate/
 output/clips/
@@ -521,10 +525,12 @@ def _cmd_init(args: argparse.Namespace) -> int:
     (target / ".env").write_text(_TEMPLATE_ENV)
     (target / ".gitignore").write_text(_TEMPLATE_GITIGNORE)
     (target / "references").mkdir(exist_ok=True)
+    (target / "logs").mkdir(exist_ok=True)
 
     print(f"Created new project in {target}/")
     print("  project.yaml  — storyboard definition")
     print("  .env          — API credentials (edit before use)")
     print("  .gitignore    — excludes secrets and video, keeps stills and Kdenlive")
     print("  references/   — add character/style reference images here")
+    print("  logs/         — operation logs for crash recovery")
     return 0

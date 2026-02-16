@@ -214,6 +214,16 @@ class TestCliInit:
         # Assert
         assert (tmp_path / "references").is_dir()
 
+    def test_init_creates_logs_directory(self, tmp_path, capsys):
+        # Arrange
+        os.chdir(tmp_path)
+
+        # Act
+        main(["init"])
+
+        # Assert
+        assert (tmp_path / "logs").is_dir()
+
     def test_init_creates_env_file(self, tmp_path, capsys):
         # Arrange
         os.chdir(tmp_path)
@@ -275,6 +285,7 @@ class TestCliInit:
         assert ".env" in output
         assert ".gitignore" in output
         assert "references/" in output
+        assert "logs/" in output
 
 
 class TestCliAssemble:

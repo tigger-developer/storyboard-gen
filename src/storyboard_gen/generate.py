@@ -215,6 +215,7 @@ def generate_clip(
     project: Project,
     output_dir: Path,
     provider: ImageProvider | None = None,
+    project_dir: Path | None = None,
 ) -> Path:
     """Generate a video clip for a scene.
 
@@ -223,6 +224,7 @@ def generate_clip(
         project: The project containing style prefix and characters.
         output_dir: Base output directory for the project.
         provider: Optional pre-created provider (for testing).
+        project_dir: Project root directory for operation logging.
 
     Returns:
         Path to the saved MP4 file (first variant if multiple).
@@ -252,19 +254,24 @@ def generate_clip(
     # Resolve extend_from to an actual video path
     extend_from_video = _resolve_extend_from(scene, output_dir)
 
-    video_bytes_list = provider.generate_clip(
-        prompt=full_prompt,
-        output_path=clips_dir / f"scene_{scene_num}.mp4",
-        aspect_ratio=project.aspect_ratio,
-        duration=scene.duration,
-        reference_images=reference_images or None,
-        options=provider.options,
-        source_frame=scene.source_frame,
-        last_frame=scene.last_frame,
-        extend_from_video=extend_from_video,
-        seed=scene.seed,
-        number_of_videos=scene.variants,
-    )
+    gen_kwargs = {
+        "prompt": full_prompt,
+        "output_path": clips_dir / f"scene_{scene_num}.mp4",
+        "aspect_ratio": project.aspect_ratio,
+        "duration": scene.duration,
+        "reference_images": reference_images or None,
+        "options": provider.options,
+        "source_frame": scene.source_frame,
+        "last_frame": scene.last_frame,
+        "extend_from_video": extend_from_video,
+        "seed": scene.seed,
+        "number_of_videos": scene.variants,
+    }
+    if project_dir is not None:
+        gen_kwargs["project_dir"] = project_dir
+        gen_kwargs["scene_number"] = scene.number
+
+    video_bytes_list = provider.generate_clip(**gen_kwargs)
 
     if scene.variants > 1:
         # Archive existing variant files and bare file
