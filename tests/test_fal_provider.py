@@ -1,10 +1,13 @@
 # ABOUTME: Tests for the FAL.ai provider implementation.
 # ABOUTME: Mocks fal_client calls (external HTTP API — acceptable per TESTING.md).
 
+import hashlib
+import json
 from unittest.mock import patch
 
 import pytest
 
+from storyboard_gen.models import Character
 from storyboard_gen.providers.fal import FalProvider, _map_aspect_ratio
 
 
@@ -888,3 +891,514 @@ class TestFalGenerateClip:
 
         # Assert — swap logged
         assert any("text-to-video" in r.message for r in caplog.records)
+
+
+class TestFalO3Detection:
+    """Tests for O3 model detection (#37)."""
+
+    def test_is_o3_positive_standard(self):
+        """O3 standard model should be detected."""
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+        assert provider._is_o3 is True
+
+    def test_is_o3_positive_pro(self):
+        """O3 pro model should be detected."""
+        provider = FalProvider(model="fal-ai/kling-video/o3/pro/text-to-video")
+        assert provider._is_o3 is True
+
+    def test_is_o3_case_insensitive(self):
+        """O3 detection should be case-insensitive."""
+        provider = FalProvider(model="fal-ai/kling-video/O3/standard/image-to-video")
+        assert provider._is_o3 is True
+
+    def test_is_o3_negative_v2(self):
+        """v2.1 models are not O3."""
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/text-to-video")
+        assert provider._is_o3 is False
+
+    def test_is_o3_negative_v3(self):
+        """v3 models are not O3."""
+        provider = FalProvider(model="fal-ai/kling-video/v3/standard/image-to-video")
+        assert provider._is_o3 is False
+
+    def test_is_o3_negative_flux(self):
+        """Flux models are not O3."""
+        provider = FalProvider(model="fal-ai/flux-pro/v1.1")
+        assert provider._is_o3 is False
+
+
+class TestFalO3PromptRewrite:
+    """Tests for O3 @character_id → @ElementN prompt rewriting (#37)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_o3_rewrites_at_char_to_at_element(self, mock_fal, tmp_path):
+        """@boy → @Element1, @mum → @Element2 in prompt."""
+        # Arrange
+        ref_boy = tmp_path / "boy.jpg"
+        ref_mum = tmp_path / "mum.jpg"
+        ref_boy.write_bytes(b"boy-image")
+        ref_mum.write_bytes(b"mum-image")
+
+        mock_fal.upload_file.side_effect = [
+            "https://fal.media/files/boy.png",
+            "https://fal.media/files/mum.png",
+        ]
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        chars = [
+            Character(
+                id="boy", description="A boy with curly hair", reference=[ref_boy]
+            ),
+            Character(
+                id="mum", description="A woman with dark hair", reference=[ref_mum]
+            ),
+        ]
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@boy runs toward @mum at the door.",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+            )
+
+        # Assert — prompt rewritten with @ElementN
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["prompt"] == "@Element1 runs toward @Element2 at the door."
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_o3_auto_prepends_when_no_at_tokens(self, mock_fal, tmp_path):
+        """When no @character_id tokens in prompt, auto-prepend descriptions."""
+        # Arrange
+        ref = tmp_path / "boy.jpg"
+        ref.write_bytes(b"boy-image")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/boy.png"
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        chars = [
+            Character(id="boy", description="A boy with curly hair", reference=[ref]),
+        ]
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A child waves hello.",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+            )
+
+        # Assert — @Element1 description prepended
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        prompt = arguments["prompt"]
+        assert prompt.startswith("@Element1 is A boy with curly hair.")
+        assert "A child waves hello." in prompt
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_o3_rewrite_case_insensitive(self, mock_fal, tmp_path):
+        """@Boy and @BOY should both be rewritten to @Element1."""
+        # Arrange
+        ref = tmp_path / "boy.jpg"
+        ref.write_bytes(b"boy-image")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/boy.png"
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        chars = [
+            Character(id="boy", description="A boy", reference=[ref]),
+        ]
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@Boy waves at @BOY in the mirror.",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+            )
+
+        # Assert — both replaced
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["prompt"] == "@Element1 waves at @Element1 in the mirror."
+
+
+class TestFalO3Elements:
+    """Tests for O3 elements array building (#37)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_o3_builds_elements_from_characters(self, mock_fal, tmp_path):
+        """Character with 2 refs → frontal_image_url + reference_image_urls."""
+        # Arrange
+        ref1 = tmp_path / "boy_front.jpg"
+        ref2 = tmp_path / "boy_side.jpg"
+        ref1.write_bytes(b"front-image")
+        ref2.write_bytes(b"side-image")
+
+        mock_fal.upload_file.side_effect = [
+            "https://fal.media/files/front.png",
+            "https://fal.media/files/side.png",
+        ]
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        chars = [
+            Character(id="boy", description="A boy", reference=[ref1, ref2]),
+        ]
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@boy waves",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+            )
+
+        # Assert — elements array with frontal + additional refs
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        elements = arguments["elements"]
+        assert len(elements) == 1
+        assert elements[0]["frontal_image_url"] == "https://fal.media/files/front.png"
+        assert elements[0]["reference_image_urls"] == [
+            "https://fal.media/files/side.png"
+        ]
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_o3_element_ordering_matches_characters_list(self, mock_fal, tmp_path):
+        """Elements order should match the scene's characters list order."""
+        # Arrange
+        ref_boy = tmp_path / "boy.jpg"
+        ref_mum = tmp_path / "mum.jpg"
+        ref_boy.write_bytes(b"boy-image")
+        ref_mum.write_bytes(b"mum-image")
+
+        mock_fal.upload_file.side_effect = [
+            "https://fal.media/files/boy.png",
+            "https://fal.media/files/mum.png",
+        ]
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        chars = [
+            Character(id="boy", description="A boy", reference=[ref_boy]),
+            Character(id="mum", description="A woman", reference=[ref_mum]),
+        ]
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@boy and @mum",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+            )
+
+        # Assert — elements in order: [boy, mum]
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        elements = arguments["elements"]
+        assert len(elements) == 2
+        assert elements[0]["frontal_image_url"] == "https://fal.media/files/boy.png"
+        assert elements[1]["frontal_image_url"] == "https://fal.media/files/mum.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_o3_characters_without_refs_skipped_in_elements(self, mock_fal, tmp_path):
+        """Characters with no reference images should not generate elements."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        chars = [Character(id="boy", description="A boy", reference=[])]
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@boy waves",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+            )
+
+        # Assert — no elements key (character had no refs)
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "elements" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_non_o3_elements_not_passed(self, mock_fal, tmp_path):
+        """Non-O3 models should never receive elements."""
+        # Arrange
+        ref = tmp_path / "boy.jpg"
+        ref.write_bytes(b"boy-image")
+
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        chars = [Character(id="boy", description="A boy", reference=[ref])]
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@boy waves",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+            )
+
+        # Assert — no elements for non-O3
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "elements" not in arguments
+
+
+class TestFalNonO3AtStrip:
+    """Tests for stripping @character_id prefix on non-O3 models (#37)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_non_o3_strips_at_prefix_from_prompt(self, mock_fal, tmp_path):
+        """Non-O3 Kling should strip @ prefix from character tokens."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        chars = [
+            Character(id="boy", description="A boy", reference=[]),
+            Character(id="mum", description="A woman", reference=[]),
+        ]
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@boy runs toward @mum",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+            )
+
+        # Assert — @ stripped from character tokens
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["prompt"] == "boy runs toward mum"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_non_o3_at_strip_case_insensitive(self, mock_fal, tmp_path):
+        """@ stripping should be case-insensitive."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        chars = [Character(id="boy", description="A boy", reference=[])]
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@Boy runs fast",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["prompt"] == "Boy runs fast"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_no_scene_characters_leaves_prompt_unchanged(self, mock_fal, tmp_path):
+        """Without scene_characters, @ tokens stay in the prompt."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/kling-video/v2.1/pro/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@someone runs",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+            )
+
+        # Assert — no scene_characters means no rewriting
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["prompt"] == "@someone runs"
+
+
+class TestFalCdnCache:
+    """Tests for CDN URL caching to avoid re-uploading references (#37)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_cdn_cache_miss_triggers_upload_and_stores(self, mock_fal, tmp_path):
+        """Cache miss should upload the file and store the hash → URL mapping."""
+        # Arrange
+        ref = tmp_path / "boy.jpg"
+        ref.write_bytes(b"boy-image-data")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/boy.png"
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        chars = [Character(id="boy", description="A boy", reference=[ref])]
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@boy waves",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+                project_dir=project_dir,
+            )
+
+        # Assert — upload called, cache file created with correct hash
+        mock_fal.upload_file.assert_called_once_with(str(ref))
+        cache_path = project_dir / "logs" / "cdn_cache.json"
+        assert cache_path.exists()
+        cache = json.loads(cache_path.read_text())
+        file_hash = hashlib.sha256(b"boy-image-data").hexdigest()
+        assert cache[file_hash] == "https://fal.media/files/boy.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_cdn_cache_hit_skips_upload(self, mock_fal, tmp_path):
+        """Cache hit should reuse the cached URL without uploading."""
+        # Arrange
+        ref = tmp_path / "boy.jpg"
+        ref.write_bytes(b"boy-image-data")
+        file_hash = hashlib.sha256(b"boy-image-data").hexdigest()
+
+        project_dir = tmp_path / "project"
+        logs_dir = project_dir / "logs"
+        logs_dir.mkdir(parents=True)
+        cache = {file_hash: "https://fal.media/files/cached_boy.png"}
+        (logs_dir / "cdn_cache.json").write_text(json.dumps(cache))
+
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        chars = [Character(id="boy", description="A boy", reference=[ref])]
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@boy waves",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+                project_dir=project_dir,
+            )
+
+        # Assert — no upload (cache hit), cached URL used in elements
+        mock_fal.upload_file.assert_not_called()
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert (
+            arguments["elements"][0]["frontal_image_url"]
+            == "https://fal.media/files/cached_boy.png"
+        )
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_cdn_cache_changed_file_triggers_reupload(self, mock_fal, tmp_path):
+        """Changed file (different hash) should re-upload and update cache."""
+        # Arrange — cache has OLD hash
+        ref = tmp_path / "boy.jpg"
+        ref.write_bytes(b"new-image-data")
+        old_hash = hashlib.sha256(b"old-image-data").hexdigest()
+
+        project_dir = tmp_path / "project"
+        logs_dir = project_dir / "logs"
+        logs_dir.mkdir(parents=True)
+        cache = {old_hash: "https://fal.media/files/old_boy.png"}
+        (logs_dir / "cdn_cache.json").write_text(json.dumps(cache))
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/new_boy.png"
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/video.mp4"},
+        }
+
+        chars = [Character(id="boy", description="A boy", reference=[ref])]
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="@boy waves",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                scene_characters=chars,
+                project_dir=project_dir,
+            )
+
+        # Assert — re-upload happened, new URL in elements and cache
+        mock_fal.upload_file.assert_called_once()
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert (
+            arguments["elements"][0]["frontal_image_url"]
+            == "https://fal.media/files/new_boy.png"
+        )
+        new_hash = hashlib.sha256(b"new-image-data").hexdigest()
+        updated_cache = json.loads((logs_dir / "cdn_cache.json").read_text())
+        assert updated_cache[new_hash] == "https://fal.media/files/new_boy.png"

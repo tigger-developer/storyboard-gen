@@ -48,6 +48,9 @@ class ImageProvider(ABC):
         extend_from_video: Path | None = None,
         seed: int | None = None,
         number_of_videos: int = 1,
+        scene_characters: list | None = None,
+        project_dir: Path | None = None,
+        scene_number: str | None = None,
     ) -> list[bytes]:
         """Generate a video clip from a prompt.
 
@@ -63,6 +66,9 @@ class ImageProvider(ABC):
             extend_from_video: Path to video to extend from.
             seed: Reproducibility seed.
             number_of_videos: Number of variant takes to generate (1-4).
+            scene_characters: Ordered list of Character objects for this scene.
+            project_dir: Project root directory for caching and logging.
+            scene_number: Scene number for logging.
 
         Returns:
             List of raw video bytes (MP4), one per variant.

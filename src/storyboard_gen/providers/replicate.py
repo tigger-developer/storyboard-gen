@@ -122,6 +122,9 @@ class ReplicateProvider(ImageProvider):
         extend_from_video: Path | None = None,
         seed: int | None = None,
         number_of_videos: int = 1,
+        scene_characters: list | None = None,
+        project_dir: Path | None = None,
+        scene_number: str | None = None,
     ) -> list[bytes]:
         """Replicate provider does not support video generation.
 

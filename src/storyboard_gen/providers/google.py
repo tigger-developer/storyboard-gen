@@ -155,6 +155,7 @@ class GoogleProvider(ImageProvider):
         extend_from_video: Path | None = None,
         seed: int | None = None,
         number_of_videos: int = 1,
+        scene_characters: list | None = None,
         client: object | None = None,
         poll_interval: int = 10,
         max_wait: int = 600,
@@ -174,6 +175,15 @@ class GoogleProvider(ImageProvider):
 
         if client is None:
             client = self._get_client()
+
+        # Strip @character_id tokens from prompt (#37)
+        if scene_characters:
+            import re
+
+            for char in scene_characters:
+                prompt = re.sub(
+                    rf"@{re.escape(char.id)}\b", char.id, prompt, flags=re.IGNORECASE
+                )
 
         # Build reference images list for config.
         # Veo requires VideoGenerationReferenceImage wrappers (not bare Image).

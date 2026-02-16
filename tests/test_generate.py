@@ -468,6 +468,88 @@ class TestGenerateClip:
         assert call_kwargs["number_of_videos"] == 3
 
 
+class TestSceneCharactersPassthrough:
+    """Tests for passing scene_characters to providers (#37)."""
+
+    def test_generate_clip_passes_scene_characters(self, tmp_path):
+        """generate_clip should resolve characters and pass them to the provider."""
+        # Arrange
+        chars = {
+            "boy": Character(
+                id="boy", description="A boy with curly hair", reference=[]
+            ),
+            "mum": Character(
+                id="mum", description="A woman with dark hair", reference=[]
+            ),
+        }
+        scene = Scene(
+            number="1",
+            title="Together",
+            scene_type="clip",
+            prompt="@boy and @mum walk.",
+            duration=5,
+            characters=["boy", "mum"],
+        )
+        project = _make_project(characters=chars, scenes=[scene])
+        provider = _make_mock_provider()
+
+        # Act
+        generate_clip(scene, project, tmp_path, provider=provider)
+
+        # Assert — scene_characters passed in correct order
+        call_kwargs = provider.generate_clip.call_args.kwargs
+        scene_chars = call_kwargs["scene_characters"]
+        assert len(scene_chars) == 2
+        assert scene_chars[0].id == "boy"
+        assert scene_chars[1].id == "mum"
+
+    def test_generate_clip_no_characters_passes_none(self, tmp_path):
+        """generate_clip with no characters should pass empty/None."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Solo",
+            scene_type="clip",
+            prompt="A landscape.",
+            duration=5,
+        )
+        project = _make_project(scenes=[scene])
+        provider = _make_mock_provider()
+
+        # Act
+        generate_clip(scene, project, tmp_path, provider=provider)
+
+        # Assert — no scene_characters (empty list → None)
+        call_kwargs = provider.generate_clip.call_args.kwargs
+        assert not call_kwargs.get("scene_characters")
+
+    def test_generate_clip_skips_unknown_character_ids(self, tmp_path):
+        """Unknown character IDs in scene.characters should be skipped."""
+        # Arrange
+        chars = {
+            "boy": Character(id="boy", description="A boy", reference=[]),
+        }
+        scene = Scene(
+            number="1",
+            title="Mixed",
+            scene_type="clip",
+            prompt="Action.",
+            duration=5,
+            characters=["boy", "ghost"],  # ghost not in project.characters
+        )
+        project = _make_project(characters=chars, scenes=[scene])
+        provider = _make_mock_provider()
+
+        # Act
+        generate_clip(scene, project, tmp_path, provider=provider)
+
+        # Assert — only known character passed
+        call_kwargs = provider.generate_clip.call_args.kwargs
+        scene_chars = call_kwargs["scene_characters"]
+        assert len(scene_chars) == 1
+        assert scene_chars[0].id == "boy"
+
+
 class TestExtendFromResolution:
     def test_extend_from_resolves_clips_dir(self, tmp_path):
         """extend_from should find the clip in output/clips/."""

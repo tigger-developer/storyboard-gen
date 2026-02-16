@@ -1,4 +1,4 @@
-<!-- Version: 1.4 | Last updated: 2026-02-16 -->
+<!-- Version: 1.5 | Last updated: 2026-02-16 -->
 
 # project.yaml Specification
 
@@ -98,10 +98,19 @@ Requires: `USE_VERTEX=true` with GCP credentials, or `GEMINI_API_KEY` in `.env`.
 |-------|------|-------------|
 | `fal-ai/flux-general` | still | Flux with reference image support, LoRAs, ControlNets |
 | `fal-ai/flux-pro/v1.1` | still | Flux Pro 1.1 — high quality text-to-image |
+| `fal-ai/flux-pro/kontext` | still | Kontext — image-to-image (with ref) or text-to-image (without) |
+| `fal-ai/kling-video/v2.1/pro/text-to-video` | clip | Kling v2.1 Pro — text-to-video |
+| `fal-ai/kling-video/v2.1/pro/image-to-video` | clip | Kling v2.1 Pro — image-to-video (with source_frame) |
+| `fal-ai/kling-video/v3/standard/image-to-video` | clip | Kling v3 Standard — image-to-video |
+| `fal-ai/kling-video/o3/standard/image-to-video` | clip | Kling O3 Standard — supports character elements |
 
-**Options:** `seed` (int), `safety_tolerance` (1-6), `num_inference_steps` (1-50), `guidance_scale` (0-20), `reference_strength` (float).
+**Still options:** `seed` (int), `safety_tolerance` (1-6), `num_inference_steps` (1-50), `guidance_scale` (0-20), `reference_strength` (float).
 
-Stills only — does not support clips. Requires `FAL_KEY` in `.env`.
+**Clip options:** `cfg_scale` (float), `negative_prompt` (string), `generate_audio` (bool, default false).
+
+Kling clip endpoints auto-route: `text-to-video` ↔ `image-to-video` based on whether `source_frame` is set.
+
+Requires `FAL_KEY` in `.env`.
 
 #### Replicate (`backend: replicate`)
 
@@ -157,6 +166,28 @@ characters:
 - The reference paths are resolved relative to the project directory.
 - Missing reference files are silently skipped at generation time (not at validation).
 - **Breaking change (v0.29.0):** `reference` must be a list. A bare string value produces a `ConfigError` with migration instructions.
+
+### `@character_id` in prompts
+
+You can reference characters in scene prompts using `@character_id` (e.g. `@hero`, `@guide`). The behaviour depends on the provider:
+
+- **Kling O3 models:** `@hero` → `@Element1`, `@guide` → `@Element2` (mapped to O3's character element system). Reference images are uploaded as elements for multi-character consistency.
+- **All other models:** The `@` prefix is stripped (e.g. `@hero` → `hero`). The character name remains in the prompt as natural text.
+
+When a scene lists characters but the prompt contains no `@character_id` tokens, O3 models auto-prepend `@ElementN is <description>.` lines for each character.
+
+```yaml
+scenes:
+  - number: 3
+    type: clip
+    duration: 5
+    characters: [hero, guide]
+    provider:
+      backend: fal
+      model: "fal-ai/kling-video/o3/standard/image-to-video"
+    prompt: >
+      @hero runs toward @guide who is standing at the door.
+```
 
 ---
 

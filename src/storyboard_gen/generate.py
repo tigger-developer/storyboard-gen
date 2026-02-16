@@ -254,6 +254,11 @@ def generate_clip(
     # Resolve extend_from to an actual video path
     extend_from_video = _resolve_extend_from(scene, output_dir)
 
+    # Resolve scene characters to Character objects (#37)
+    scene_characters = [
+        project.characters[cid] for cid in scene.characters if cid in project.characters
+    ]
+
     gen_kwargs = {
         "prompt": full_prompt,
         "output_path": clips_dir / f"scene_{scene_num}.mp4",
@@ -266,6 +271,7 @@ def generate_clip(
         "extend_from_video": extend_from_video,
         "seed": scene.seed,
         "number_of_videos": scene.variants,
+        "scene_characters": scene_characters or None,
     }
     if project_dir is not None:
         gen_kwargs["project_dir"] = project_dir

@@ -1,7 +1,10 @@
 # ABOUTME: FAL.ai provider for storyboard-gen.
 # ABOUTME: Generates stills via Flux/Kontext and clips via Kling through the fal-client SDK.
 
+import hashlib
+import json
 import logging
+import re
 import urllib.request
 from pathlib import Path
 
@@ -230,6 +233,142 @@ class FalProvider(ImageProvider):
         """Detect whether this is a Kling v3+ model (different param names)."""
         return "/v3/" in self.model.lower()
 
+    @property
+    def _is_o3(self) -> bool:
+        """Detect whether this is a Kling O3 model (supports character elements)."""
+        return "/o3/" in self.model.lower()
+
+    def _rewrite_prompt(self, prompt: str, scene_characters: list) -> str:
+        """Rewrite @character_id tokens in a prompt.
+
+        For O3 models: replaces @char_id with @ElementN (1-indexed).
+        For non-O3 models: strips the @ prefix from @char_id tokens.
+
+        When O3 and no @char_id tokens are found, auto-prepends
+        @ElementN descriptions using each character's description field.
+
+        Args:
+            prompt: Original prompt with possible @character_id tokens.
+            scene_characters: Ordered list of Character objects.
+
+        Returns:
+            Rewritten prompt.
+        """
+        char_ids = [c.id for c in scene_characters]
+
+        if self._is_o3:
+            # Check if any @character_id tokens are present
+            has_tokens = any(
+                re.search(rf"@{re.escape(cid)}\b", prompt, flags=re.IGNORECASE)
+                for cid in char_ids
+            )
+
+            if has_tokens:
+                # Replace @char_id with @ElementN
+                for idx, cid in enumerate(char_ids, start=1):
+                    prompt = re.sub(
+                        rf"@{re.escape(cid)}\b",
+                        f"@Element{idx}",
+                        prompt,
+                        flags=re.IGNORECASE,
+                    )
+            else:
+                # Auto-prepend @ElementN descriptions
+                prepend_lines = []
+                for idx, char in enumerate(scene_characters, start=1):
+                    prepend_lines.append(
+                        f"@Element{idx} is {char.description.strip()}."
+                    )
+                prompt = "\n".join(prepend_lines) + "\n" + prompt
+        else:
+            # Non-O3: strip @ prefix from character tokens (preserve casing)
+            for cid in char_ids:
+                prompt = re.sub(
+                    rf"@({re.escape(cid)})\b",
+                    r"\1",
+                    prompt,
+                    flags=re.IGNORECASE,
+                )
+
+        return prompt
+
+    def _load_cdn_cache(self, project_dir: Path | None) -> dict[str, str]:
+        """Load the CDN URL cache from project_dir/logs/cdn_cache.json.
+
+        Returns:
+            Dict mapping SHA-256 hex digest to CDN URL.
+        """
+        if project_dir is None:
+            return {}
+        cache_path = project_dir / "logs" / "cdn_cache.json"
+        if cache_path.exists():
+            return json.loads(cache_path.read_text())
+        return {}
+
+    def _save_cdn_cache(self, project_dir: Path | None, cache: dict[str, str]) -> None:
+        """Save the CDN URL cache to project_dir/logs/cdn_cache.json."""
+        if project_dir is None:
+            return
+        logs_dir = project_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        (logs_dir / "cdn_cache.json").write_text(json.dumps(cache, indent=2))
+
+    def _upload_with_cache(self, path: Path, cdn_cache: dict[str, str]) -> str:
+        """Upload a file to FAL CDN, using cached URL if hash matches.
+
+        Args:
+            path: Local file path to upload.
+            cdn_cache: Mutable cache dict (updated in place on miss).
+
+        Returns:
+            CDN URL string.
+        """
+        file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        if file_hash in cdn_cache:
+            logger.info("CDN cache hit for %s (hash=%s...)", path.name, file_hash[:8])
+            return cdn_cache[file_hash]
+
+        url = fal_client.upload_file(str(path))
+        cdn_cache[file_hash] = url
+        logger.info("Uploaded %s -> %s (hash=%s...)", path.name, url, file_hash[:8])
+        return url
+
+    def _build_elements(
+        self, scene_characters: list, cdn_cache: dict[str, str]
+    ) -> list[dict]:
+        """Build O3 elements array from Character objects.
+
+        For each character with reference images:
+        - First reference → frontal_image_url
+        - Additional references → reference_image_urls
+
+        Characters without references are skipped.
+
+        Args:
+            scene_characters: Ordered list of Character objects.
+            cdn_cache: Mutable CDN cache dict.
+
+        Returns:
+            List of element dicts for the O3 API.
+        """
+        elements = []
+        for char in scene_characters:
+            existing_refs = [r for r in char.reference if r.exists()]
+            if not existing_refs:
+                continue
+
+            frontal_url = self._upload_with_cache(existing_refs[0], cdn_cache)
+            element: dict = {"frontal_image_url": frontal_url}
+
+            if len(existing_refs) > 1:
+                extra_urls = [
+                    self._upload_with_cache(r, cdn_cache) for r in existing_refs[1:]
+                ]
+                element["reference_image_urls"] = extra_urls
+
+            elements.append(element)
+        return elements
+
     def _build_video_args(
         self,
         prompt: str,
@@ -285,11 +424,15 @@ class FalProvider(ImageProvider):
         extend_from_video: Path | None = None,
         seed: int | None = None,
         number_of_videos: int = 1,
+        scene_characters: list | None = None,
+        project_dir: Path | None = None,
+        scene_number: str | None = None,
     ) -> list[bytes]:
         """Generate a video clip via FAL Kling models.
 
         Uses fal_client.subscribe() for synchronous generation.
         Supports image-to-video via source_frame and last_frame.
+        O3 models build character elements from scene_characters.
 
         Raises:
             NotImplementedError: If model is not a video model (e.g. Flux/Kontext).
@@ -307,6 +450,10 @@ class FalProvider(ImageProvider):
                 "fal-client is not installed. Run: pip install fal-client"
             )
 
+        # Rewrite @character_id tokens in prompt (#37)
+        if scene_characters:
+            prompt = self._rewrite_prompt(prompt, scene_characters)
+
         # Upload source_frame and last_frame to CDN
         source_frame_url = None
         if source_frame is not None and source_frame.exists():
@@ -321,6 +468,14 @@ class FalProvider(ImageProvider):
         arguments = self._build_video_args(
             prompt, aspect_ratio, duration, source_frame_url, last_frame_url
         )
+
+        # Build O3 character elements (#37)
+        if self._is_o3 and scene_characters:
+            cdn_cache = self._load_cdn_cache(project_dir)
+            elements = self._build_elements(scene_characters, cdn_cache)
+            if elements:
+                arguments["elements"] = elements
+            self._save_cdn_cache(project_dir, cdn_cache)
 
         # Merge provider options (cfg_scale, negative_prompt, etc.)
         merged_options = self.options.copy()
