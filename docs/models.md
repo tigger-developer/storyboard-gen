@@ -1,4 +1,4 @@
-<!-- Version: 1.0 | Last updated: 2026-02-18 -->
+<!-- Version: 1.1 | Last updated: 2026-02-18 -->
 
 # Model Reference
 
@@ -29,16 +29,44 @@ Google does not expose a safety tolerance toggle. Content filtering is handled s
 
 ### Authentication
 
+Google has two mutually exclusive auth paths. When `USE_VERTEX=true` is set, the API key is ignored entirely.
+
+#### Option 1: Vertex AI (recommended for production)
+
+Uses Google Cloud Application Default Credentials (ADC) — **not** an API key. The `.env` only sets the project and location; actual authentication comes from your `gcloud` login session.
+
 ```bash
-# Vertex AI (recommended for production)
+# .env
 USE_VERTEX=true
 GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=us-central1
-GCS_OUTPUT_BUCKET=gs://your-bucket-name/
+GCS_OUTPUT_BUCKET=gs://your-bucket-name/   # optional, for GCS video output
+```
 
-# OR Gemini Developer API
+```bash
+# Authenticate (run once per account)
+gcloud auth application-default login
+
+# To switch to a different Google account
+gcloud auth application-default login --account other@gmail.com
+
+# To use a different GCP project, change GOOGLE_CLOUD_PROJECT in .env
+```
+
+#### Option 2: Gemini Developer API (simpler setup)
+
+Uses a plain API key. No `gcloud` CLI needed. Get a key from [Google AI Studio](https://aistudio.google.com/apikey).
+
+```bash
+# .env — do NOT set USE_VERTEX
 GEMINI_API_KEY=your-api-key
 ```
+
+To switch accounts, replace the API key with one from the other account.
+
+#### Switching between projects
+
+Each project directory has its own `.env`, so different storyboard projects can use different Google accounts or even different auth methods. Just configure each project's `.env` independently.
 
 ---
 

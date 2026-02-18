@@ -1,4 +1,4 @@
-<!-- Version: 1.7 | Last updated: 2026-02-18 -->
+<!-- Version: 1.8 | Last updated: 2026-02-18 -->
 
 # project.yaml Specification
 
@@ -90,7 +90,7 @@ providers:
 | `imagen-3.0-capability-001` | still | Imagen 3 Capability — used automatically for single-reference edits |
 | `veo-3.1-fast-generate-001` | clip | Veo 3.1 Fast — default for clips |
 
-Requires: `USE_VERTEX=true` with GCP credentials, or `GEMINI_API_KEY` in `.env`.
+**Auth:** Two mutually exclusive paths — when `USE_VERTEX=true` is set, `GEMINI_API_KEY` is ignored. See [docs/models.md](models.md#authentication) for full details including how to switch Google accounts.
 
 #### FAL.ai (`backend: fal`)
 
