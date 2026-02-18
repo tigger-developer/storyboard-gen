@@ -733,6 +733,29 @@ class TestKenBurnsFilter:
         # Assert
         assert transform is None
 
+    def test_transform_filter_has_kdenlive_id(self, tmp_path):
+        """Transform filter must have kdenlive_id so Kdenlive shows it in effects panel."""
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Zoom In",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "zoom_in",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+        transform = self._find_transform_filter(producer)
+
+        # Assert — kdenlive_id is required for Kdenlive GUI recognition
+        assert transform is not None
+        assert _get_prop(transform, "kdenlive_id") == "qtblend"
+
     def test_transform_keyframes_16_9_aspect(self, tmp_path):
         # Arrange — 16:9 → 1920x1080
         scenes = [

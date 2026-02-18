@@ -471,6 +471,7 @@ def _add_ken_burns_filter(
     rect_value = f"0={start};{last_frame}={end}"
     filt = ET.SubElement(producer, "filter")
     _set_prop(filt, "mlt_service", "qtblend")
+    _set_prop(filt, "kdenlive_id", "qtblend")
     _set_prop(filt, "rect", rect_value)
 
 
