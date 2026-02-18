@@ -127,6 +127,7 @@ PYTHON
 
     echo "Committing Homebrew formula update..."
     cd "$HOMEBREW_TAP"
+    git pull --rebase origin main
     git add Formula/storyboard-gen.rb
     git commit -m "storyboard-gen ${version}"
     git push origin main
