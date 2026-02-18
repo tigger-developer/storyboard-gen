@@ -70,6 +70,8 @@ storyboard-gen --version               # Show version
 | `scripts/release.sh` | Release automation |
 | `docs/VISION.md` | Project vision and goals |
 | `docs/architecture.md` | Technical architecture |
+| `docs/models.md` | AI model reference (capabilities, options, safety defaults) |
+| `docs/project-yaml-spec.md` | project.yaml schema specification |
 | `CLAUDE.md` | Claude Code configuration |
 | `Makefile` | Build, test, lint, release targets |
 

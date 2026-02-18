@@ -169,8 +169,15 @@ GCS_OUTPUT_BUCKET=gs://your-bucket-name/
 - Google Imagen: `imagen-4.0-generate-001`
 - Google Veo: `veo-3.1-fast-generate-001`
 - FAL Flux: `fal-ai/flux-general`, `fal-ai/flux-pro/v1.1`
+- FAL Flux 2: `fal-ai/flux-2`, `fal-ai/flux-2/turbo`, `fal-ai/flux-2/dev` (no reference support)
 - FAL Kontext: `fal-ai/flux-pro/kontext` (image-to-image with ref, text-to-image without)
 - Replicate Flux: `black-forest-labs/flux-1.1-pro`, `black-forest-labs/flux-dev`
+
+Safety defaults are injected automatically (overridable via user `options`):
+- FAL Flux/Flux 2: `enable_safety_checker: false`
+- FAL Kontext: `safety_tolerance: "6"`
+- Replicate: `safety_tolerance: 6`
+- Google: no toggle available
 
 ## project.yaml schema
 

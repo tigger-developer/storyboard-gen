@@ -1,4 +1,4 @@
-<!-- Version: 1.1 | Last updated: 2026-02-16 -->
+<!-- Version: 1.2 | Last updated: 2026-02-18 -->
 
 # Architecture: storyboard-gen
 
@@ -26,7 +26,7 @@ Pluggable image/video generation backends. Each provider implements the `ImagePr
 
 - `providers/base.py` — Abstract base class defining `generate_still()` and `generate_clip()` interface.
 - `providers/google.py` — Google Vertex AI / Gemini (Imagen for stills, Veo for clips).
-- `providers/fal.py` — FAL.ai (Flux and Kontext models for stills, Kling models for clips). Kontext models auto-route to image-to-image (when a reference image exists) or text-to-image (when no reference). Kling O3 models support character elements for multi-character consistency.
+- `providers/fal.py` — FAL.ai (Flux 1.x, Flux 2, and Kontext models for stills, Kling models for clips). Kontext models auto-route to image-to-image (when a reference image exists) or text-to-image (when no reference). Flux 2 models (`_is_flux2` detection) do not support reference images. Kling O3 models support character elements for multi-character consistency. Safety defaults are injected per model family before user options merge.
 - `providers/replicate.py` — Replicate (Flux models for stills).
 - `providers/__init__.py` — Registry and factory. Uses lazy imports so unused SDKs are not required.
 

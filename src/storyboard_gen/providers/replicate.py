@@ -56,6 +56,7 @@ class ReplicateProvider(ImageProvider):
             "prompt": prompt,
             "aspect_ratio": aspect_ratio,
             "output_format": "png",
+            "safety_tolerance": 6,
         }
 
         # Merge provider options (seed, safety_tolerance, etc.)

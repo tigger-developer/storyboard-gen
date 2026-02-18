@@ -1273,6 +1273,208 @@ class TestFalNonO3AtStrip:
         assert arguments["prompt"] == "@someone runs"
 
 
+class TestFlux2Detection:
+    """Tests for Flux 2 model detection (#44)."""
+
+    def test_is_flux2_positive_base(self):
+        """fal-ai/flux-2 should be detected as Flux 2."""
+        provider = FalProvider(model="fal-ai/flux-2")
+        assert provider._is_flux2 is True
+
+    def test_is_flux2_positive_turbo(self):
+        """fal-ai/flux-2/turbo should be detected as Flux 2."""
+        provider = FalProvider(model="fal-ai/flux-2/turbo")
+        assert provider._is_flux2 is True
+
+    def test_is_flux2_positive_dev(self):
+        """fal-ai/flux-2/dev should be detected as Flux 2."""
+        provider = FalProvider(model="fal-ai/flux-2/dev")
+        assert provider._is_flux2 is True
+
+    def test_is_flux2_case_insensitive(self):
+        """Flux-2 detection should be case-insensitive."""
+        provider = FalProvider(model="fal-ai/Flux-2/turbo")
+        assert provider._is_flux2 is True
+
+    def test_is_flux2_negative_flux_general(self):
+        """flux-general is not Flux 2."""
+        provider = FalProvider(model="fal-ai/flux-general")
+        assert provider._is_flux2 is False
+
+    def test_is_flux2_negative_flux_pro(self):
+        """flux-pro/v1.1 is not Flux 2."""
+        provider = FalProvider(model="fal-ai/flux-pro/v1.1")
+        assert provider._is_flux2 is False
+
+
+class TestFlux2ReferenceHandling:
+    """Tests for Flux 2 reference image handling (#44)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux2_does_not_pass_reference_image_url(self, mock_fal, tmp_path):
+        """Flux 2 models should not include reference_image_url in arguments."""
+        # Arrange
+        ref_path = tmp_path / "ref.png"
+        ref_path.write_bytes(b"fake-image")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-2/turbo")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy in a field",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref_path],
+            )
+
+        # Assert — no reference_image_url for Flux 2
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "reference_image_url" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux2_logs_warning_when_references_provided(
+        self, mock_fal, tmp_path, caplog
+    ):
+        """Flux 2 should log a warning when references are provided but skipped."""
+        import logging
+
+        # Arrange
+        ref_path = tmp_path / "ref.png"
+        ref_path.write_bytes(b"fake-image")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-2/turbo")
+
+        with (
+            caplog.at_level(logging.WARNING),
+            patch("storyboard_gen.providers.fal._download_url") as mock_dl,
+        ):
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy in a field",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref_path],
+            )
+
+        # Assert — warning logged about Flux 2 not supporting references
+        assert any(
+            "flux 2" in r.message.lower() and "reference" in r.message.lower()
+            for r in caplog.records
+        )
+
+
+class TestFalSafetyDefaults:
+    """Tests for automatic safety defaults across FAL model families (#44)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux_general_gets_enable_safety_checker_false(self, mock_fal, tmp_path):
+        """Flux general should default to enable_safety_checker: False."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-general")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="Prompt",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["enable_safety_checker"] is False
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux2_gets_enable_safety_checker_false(self, mock_fal, tmp_path):
+        """Flux 2 should default to enable_safety_checker: False."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-2/turbo")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="Prompt",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["enable_safety_checker"] is False
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_gets_safety_tolerance_6(self, mock_fal, tmp_path):
+        """Kontext should default to safety_tolerance: '6'."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-pro/kontext")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="Prompt",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["safety_tolerance"] == "6"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_user_options_override_safety_defaults(self, mock_fal, tmp_path):
+        """User options should override safety defaults."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(
+            model="fal-ai/flux-general",
+            options={"enable_safety_checker": True},
+        )
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="Prompt",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert — user option wins over default
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["enable_safety_checker"] is True
+
+
 class TestFalCdnCache:
     """Tests for CDN URL caching to avoid re-uploading references (#37)."""
 

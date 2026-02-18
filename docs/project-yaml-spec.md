@@ -1,4 +1,4 @@
-<!-- Version: 1.6 | Last updated: 2026-02-16 -->
+<!-- Version: 1.7 | Last updated: 2026-02-18 -->
 
 # project.yaml Specification
 
@@ -98,13 +98,19 @@ Requires: `USE_VERTEX=true` with GCP credentials, or `GEMINI_API_KEY` in `.env`.
 |-------|------|-------------|
 | `fal-ai/flux-general` | still | Flux with reference image support, LoRAs, ControlNets |
 | `fal-ai/flux-pro/v1.1` | still | Flux Pro 1.1 — high quality text-to-image |
+| `fal-ai/flux-2` | still | Flux 2 — no reference image support |
+| `fal-ai/flux-2/turbo` | still | Flux 2 Turbo — fast, no reference image support |
 | `fal-ai/flux-pro/kontext` | still | Kontext — image-to-image (with ref) or text-to-image (without) |
 | `fal-ai/kling-video/v2.1/pro/text-to-video` | clip | Kling v2.1 Pro — text-to-video |
 | `fal-ai/kling-video/v2.1/pro/image-to-video` | clip | Kling v2.1 Pro — image-to-video (with source_frame) |
 | `fal-ai/kling-video/v3/standard/image-to-video` | clip | Kling v3 Standard — image-to-video |
 | `fal-ai/kling-video/o3/standard/image-to-video` | clip | Kling O3 Standard — supports character elements |
 
-**Still options:** `seed` (int), `safety_tolerance` (1-6), `num_inference_steps` (1-50), `guidance_scale` (0-20), `reference_strength` (float).
+**Still options (Flux 1.x):** `seed` (int), `safety_tolerance` (1-6), `num_inference_steps` (1-50), `guidance_scale` (0-20), `reference_strength` (float).
+
+**Still options (Flux 2):** `seed` (int), `enable_safety_checker` (bool), `guidance_scale` (float), `acceleration` (string), `enable_prompt_expansion` (bool). No reference image support.
+
+Safety defaults are injected automatically (see [docs/models.md](models.md) for details).
 
 **Clip options:** `cfg_scale` (float), `negative_prompt` (string), `generate_audio` (bool, default false).
 

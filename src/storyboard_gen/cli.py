@@ -475,7 +475,7 @@ PROVIDERS
     options       (object)            Provider-specific options
 
   Google models:    imagen-4.0-generate-001 (still), veo-3.1-fast-generate-001 (clip)
-  FAL.ai models:    fal-ai/flux-general, fal-ai/flux-pro/kontext, fal-ai/kling-video/*
+  FAL.ai models:    fal-ai/flux-general, fal-ai/flux-2, fal-ai/flux-2/turbo, fal-ai/flux-pro/kontext, fal-ai/kling-video/*
   Replicate models: black-forest-labs/flux-1.1-pro, black-forest-labs/flux-dev
 
 CHARACTERS

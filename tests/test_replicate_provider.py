@@ -225,6 +225,53 @@ class TestReplicateMultiReference:
         )
 
 
+class TestReplicateSafetyDefaults:
+    """Tests for automatic safety defaults in Replicate provider (#44)."""
+
+    @patch("storyboard_gen.providers.replicate.replicate")
+    def test_default_safety_tolerance_6(self, mock_replicate, tmp_path):
+        """Replicate should default to safety_tolerance: 6."""
+        # Arrange
+        mock_output = MagicMock()
+        mock_output.read.return_value = b"png-bytes"
+        mock_replicate.run.return_value = mock_output
+        provider = ReplicateProvider(model="black-forest-labs/flux-1.1-pro")
+
+        # Act
+        provider.generate_still(
+            prompt="Prompt",
+            output_path=tmp_path / "scene_01.png",
+            aspect_ratio="9:16",
+        )
+
+        # Assert
+        input_args = mock_replicate.run.call_args.kwargs["input"]
+        assert input_args["safety_tolerance"] == 6
+
+    @patch("storyboard_gen.providers.replicate.replicate")
+    def test_user_options_override_safety_default(self, mock_replicate, tmp_path):
+        """User options should override the default safety_tolerance."""
+        # Arrange
+        mock_output = MagicMock()
+        mock_output.read.return_value = b"png-bytes"
+        mock_replicate.run.return_value = mock_output
+        provider = ReplicateProvider(
+            model="black-forest-labs/flux-1.1-pro",
+            options={"safety_tolerance": 3},
+        )
+
+        # Act
+        provider.generate_still(
+            prompt="Prompt",
+            output_path=tmp_path / "scene_01.png",
+            aspect_ratio="9:16",
+        )
+
+        # Assert — user option wins
+        input_args = mock_replicate.run.call_args.kwargs["input"]
+        assert input_args["safety_tolerance"] == 3
+
+
 class TestReplicateGenerateClip:
     def test_raises_not_implemented(self, tmp_path):
         provider = ReplicateProvider(model="black-forest-labs/flux-1.1-pro")

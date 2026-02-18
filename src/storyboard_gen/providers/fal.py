@@ -64,6 +64,11 @@ class FalProvider(ImageProvider):
         """Detect whether this provider is configured for a Kontext model."""
         return "kontext" in self.model.lower()
 
+    @property
+    def _is_flux2(self) -> bool:
+        """Detect whether this provider is configured for a Flux 2 model."""
+        return "flux-2" in self.model.lower()
+
     def _upload_reference(self, reference_images: list[Path] | None) -> str | None:
         """Upload the first valid reference image to FAL CDN.
 
@@ -151,7 +156,14 @@ class FalProvider(ImageProvider):
             "output_format": "png",
         }
         if ref_url:
-            arguments["reference_image_url"] = ref_url
+            if self._is_flux2:
+                logger.warning(
+                    "Flux 2 models do not support reference images; "
+                    "reference will be ignored for %s",
+                    self.model,
+                )
+            else:
+                arguments["reference_image_url"] = ref_url
         return self.model, arguments
 
     def generate_still(
@@ -195,6 +207,12 @@ class FalProvider(ImageProvider):
             )
         else:
             endpoint, arguments = self._build_flux_args(prompt, aspect_ratio, ref_url)
+
+        # Inject safety defaults (overridable by user options)
+        if self._is_kontext:
+            arguments["safety_tolerance"] = "6"
+        else:
+            arguments["enable_safety_checker"] = False
 
         # Merge provider options (seed, safety_tolerance, etc.)
         merged_options = self.options.copy()
