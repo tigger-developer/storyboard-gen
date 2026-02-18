@@ -96,6 +96,10 @@ update_homebrew_formula() {
         exit 1
     fi
 
+    # Sync tap repo before modifying formula (prevents push rejection)
+    echo "Syncing Homebrew tap..."
+    git -C "$HOMEBREW_TAP" pull --rebase origin main
+
     python3 << PYTHON
 import re
 from pathlib import Path
@@ -127,7 +131,6 @@ PYTHON
 
     echo "Committing Homebrew formula update..."
     cd "$HOMEBREW_TAP"
-    git pull --rebase origin main
     git add Formula/storyboard-gen.rb
     git commit -m "storyboard-gen ${version}"
     git push origin main
