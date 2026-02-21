@@ -26,7 +26,7 @@ The optional GUI (`storyboard-gen-gui`) provides visual scene management for ste
 
 ## Kdenlive export
 
-The `kdenlive` command produces a Kdenlive project file with every scene on the timeline at the correct duration, Ken Burns effects as native Kdenlive transforms, audio track included, and dissolve transitions. The `.kdenlive` file opens directly in Kdenlive for editing — adjust timing, tweak keyframes, add titles, swap scenes, or re-render at any resolution. This is where AI generation meets a proper video editor.
+The `kdenlive` command produces a Kdenlive project file with every scene on the timeline at the correct duration, Ken Burns effects as native Kdenlive transforms, and audio track included. The `.kdenlive` file opens directly in Kdenlive for editing — adjust timing, tweak keyframes, add titles, swap scenes, or re-render at any resolution. This is where AI generation meets a proper video editor.
 
 ## Non-goals
 
