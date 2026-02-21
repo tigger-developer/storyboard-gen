@@ -923,10 +923,10 @@ class TestClipPreview:
 class TestClipSelectionEndToEnd:
     """E2E test for clip selection in the main window."""
 
-    def test_selecting_generated_clip_shows_clip_info(
+    def test_selecting_generated_clip_shows_video_player(
         self, qtbot, gui_project_dir_with_output
     ):
-        """Selecting a generated clip scene should show clip info, not placeholder."""
+        """Selecting a generated clip scene should show video player, not placeholder."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
@@ -936,8 +936,102 @@ class TestClipSelectionEndToEnd:
         # Act — select scene 2 (clip, generated)
         window.scene_list.list_widget.setCurrentRow(1)
 
-        # Assert — should not be showing placeholder
-        assert (
-            window.preview._layout.currentWidget()
-            is not window.preview.placeholder_label
-        )
+        # Assert — should show video player widget
+        assert window.preview._layout.currentWidget() is window.preview._video_container
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: video playback
+# ---------------------------------------------------------------------------
+
+
+class TestVideoPlayback:
+    """Test inline video playback in the preview panel."""
+
+    def test_preview_has_video_widget(self, qtbot):
+        """PreviewPanel should have a _video_widget attribute for playback."""
+        from storyboard_gen.gui.preview_panel import PreviewPanel
+
+        panel = PreviewPanel()
+        qtbot.addWidget(panel)
+
+        # Assert
+        assert hasattr(panel, "_video_widget")
+        assert hasattr(panel, "_player")
+
+    def test_play_clip_switches_to_video_view(self, qtbot, gui_project_dir_with_output):
+        """Calling play_clip should switch stacked layout to video container."""
+        from storyboard_gen.gui.preview_panel import PreviewPanel
+
+        panel = PreviewPanel()
+        qtbot.addWidget(panel)
+
+        clip_path = gui_project_dir_with_output / "output" / "clips" / "scene_02.mp4"
+
+        # Act
+        panel.play_clip(clip_path)
+
+        # Assert — video container should be current
+        assert panel._layout.currentWidget() is panel._video_container
+
+    def test_play_clip_sets_media_source(self, qtbot, gui_project_dir_with_output):
+        """play_clip should set the media source on the player."""
+        from PySide6.QtCore import QUrl
+
+        from storyboard_gen.gui.preview_panel import PreviewPanel
+
+        panel = PreviewPanel()
+        qtbot.addWidget(panel)
+
+        clip_path = gui_project_dir_with_output / "output" / "clips" / "scene_02.mp4"
+
+        # Act
+        panel.play_clip(clip_path)
+
+        # Assert — player source should match the clip path
+        expected_url = QUrl.fromLocalFile(str(clip_path))
+        assert panel._player.source() == expected_url
+
+    def test_stop_playback_returns_to_placeholder(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """stop_playback should stop the player and return to placeholder."""
+        from storyboard_gen.gui.preview_panel import PreviewPanel
+
+        panel = PreviewPanel()
+        qtbot.addWidget(panel)
+
+        clip_path = gui_project_dir_with_output / "output" / "clips" / "scene_02.mp4"
+        panel.play_clip(clip_path)
+
+        # Act
+        panel.stop_playback()
+
+        # Assert
+        assert panel._layout.currentWidget() is panel.placeholder_label
+
+    def test_clear_image_stops_playback(self, qtbot, gui_project_dir_with_output):
+        """clear_image should also stop any active video playback."""
+        from storyboard_gen.gui.preview_panel import PreviewPanel
+
+        panel = PreviewPanel()
+        qtbot.addWidget(panel)
+
+        clip_path = gui_project_dir_with_output / "output" / "clips" / "scene_02.mp4"
+        panel.play_clip(clip_path)
+
+        # Act
+        panel.clear_image()
+
+        # Assert — should be back on placeholder
+        assert panel._layout.currentWidget() is panel.placeholder_label
+
+    def test_player_audio_is_muted(self, qtbot):
+        """Video playback should be muted (no audio support yet)."""
+        from storyboard_gen.gui.preview_panel import PreviewPanel
+
+        panel = PreviewPanel()
+        qtbot.addWidget(panel)
+
+        # Assert
+        assert panel._audio_output.isMuted()

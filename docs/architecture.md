@@ -1,4 +1,4 @@
-<!-- Version: 1.6 | Last updated: 2026-02-21 -->
+<!-- Version: 1.7 | Last updated: 2026-02-21 -->
 
 # Architecture: storyboard-gen
 
@@ -57,7 +57,7 @@ A PySide6 (Qt6) graphical interface that wraps the operational commands. Install
 
 - `gui/app.py` — `MainWindow` with toolbar (Generate, Stop, Assemble, View YAML), splitter layout, progress label, and signal wiring. Entry point: `run()`.
 - `gui/scene_list.py` — `SceneListWidget` shows scenes with status indicators (`[OK]`/`[--]`). `get_scene_status()` checks output file existence. Emits `scene_selected(Scene)`.
-- `gui/preview_panel.py` — `PreviewPanel` with `QStackedLayout` switching between placeholder, still image, and clip info (thumbnail + file details) views. Extracts thumbnails from video clips via ffmpeg.
+- `gui/preview_panel.py` — `PreviewPanel` with `QStackedLayout` switching between placeholder, still image, clip info (thumbnail + file details), and inline video playback views. Video playback uses `QMediaPlayer` + `QVideoWidget` (QtMultimedia) with play/pause controls. Falls back to clip info view on playback error. Extracts thumbnails from video clips via ffmpeg for the fallback view.
 - `gui/console_panel.py` — `ConsolePanel` read-only text display. `QtLogHandler` bridges Python `logging` to Qt signals.
 - `gui/generate_dialog.py` — `GenerateDialog(QDialog)` with radio buttons: all scenes, all stills, all clips, or selected scene.
 - `gui/generate_worker.py` — `GenerateWorker(QThread)` runs generation in the background, emitting progress signals. Supports cooperative stop via `request_stop()`.

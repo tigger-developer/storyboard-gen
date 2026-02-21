@@ -190,7 +190,7 @@ class MainWindow(QMainWindow):
             else:
                 path = self._output_dir / "clips" / f"scene_{scene_num}.mp4"
                 if path.exists():
-                    self.preview.show_clip_info(path)
+                    self.preview.play_clip(path)
                 else:
                     self.preview.clear_image()
         else:

@@ -1,12 +1,17 @@
 # ABOUTME: Preview panel widget for storyboard-gen GUI.
-# ABOUTME: Displays generated still images and clip file info with placeholder for pending scenes.
+# ABOUTME: Displays generated still images and inline video playback for clips, with placeholder for pending scenes.
 
+import logging
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QUrl, Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QLabel, QStackedLayout, QVBoxLayout, QWidget
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtWidgets import QLabel, QPushButton, QStackedLayout, QVBoxLayout, QWidget
+
+logger = logging.getLogger(__name__)
 
 
 def _format_file_size(size_bytes: int) -> str:
@@ -83,10 +88,32 @@ class PreviewPanel(QWidget):
 
         self._clip_widget.setLayout(clip_layout)
 
+        # Video playback widget — QMediaPlayer + QVideoWidget + play/pause
+        self._player = QMediaPlayer()
+        self._audio_output = QAudioOutput()
+        self._audio_output.setMuted(True)
+        self._player.setAudioOutput(self._audio_output)
+        self._video_widget = QVideoWidget()
+        self._player.setVideoOutput(self._video_widget)
+        self._player.errorOccurred.connect(self._on_playback_error)
+
+        self._play_pause_btn = QPushButton("Pause")
+        self._play_pause_btn.clicked.connect(self._on_play_pause)
+        self._player.playbackStateChanged.connect(self._on_playback_state_changed)
+
+        self._video_container = QWidget()
+        video_layout = QVBoxLayout()
+        video_layout.addWidget(self._video_widget, stretch=1)
+        video_layout.addWidget(self._play_pause_btn)
+        self._video_container.setLayout(video_layout)
+
+        self._current_clip_path: Path | None = None
+
         self._layout = QStackedLayout()
         self._layout.addWidget(self.placeholder_label)
         self._layout.addWidget(self.image_label)
         self._layout.addWidget(self._clip_widget)
+        self._layout.addWidget(self._video_container)
         self._layout.setCurrentWidget(self.placeholder_label)
         self.setLayout(self._layout)
 
@@ -145,8 +172,55 @@ class PreviewPanel(QWidget):
 
         self._layout.setCurrentWidget(self._clip_widget)
 
+    def play_clip(self, clip_path: Path) -> None:
+        """Play a video clip inline in the preview panel.
+
+        Falls back to show_clip_info() if the file does not exist.
+
+        Args:
+            clip_path: Path to a video clip file.
+        """
+        if not clip_path.exists():
+            self.clear_image()
+            return
+
+        self._current_clip_path = clip_path
+        self._player.setSource(QUrl.fromLocalFile(str(clip_path)))
+        self._layout.setCurrentWidget(self._video_container)
+        self._player.play()
+
+    def stop_playback(self) -> None:
+        """Stop video playback, reset the player, and return to placeholder."""
+        self._player.stop()
+        self._player.setSource(QUrl())
+        self._current_clip_path = None
+        self._layout.setCurrentWidget(self.placeholder_label)
+
+    def _on_playback_error(self, error: QMediaPlayer.Error, message: str) -> None:
+        """Handle playback errors by falling back to clip info view."""
+        logger.warning("Video playback failed: %s", message)
+        if self._current_clip_path and self._current_clip_path.exists():
+            self.show_clip_info(self._current_clip_path)
+        else:
+            self.clear_image()
+
+    def _on_play_pause(self) -> None:
+        """Toggle between play and pause states."""
+        if self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self._player.pause()
+        else:
+            self._player.play()
+
+    def _on_playback_state_changed(self, state: QMediaPlayer.PlaybackState) -> None:
+        """Update button text to reflect current playback state."""
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            self._play_pause_btn.setText("Pause")
+        else:
+            self._play_pause_btn.setText("Play")
+
     def clear_image(self) -> None:
         """Reset to the placeholder view."""
+        self.stop_playback()
         self.image_label.clear()
         self.clip_thumbnail_label.clear()
         self.clip_info_label.clear()
