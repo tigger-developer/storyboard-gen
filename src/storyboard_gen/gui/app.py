@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QLabel,
     QMainWindow,
     QSplitter,
     QToolBar,
@@ -18,9 +19,11 @@ from PySide6.QtWidgets import (
 from storyboard_gen import __version__
 from storyboard_gen.config import ConfigError, load_project
 from storyboard_gen.gui.console_panel import ConsolePanel, QtLogHandler
+from storyboard_gen.gui.generate_dialog import GenerateDialog
 from storyboard_gen.gui.generate_worker import GenerateWorker
 from storyboard_gen.gui.preview_panel import PreviewPanel
 from storyboard_gen.gui.scene_list import SceneListWidget, get_scene_status
+from storyboard_gen.gui.yaml_viewer import YamlViewer
 from storyboard_gen.models import Project, Scene, format_scene_number
 
 logger = logging.getLogger(__name__)
@@ -40,6 +43,8 @@ class MainWindow(QMainWindow):
         self._project_dir: Path | None = None
         self._output_dir: Path | None = None
         self._worker: GenerateWorker | None = None
+        self._gen_total: int = 0
+        self._gen_done: int = 0
 
         self._setup_widgets()
         self._setup_toolbar()
@@ -51,6 +56,7 @@ class MainWindow(QMainWindow):
         self.scene_list = SceneListWidget()
         self.preview = PreviewPanel()
         self.console = ConsolePanel()
+        self.yaml_viewer = YamlViewer()
 
         # Scene list + preview side by side
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -82,25 +88,34 @@ class MainWindow(QMainWindow):
 
         self.toolbar.addSeparator()
 
-        self._action_gen_scene = self.toolbar.addAction("Generate Scene")
-        self._action_gen_scene.triggered.connect(self._on_generate_scene)
+        self._action_generate = self.toolbar.addAction("Generate")
+        self._action_generate.triggered.connect(self._on_generate)
 
-        self._action_all_stills = self.toolbar.addAction("All Stills")
-        self._action_all_stills.triggered.connect(self._on_generate_all_stills)
-
-        self._action_all_clips = self.toolbar.addAction("All Clips")
-        self._action_all_clips.triggered.connect(self._on_generate_all_clips)
-
-        self._action_gen_all = self.toolbar.addAction("Generate All")
-        self._action_gen_all.triggered.connect(self._on_generate_all)
+        self._action_stop = self.toolbar.addAction("Stop")
+        self._action_stop.triggered.connect(self._on_stop)
 
         self.toolbar.addSeparator()
 
         self._action_assemble = self.toolbar.addAction("Assemble")
         self._action_assemble.triggered.connect(self._on_assemble)
 
-        self._action_preview = self.toolbar.addAction("Preview")
-        self._action_preview.triggered.connect(self._on_preview)
+        self.toolbar.addSeparator()
+
+        self._action_yaml = self.toolbar.addAction("View YAML")
+        self._action_yaml.triggered.connect(self._on_view_yaml)
+
+        # Progress label in the toolbar
+        spacer = QWidget()
+        spacer.setSizePolicy(
+            spacer.sizePolicy().horizontalPolicy(),
+            spacer.sizePolicy().verticalPolicy(),
+        )
+        spacer.setMinimumWidth(20)
+        self.toolbar.addWidget(spacer)
+
+        self._progress_label = QLabel("")
+        self._progress_label.setStyleSheet("color: #888; padding-left: 10px;")
+        self.toolbar.addWidget(self._progress_label)
 
     def _setup_logging(self) -> None:
         """Attach a Qt log handler to route log messages to the console."""
@@ -115,12 +130,10 @@ class MainWindow(QMainWindow):
         has_project = self._project is not None
         is_generating = self._worker is not None and self._worker.isRunning()
 
-        self._action_gen_scene.setEnabled(has_project and not is_generating)
-        self._action_all_stills.setEnabled(has_project and not is_generating)
-        self._action_all_clips.setEnabled(has_project and not is_generating)
-        self._action_gen_all.setEnabled(has_project and not is_generating)
+        self._action_generate.setEnabled(has_project and not is_generating)
+        self._action_stop.setEnabled(is_generating)
         self._action_assemble.setEnabled(has_project and not is_generating)
-        self._action_preview.setEnabled(has_project and not is_generating)
+        self._action_yaml.setEnabled(has_project)
 
     # ----- Project loading -----
 
@@ -170,24 +183,48 @@ class MainWindow(QMainWindow):
             scene_num = format_scene_number(scene.number)
             if scene.scene_type == "still":
                 path = self._output_dir / "stills" / f"scene_{scene_num}.png"
+                if path.exists():
+                    self.preview.load_image(path)
+                else:
+                    self.preview.clear_image()
             else:
-                # For clips, check if there's a thumbnail/still available
                 path = self._output_dir / "clips" / f"scene_{scene_num}.mp4"
-            if scene.scene_type == "still" and path.exists():
-                self.preview.load_image(path)
-            else:
-                self.preview.clear_image()
+                if path.exists():
+                    self.preview.show_clip_info(path)
+                else:
+                    self.preview.clear_image()
         else:
             self.preview.clear_image()
 
     # ----- Generation -----
+
+    def _on_generate(self) -> None:
+        """Open the Generate dialog and start generation."""
+        if not self._project:
+            return
+
+        selected = self.scene_list.get_selected_scene()
+        dialog = GenerateDialog(self._project, selected_scene=selected, parent=self)
+        if dialog.exec():
+            scenes = dialog.get_selected_scenes()
+            self._start_generation(scenes)
+
+    def _on_stop(self) -> None:
+        """Request the current generation to stop."""
+        if self._worker:
+            self._worker.request_stop()
+            self.console.append_message("Stop requested — finishing current scene...")
 
     def _start_generation(self, scenes: list[Scene]) -> None:
         """Start background generation for the given scenes."""
         if not scenes or not self._project:
             return
 
-        self.console.append_message(f"Generating {len(scenes)} scene(s)...")
+        self._gen_total = len(scenes)
+        self._gen_done = 0
+        self._progress_label.setText(f"0 / {self._gen_total}")
+
+        self.console.append_message(f"Generating {self._gen_total} scene(s)...")
         self._worker = GenerateWorker(
             scenes=scenes,
             project=self._project,
@@ -206,70 +243,46 @@ class MainWindow(QMainWindow):
         self.console.append_message(
             f"Generating scene {scene.number}: {scene.title}..."
         )
+        self._progress_label.setText(
+            f"{self._gen_done} / {self._gen_total} — scene {scene.number}"
+        )
 
     def _on_scene_gen_finished(self, scene: Scene) -> None:
         """Handle scene generation finished."""
+        self._gen_done += 1
         self.console.append_message(f"Finished scene {scene.number}: {scene.title}")
+        self._progress_label.setText(f"{self._gen_done} / {self._gen_total}")
         self.scene_list.refresh_status()
 
     def _on_gen_error(self, message: str) -> None:
         """Handle generation error."""
+        self._gen_done += 1
         self.console.append_message(f"Error: {message}")
+        self._progress_label.setText(f"{self._gen_done} / {self._gen_total}")
 
     def _on_gen_all_finished(self) -> None:
         """Handle all generation complete."""
         self.console.append_message("Generation complete.")
+        self._progress_label.setText("")
         self._worker = None
         self._update_actions_enabled()
         self.scene_list.refresh_status()
 
-    def _on_generate_scene(self) -> None:
-        """Generate the currently selected scene."""
-        scene = self.scene_list.get_selected_scene()
-        if scene:
-            self._start_generation([scene])
-        else:
-            self.console.append_message("No scene selected.")
-
-    def _on_generate_all_stills(self) -> None:
-        """Generate all still scenes."""
-        if self._project:
-            self._start_generation(self._project.get_stills())
-
-    def _on_generate_all_clips(self) -> None:
-        """Generate all clip scenes."""
-        if self._project:
-            self._start_generation(self._project.get_clips())
-
-    def _on_generate_all(self) -> None:
-        """Generate all scenes."""
-        if self._project:
-            self._start_generation(list(self._project.scenes))
-
     # ----- Assembly -----
 
     def _on_assemble(self) -> None:
-        """Assemble final video with audio."""
-        self._run_assemble(preview=False)
+        """Assemble final video."""
+        self._run_assemble()
 
-    def _on_preview(self) -> None:
-        """Assemble preview video without audio."""
-        self._run_assemble(preview=True)
-
-    def _run_assemble(self, preview: bool) -> None:
-        """Run assembly in the main thread (fast operation).
-
-        Args:
-            preview: If True, skip audio muxing.
-        """
+    def _run_assemble(self) -> None:
+        """Run assembly in the main thread (fast operation)."""
         if not self._project or not self._output_dir:
             return
 
         from storyboard_gen.assemble import assemble
         from storyboard_gen.ken_burns import apply_ken_burns
 
-        mode = "preview" if preview else "full"
-        self.console.append_message(f"Assembling ({mode})...")
+        self.console.append_message("Assembling...")
 
         try:
             for scene in self._project.get_stills():
@@ -285,7 +298,7 @@ class MainWindow(QMainWindow):
                 )
 
             audio_path = None
-            if not preview and self._project.audio:
+            if self._project.audio:
                 audio_path = self._project.audio
                 if not audio_path.exists():
                     self.console.append_message(
@@ -302,6 +315,20 @@ class MainWindow(QMainWindow):
             self.console.append_message("Assembly complete.")
         except (RuntimeError, OSError) as exc:
             self.console.append_message(f"Error: Assembly failed: {exc}")
+
+    # ----- YAML viewer -----
+
+    def _on_view_yaml(self) -> None:
+        """Show the project.yaml in the YAML viewer."""
+        if not self._project_dir:
+            return
+
+        yaml_path = self._project_dir / "project.yaml"
+        self.yaml_viewer.load_file(yaml_path)
+        self.yaml_viewer.setWindowTitle(f"project.yaml — {self._project_dir.name}")
+        self.yaml_viewer.resize(700, 600)
+        self.yaml_viewer.show()
+        self.yaml_viewer.raise_()
 
 
 def run(project_dir: str | None = None) -> int:

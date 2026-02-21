@@ -588,12 +588,42 @@ class TestMainWindow:
         # Assert — check toolbar actions
         action_texts = [a.text() for a in window.toolbar.actions() if a.text()]
         assert "Open Project" in action_texts
-        assert "Generate Scene" in action_texts
-        assert "All Stills" in action_texts
-        assert "All Clips" in action_texts
-        assert "Generate All" in action_texts
+        assert "Generate" in action_texts
+        assert "Stop" in action_texts
         assert "Assemble" in action_texts
-        assert "Preview" in action_texts
+        assert "View YAML" in action_texts
+
+    def test_main_window_stop_button_disabled_initially(self, qtbot):
+        """Stop button should be disabled when not generating."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert not window._action_stop.isEnabled()
+
+    def test_main_window_has_progress_label(self, qtbot):
+        """MainWindow should have a progress label in the status bar."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_progress_label")
+
+    def test_main_window_assemble_dialog_opens(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Assemble button should trigger assembly (no separate Preview button)."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir_with_output)
+
+        # The old "Preview" action should not exist
+        action_texts = [a.text() for a in window.toolbar.actions() if a.text()]
+        assert "Preview" not in action_texts
 
 
 # ---------------------------------------------------------------------------
@@ -636,4 +666,278 @@ class TestGuiEndToEnd:
         # Assert — placeholder should be the current stacked widget
         assert (
             window.preview._layout.currentWidget() is window.preview.placeholder_label
+        )
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: GenerateWorker stop flag
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateWorkerStop:
+    """Test the cooperative stop mechanism for GenerateWorker."""
+
+    def test_worker_stop_flag_defaults_false(self, qtbot, gui_project_dir):
+        """Worker should not be stopped by default."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_worker import GenerateWorker
+
+        project = load_project(gui_project_dir)
+        output_dir = gui_project_dir / "output"
+
+        worker = GenerateWorker(
+            scenes=project.scenes,
+            project=project,
+            output_dir=output_dir,
+            project_dir=gui_project_dir,
+        )
+
+        assert not worker._stop_requested
+
+    def test_worker_stops_after_current_scene(self, qtbot, gui_project_dir):
+        """Worker should stop processing after current scene when stop is requested."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_worker import GenerateWorker
+
+        project = load_project(gui_project_dir)
+        output_dir = gui_project_dir / "output"
+
+        finished_scenes = []
+
+        def on_scene_finished(scene):
+            finished_scenes.append(scene)
+            # Request stop after first scene
+            worker.request_stop()
+
+        with (
+            patch("storyboard_gen.gui.generate_worker.generate_still") as mock_still,
+            patch("storyboard_gen.gui.generate_worker.generate_clip"),
+        ):
+            mock_still.return_value = output_dir / "stills" / "scene_01.png"
+
+            worker = GenerateWorker(
+                scenes=project.scenes,
+                project=project,
+                output_dir=output_dir,
+                project_dir=gui_project_dir,
+            )
+            worker.scene_finished.connect(on_scene_finished)
+
+            # Act
+            worker.run()
+
+            # Assert — only 1 scene should have been processed
+            assert len(finished_scenes) == 1
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: GenerateDialog
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateDialog:
+    """Test the generation options dialog."""
+
+    def test_dialog_creates(self, qtbot, gui_project_dir_with_output):
+        """GenerateDialog should instantiate with a project."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        project = load_project(gui_project_dir_with_output)
+        dialog = GenerateDialog(project)
+        qtbot.addWidget(dialog)
+
+        assert dialog is not None
+
+    def test_dialog_all_stills_returns_still_scenes(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Selecting 'All stills' should return only still scenes."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        project = load_project(gui_project_dir_with_output)
+        dialog = GenerateDialog(project)
+        qtbot.addWidget(dialog)
+
+        # Act — select "All stills" radio
+        dialog._radio_stills.setChecked(True)
+        scenes = dialog.get_selected_scenes()
+
+        # Assert
+        assert all(s.scene_type == "still" for s in scenes)
+        assert len(scenes) == 2  # scenes 1 and 3
+
+    def test_dialog_all_clips_returns_clip_scenes(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Selecting 'All clips' should return only clip scenes."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        project = load_project(gui_project_dir_with_output)
+        dialog = GenerateDialog(project)
+        qtbot.addWidget(dialog)
+
+        # Act
+        dialog._radio_clips.setChecked(True)
+        scenes = dialog.get_selected_scenes()
+
+        # Assert
+        assert all(s.scene_type == "clip" for s in scenes)
+        assert len(scenes) == 1  # scene 2
+
+    def test_dialog_all_scenes_returns_all(self, qtbot, gui_project_dir_with_output):
+        """Selecting 'All scenes' should return all scenes."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        project = load_project(gui_project_dir_with_output)
+        dialog = GenerateDialog(project)
+        qtbot.addWidget(dialog)
+
+        # Act
+        dialog._radio_all.setChecked(True)
+        scenes = dialog.get_selected_scenes()
+
+        # Assert
+        assert len(scenes) == 3
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: YAML syntax highlighter
+# ---------------------------------------------------------------------------
+
+
+class TestYamlHighlighter:
+    """Test the YAML syntax highlighting rules."""
+
+    def test_highlighter_creates(self, qtbot):
+        """YamlHighlighter should instantiate without error."""
+        from PySide6.QtGui import QTextDocument
+
+        from storyboard_gen.gui.yaml_viewer import YamlHighlighter
+
+        doc = QTextDocument()
+        highlighter = YamlHighlighter(doc)
+
+        assert highlighter is not None
+
+    def test_highlighter_has_rules(self, qtbot):
+        """YamlHighlighter should have highlighting rules."""
+        from PySide6.QtGui import QTextDocument
+
+        from storyboard_gen.gui.yaml_viewer import YamlHighlighter
+
+        doc = QTextDocument()
+        highlighter = YamlHighlighter(doc)
+
+        assert len(highlighter._rules) > 0
+
+
+class TestYamlViewer:
+    """Test the YAML viewer widget."""
+
+    def test_viewer_creates(self, qtbot):
+        """YamlViewer should instantiate without error."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+
+        assert viewer is not None
+
+    def test_viewer_loads_yaml_file(self, qtbot, gui_project_dir):
+        """YamlViewer should display content from a YAML file."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+
+        yaml_path = gui_project_dir / "project.yaml"
+
+        # Act
+        viewer.load_file(yaml_path)
+
+        # Assert — should contain YAML content
+        text = viewer.text_edit.toPlainText()
+        assert "title" in text
+        assert "scenes" in text
+
+    def test_viewer_is_read_only(self, qtbot):
+        """YamlViewer text area should be read-only."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+
+        assert viewer.text_edit.isReadOnly()
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: clip preview
+# ---------------------------------------------------------------------------
+
+
+class TestClipPreview:
+    """Test clip preview in the preview panel."""
+
+    def test_preview_shows_clip_info_for_existing_clip(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Preview panel should show clip info when a generated clip is selected."""
+        from storyboard_gen.gui.preview_panel import PreviewPanel
+
+        panel = PreviewPanel()
+        qtbot.addWidget(panel)
+
+        clip_path = gui_project_dir_with_output / "output" / "clips" / "scene_02.mp4"
+
+        # Act
+        panel.show_clip_info(clip_path)
+
+        # Assert — should show clip info, not placeholder
+        assert panel._layout.currentWidget() is not panel.placeholder_label
+
+    def test_preview_clip_info_shows_filename(self, qtbot, gui_project_dir_with_output):
+        """Clip info should include the filename."""
+        from storyboard_gen.gui.preview_panel import PreviewPanel
+
+        panel = PreviewPanel()
+        qtbot.addWidget(panel)
+
+        clip_path = gui_project_dir_with_output / "output" / "clips" / "scene_02.mp4"
+
+        # Act
+        panel.show_clip_info(clip_path)
+
+        # Assert — clip info label should mention the filename
+        assert "scene_02.mp4" in panel.clip_info_label.text()
+
+
+# ---------------------------------------------------------------------------
+# E2E: clip selection shows info
+# ---------------------------------------------------------------------------
+
+
+class TestClipSelectionEndToEnd:
+    """E2E test for clip selection in the main window."""
+
+    def test_selecting_generated_clip_shows_clip_info(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Selecting a generated clip scene should show clip info, not placeholder."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir_with_output)
+
+        # Act — select scene 2 (clip, generated)
+        window.scene_list.list_widget.setCurrentRow(1)
+
+        # Assert — should not be showing placeholder
+        assert (
+            window.preview._layout.currentWidget()
+            is not window.preview.placeholder_label
         )

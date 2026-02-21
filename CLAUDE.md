@@ -83,9 +83,11 @@ storyboard-gen/
 │       │   ├── __main__.py        # python -m storyboard_gen.gui entry
 │       │   ├── app.py             # MainWindow, toolbar, signal wiring
 │       │   ├── scene_list.py      # Scene list with status indicators
-│       │   ├── preview_panel.py   # Image preview (stacked placeholder/image)
+│       │   ├── preview_panel.py   # Still/clip preview (thumbnail + file info)
 │       │   ├── console_panel.py   # Log output panel + QtLogHandler
-│       │   └── generate_worker.py # QThread background generation
+│       │   ├── generate_dialog.py # Generate dialog (all/stills/clips/selected)
+│       │   ├── generate_worker.py # QThread background generation with stop
+│       │   └── yaml_viewer.py     # YAML viewer with syntax highlighting
 │       ├── ken_burns.py   # Ken Burns effects via FFmpeg
 │       ├── assemble.py    # Final video assembly via FFmpeg
 │       └── kdenlive.py    # Kdenlive project export (MLT XML)

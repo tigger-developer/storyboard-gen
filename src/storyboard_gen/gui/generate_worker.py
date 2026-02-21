@@ -40,10 +40,17 @@ class GenerateWorker(QThread):
         self.project = project
         self.output_dir = output_dir
         self.project_dir = project_dir
+        self._stop_requested = False
+
+    def request_stop(self) -> None:
+        """Request the worker to stop after the current scene completes."""
+        self._stop_requested = True
 
     def run(self) -> None:
         """Execute generation for all queued scenes."""
         for scene in self.scenes:
+            if self._stop_requested:
+                break
             self.scene_started.emit(scene)
             try:
                 if scene.scene_type == "still":
