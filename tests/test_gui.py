@@ -499,6 +499,37 @@ class TestGenerateWorker:
             assert len(errors) == 1
             assert "API timeout" in errors[0]
 
+    def test_worker_emits_error_on_import_error(self, qtbot, gui_project_dir):
+        """Worker should emit error signal if provider SDK is missing."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_worker import GenerateWorker
+
+        project = load_project(gui_project_dir)
+        scene = project.scenes[0]
+        output_dir = gui_project_dir / "output"
+
+        with patch("storyboard_gen.gui.generate_worker.generate_still") as mock_gen:
+            mock_gen.side_effect = ImportError(
+                "fal-client is not installed. Run: pip install fal-client"
+            )
+
+            worker = GenerateWorker(
+                scenes=[scene],
+                project=project,
+                output_dir=output_dir,
+                project_dir=gui_project_dir,
+            )
+
+            errors = []
+            worker.error.connect(errors.append)
+
+            # Act
+            worker.run()
+
+            # Assert
+            assert len(errors) == 1
+            assert "fal-client" in errors[0]
+
     def test_worker_handles_mixed_scene_types(self, qtbot, gui_project_dir):
         """Worker should dispatch stills and clips to correct functions."""
         from storyboard_gen.config import load_project

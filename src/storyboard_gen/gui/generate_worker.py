@@ -68,7 +68,7 @@ class GenerateWorker(QThread):
                         project_dir=self.project_dir,
                     )
                 self.scene_finished.emit(scene)
-            except (RuntimeError, ValueError, OSError) as exc:
+            except (RuntimeError, ValueError, OSError, ImportError) as exc:
                 logger.error("Generation failed for scene %s: %s", scene.number, exc)
                 self.error.emit(f"Scene {scene.number}: {exc}")
         self.all_finished.emit()
