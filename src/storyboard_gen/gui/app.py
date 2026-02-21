@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QSplitter,
     QToolBar,
     QWidget,
@@ -109,7 +110,7 @@ class MainWindow(QMainWindow):
         self._action_yaml = self.toolbar.addAction("View YAML")
         self._action_yaml.triggered.connect(self._on_view_yaml)
 
-        # Progress label in the toolbar
+        # Progress spinner and label in the toolbar
         spacer = QWidget()
         spacer.setSizePolicy(
             spacer.sizePolicy().horizontalPolicy(),
@@ -117,6 +118,14 @@ class MainWindow(QMainWindow):
         )
         spacer.setMinimumWidth(20)
         self.toolbar.addWidget(spacer)
+
+        self._spinner = QProgressBar()
+        self._spinner.setRange(0, 0)  # Indeterminate (busy spinner)
+        self._spinner.setFixedWidth(120)
+        self._spinner.setFixedHeight(16)
+        self._spinner.setTextVisible(False)
+        self._spinner.setVisible(False)
+        self.toolbar.addWidget(self._spinner)
 
         self._progress_label = QLabel("")
         self._progress_label.setStyleSheet("color: #888; padding-left: 10px;")
@@ -245,6 +254,7 @@ class MainWindow(QMainWindow):
         self._gen_total = len(scenes)
         self._gen_done = 0
         self._progress_label.setText(f"0 / {self._gen_total}")
+        self._spinner.setVisible(True)
 
         self.console.append_message(f"Generating {self._gen_total} scene(s)...")
         self._worker = GenerateWorker(
@@ -293,6 +303,7 @@ class MainWindow(QMainWindow):
         """Handle all generation complete."""
         self.console.append_message("Generation complete.")
         self._progress_label.setText("")
+        self._spinner.setVisible(False)
         self._worker = None
         self._update_actions_enabled()
         self.scene_list.refresh_status()

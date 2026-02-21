@@ -681,6 +681,50 @@ class TestMainWindow:
 
         assert hasattr(window, "_progress_label")
 
+    def test_main_window_has_spinner(self, qtbot):
+        """MainWindow should have a spinner (indeterminate progress bar), hidden initially."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_spinner")
+        assert window._spinner.isHidden()
+        # Indeterminate: maximum == 0
+        assert window._spinner.maximum() == 0
+
+    def test_spinner_shown_during_generation(self, qtbot, gui_project_dir):
+        """Spinner should be shown after _start_generation is called."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scenes = list(window._project.scenes)
+
+        # Patch GenerateWorker to avoid real generation
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+            window._start_generation(scenes)
+
+        # Assert — spinner should not be hidden
+        assert not window._spinner.isHidden()
+
+    def test_spinner_hidden_when_generation_complete(self, qtbot, gui_project_dir):
+        """Spinner should be hidden when all generation completes."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Simulate generation complete
+        window._on_gen_all_finished()
+
+        assert window._spinner.isHidden()
+
     def test_main_window_assemble_dialog_opens(
         self, qtbot, gui_project_dir_with_output
     ):
