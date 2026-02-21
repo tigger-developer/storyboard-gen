@@ -579,7 +579,7 @@ class TestMainWindow:
         assert "error" in console_text.lower() or "Error" in console_text
 
     def test_main_window_toolbar_actions_exist(self, qtbot):
-        """MainWindow should have toolbar actions for generation and assembly."""
+        """MainWindow should have toolbar actions for generation and output."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
@@ -588,9 +588,10 @@ class TestMainWindow:
         # Assert — check toolbar actions
         action_texts = [a.text() for a in window.toolbar.actions() if a.text()]
         assert "Open Project" in action_texts
+        assert "Refresh" in action_texts
         assert "Generate" in action_texts
         assert "Stop" in action_texts
-        assert "Assemble" in action_texts
+        assert "Output" in action_texts
         assert "View YAML" in action_texts
 
     def test_main_window_stop_button_disabled_initially(self, qtbot):
@@ -1035,3 +1036,230 @@ class TestVideoPlayback:
 
         # Assert
         assert panel._audio_output.isMuted()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: multi-select scenes
+# ---------------------------------------------------------------------------
+
+
+class TestMultiSelect:
+    """Test multi-selection in SceneListWidget."""
+
+    def test_scene_list_allows_multi_selection(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """SceneListWidget should use ExtendedSelection mode."""
+        from PySide6.QtWidgets import QAbstractItemView
+
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Assert
+        assert (
+            widget.list_widget.selectionMode()
+            == QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+
+    def test_get_selected_scenes_returns_multiple(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Selecting multiple rows should return multiple scenes in order."""
+        from PySide6.QtCore import QItemSelectionModel
+
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Act — select rows 0 and 2 (skip row 1)
+        model = widget.list_widget.model()
+        sel_model = widget.list_widget.selectionModel()
+        sel_model.select(model.index(0, 0), QItemSelectionModel.SelectionFlag.Select)
+        sel_model.select(model.index(2, 0), QItemSelectionModel.SelectionFlag.Select)
+
+        scenes = widget.get_selected_scenes()
+
+        # Assert — should return scenes 1 and 3 in order
+        assert len(scenes) == 2
+        assert scenes[0].number == "1"
+        assert scenes[1].number == "3"
+
+    def test_get_selected_scenes_empty_when_none_selected(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """No selection should return an empty list."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Act — clear any default selection
+        widget.list_widget.clearSelection()
+
+        scenes = widget.get_selected_scenes()
+
+        # Assert
+        assert scenes == []
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: GenerateDialog with multi-select
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateDialogMultiSelect:
+    """Test GenerateDialog with multiple selected scenes."""
+
+    def test_dialog_selected_scenes_returns_multiple(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Passing multiple scenes should enable radio and return them."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        project = load_project(gui_project_dir_with_output)
+        scenes = [project.scenes[0], project.scenes[2]]
+
+        dialog = GenerateDialog(project, selected_scenes=scenes)
+        qtbot.addWidget(dialog)
+
+        # Act — select "Selected scenes" radio
+        dialog._radio_selected.setChecked(True)
+        result = dialog.get_selected_scenes()
+
+        # Assert
+        assert len(result) == 2
+        assert result[0].number == "1"
+        assert result[1].number == "3"
+        assert dialog._radio_selected.isEnabled()
+        assert "2 scenes" in dialog._radio_selected.text()
+
+    def test_dialog_single_scene_shows_title(self, qtbot, gui_project_dir_with_output):
+        """Passing a single scene should show its title."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        project = load_project(gui_project_dir_with_output)
+        scenes = [project.scenes[0]]
+
+        dialog = GenerateDialog(project, selected_scenes=scenes)
+        qtbot.addWidget(dialog)
+
+        # Assert — should show scene title, not count
+        assert "Opening shot" in dialog._radio_selected.text()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: OutputDialog
+# ---------------------------------------------------------------------------
+
+
+class TestOutputDialog:
+    """Test the output options dialog."""
+
+    def test_output_dialog_creates(self, qtbot):
+        """OutputDialog should instantiate without error."""
+        from storyboard_gen.gui.output_dialog import OutputDialog
+
+        dialog = OutputDialog()
+        qtbot.addWidget(dialog)
+
+        assert dialog is not None
+
+    def test_output_dialog_defaults_to_assemble(self, qtbot):
+        """OutputDialog should default to assemble mode."""
+        from storyboard_gen.gui.output_dialog import OutputDialog
+
+        dialog = OutputDialog()
+        qtbot.addWidget(dialog)
+
+        # Assert
+        options = dialog.get_options()
+        assert options["mode"] == "assemble"
+
+    def test_output_dialog_kdenlive_mode(self, qtbot):
+        """Selecting kdenlive radio should return kdenlive mode."""
+        from storyboard_gen.gui.output_dialog import OutputDialog
+
+        dialog = OutputDialog()
+        qtbot.addWidget(dialog)
+
+        # Act
+        dialog._radio_kdenlive.setChecked(True)
+        options = dialog.get_options()
+
+        # Assert
+        assert options["mode"] == "kdenlive"
+
+    def test_output_dialog_preview_mode(self, qtbot):
+        """Checking preview checkbox should return preview=True."""
+        from storyboard_gen.gui.output_dialog import OutputDialog
+
+        dialog = OutputDialog()
+        qtbot.addWidget(dialog)
+
+        # Act
+        dialog._preview_check.setChecked(True)
+        options = dialog.get_options()
+
+        # Assert
+        assert options["preview"] is True
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: MainWindow — Output and Refresh
+# ---------------------------------------------------------------------------
+
+
+class TestMainWindowOutputAndRefresh:
+    """Test Output and Refresh toolbar actions in MainWindow."""
+
+    def test_main_window_toolbar_has_output_and_refresh(self, qtbot):
+        """MainWindow should have Output and Refresh actions instead of Assemble."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        action_texts = [a.text() for a in window.toolbar.actions() if a.text()]
+        assert "Output" in action_texts
+        assert "Refresh" in action_texts
+        assert "Assemble" not in action_texts
+
+    def test_main_window_refresh_reloads_project(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Refresh should reload the project from disk."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir_with_output)
+
+        # Verify initial load
+        assert window.scene_list.list_widget.count() == 3
+
+        # Act — refresh
+        window._on_refresh()
+
+        # Assert — scene list should still be populated (reloaded)
+        assert window.scene_list.list_widget.count() == 3
+        assert "GUI Test Project" in window.windowTitle()

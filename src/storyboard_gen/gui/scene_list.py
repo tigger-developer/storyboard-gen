@@ -4,7 +4,13 @@
 from pathlib import Path
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QListWidget, QListWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QListWidget,
+    QListWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from storyboard_gen.models import Project, Scene, format_scene_number
 
@@ -41,6 +47,9 @@ class SceneListWidget(QWidget):
         super().__init__(parent)
 
         self.list_widget = QListWidget()
+        self.list_widget.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         self.list_widget.currentRowChanged.connect(self._on_row_changed)
 
         layout = QVBoxLayout()
@@ -87,6 +96,13 @@ class SceneListWidget(QWidget):
         if 0 <= row < len(self._scenes):
             return self._scenes[row]
         return None
+
+    def get_selected_scenes(self) -> list[Scene]:
+        """Return all selected scenes in scene order."""
+        rows = sorted(
+            index.row() for index in self.list_widget.selectionModel().selectedRows()
+        )
+        return [self._scenes[row] for row in rows if 0 <= row < len(self._scenes)]
 
     def _on_row_changed(self, row: int) -> None:
         """Handle row selection change."""

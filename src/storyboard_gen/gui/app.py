@@ -21,6 +21,7 @@ from storyboard_gen.config import ConfigError, load_project
 from storyboard_gen.gui.console_panel import ConsolePanel, QtLogHandler
 from storyboard_gen.gui.generate_dialog import GenerateDialog
 from storyboard_gen.gui.generate_worker import GenerateWorker
+from storyboard_gen.gui.output_dialog import OutputDialog
 from storyboard_gen.gui.preview_panel import PreviewPanel
 from storyboard_gen.gui.scene_list import SceneListWidget, get_scene_status
 from storyboard_gen.gui.yaml_viewer import YamlViewer
@@ -78,13 +79,16 @@ class MainWindow(QMainWindow):
         self.scene_list.scene_selected.connect(self._on_scene_selected)
 
     def _setup_toolbar(self) -> None:
-        """Create the toolbar with generation and assembly actions."""
+        """Create the toolbar with generation, output, and refresh actions."""
         self.toolbar = QToolBar("Main")
         self.toolbar.setMovable(False)
         self.addToolBar(self.toolbar)
 
         self._action_open = self.toolbar.addAction("Open Project")
         self._action_open.triggered.connect(self._on_open_project)
+
+        self._action_refresh = self.toolbar.addAction("Refresh")
+        self._action_refresh.triggered.connect(self._on_refresh)
 
         self.toolbar.addSeparator()
 
@@ -96,8 +100,8 @@ class MainWindow(QMainWindow):
 
         self.toolbar.addSeparator()
 
-        self._action_assemble = self.toolbar.addAction("Assemble")
-        self._action_assemble.triggered.connect(self._on_assemble)
+        self._action_output = self.toolbar.addAction("Output")
+        self._action_output.triggered.connect(self._on_output)
 
         self.toolbar.addSeparator()
 
@@ -132,7 +136,8 @@ class MainWindow(QMainWindow):
 
         self._action_generate.setEnabled(has_project and not is_generating)
         self._action_stop.setEnabled(is_generating)
-        self._action_assemble.setEnabled(has_project and not is_generating)
+        self._action_output.setEnabled(has_project and not is_generating)
+        self._action_refresh.setEnabled(has_project)
         self._action_yaml.setEnabled(has_project)
 
     # ----- Project loading -----
@@ -171,6 +176,11 @@ class MainWindow(QMainWindow):
         if directory:
             self.open_project(Path(directory))
 
+    def _on_refresh(self) -> None:
+        """Reload the current project from disk."""
+        if self._project_dir:
+            self.open_project(self._project_dir)
+
     # ----- Scene selection -----
 
     def _on_scene_selected(self, scene: Scene) -> None:
@@ -203,8 +213,10 @@ class MainWindow(QMainWindow):
         if not self._project:
             return
 
-        selected = self.scene_list.get_selected_scene()
-        dialog = GenerateDialog(self._project, selected_scene=selected, parent=self)
+        selected = self.scene_list.get_selected_scenes()
+        dialog = GenerateDialog(
+            self._project, selected_scenes=selected or None, parent=self
+        )
         if dialog.exec():
             scenes = dialog.get_selected_scenes()
             self._start_generation(scenes)
@@ -268,19 +280,36 @@ class MainWindow(QMainWindow):
         self._update_actions_enabled()
         self.scene_list.refresh_status()
 
-    # ----- Assembly -----
+    # ----- Output (Assemble / Kdenlive) -----
 
-    def _on_assemble(self) -> None:
-        """Assemble final video."""
-        self._run_assemble()
+    def _on_output(self) -> None:
+        """Open the Output dialog and dispatch to assemble or kdenlive."""
+        if not self._project:
+            return
 
-    def _run_assemble(self) -> None:
-        """Run assembly in the main thread (fast operation)."""
+        default_title = self._project.title.replace(" ", "_").lower()
+        dialog = OutputDialog(default_title=default_title, parent=self)
+        if dialog.exec():
+            options = dialog.get_options()
+            if options["mode"] == "kdenlive":
+                self._run_kdenlive(options)
+            else:
+                self._run_assemble(options)
+
+    def _run_assemble(self, options: dict | None = None) -> None:
+        """Run assembly in the main thread (fast operation).
+
+        Args:
+            options: Output dialog options (preview, audio, output).
+        """
         if not self._project or not self._output_dir:
             return
 
         from storyboard_gen.assemble import assemble
         from storyboard_gen.ken_burns import apply_ken_burns
+
+        if options is None:
+            options = {"preview": False, "audio": None, "output": "assembled.mp4"}
 
         self.console.append_message("Assembling...")
 
@@ -298,23 +327,66 @@ class MainWindow(QMainWindow):
                 )
 
             audio_path = None
-            if self._project.audio:
-                audio_path = self._project.audio
-                if not audio_path.exists():
-                    self.console.append_message(
-                        f"Warning: Audio not found: {audio_path}"
-                    )
-                    audio_path = None
+            if not options.get("preview"):
+                if options.get("audio"):
+                    audio_path = options["audio"]
+                elif self._project.audio:
+                    audio_path = self._project.audio
+                    if not audio_path.exists():
+                        self.console.append_message(
+                            f"Warning: Audio not found: {audio_path}"
+                        )
+                        audio_path = None
+
+            output_filename = options.get("output", "assembled.mp4")
 
             assemble(
                 self._project,
                 self._output_dir,
-                "assembled.mp4",
+                output_filename,
                 audio_path=audio_path,
             )
             self.console.append_message("Assembly complete.")
         except (RuntimeError, OSError) as exc:
             self.console.append_message(f"Error: Assembly failed: {exc}")
+
+    def _run_kdenlive(self, options: dict) -> None:
+        """Export a Kdenlive project file.
+
+        Args:
+            options: Output dialog options (preview, audio, output).
+        """
+        if not self._project or not self._output_dir:
+            return
+
+        from storyboard_gen.kdenlive import generate_kdenlive
+
+        self.console.append_message("Exporting Kdenlive project...")
+
+        try:
+            audio_path = None
+            if not options.get("preview"):
+                if options.get("audio"):
+                    audio_path = options["audio"]
+                elif self._project.audio:
+                    audio_path = self._project.audio
+                    if not audio_path.exists():
+                        self.console.append_message(
+                            f"Warning: Audio not found: {audio_path}"
+                        )
+                        audio_path = None
+
+            output_filename = options.get("output", f"{self._project.title}.kdenlive")
+
+            output_path = generate_kdenlive(
+                self._project,
+                self._output_dir,
+                output_filename=output_filename,
+                audio_path=audio_path,
+            )
+            self.console.append_message(f"Kdenlive export complete: {output_path}")
+        except (RuntimeError, OSError) as exc:
+            self.console.append_message(f"Error: Kdenlive export failed: {exc}")
 
     # ----- YAML viewer -----
 

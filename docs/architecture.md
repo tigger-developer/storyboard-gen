@@ -1,4 +1,4 @@
-<!-- Version: 1.7 | Last updated: 2026-02-21 -->
+<!-- Version: 1.8 | Last updated: 2026-02-21 -->
 
 # Architecture: storyboard-gen
 
@@ -55,12 +55,13 @@ Generates a Kdenlive project file (MLT XML format) for timeline editing. Referen
 
 A PySide6 (Qt6) graphical interface that wraps the operational commands. Installed via `pip install storyboard-gen[gui]`. The GUI does not edit `project.yaml` — it only reads.
 
-- `gui/app.py` — `MainWindow` with toolbar (Generate, Stop, Assemble, View YAML), splitter layout, progress label, and signal wiring. Entry point: `run()`.
-- `gui/scene_list.py` — `SceneListWidget` shows scenes with status indicators (`[OK]`/`[--]`). `get_scene_status()` checks output file existence. Emits `scene_selected(Scene)`.
+- `gui/app.py` — `MainWindow` with toolbar (Open Project, Refresh, Generate, Stop, Output, View YAML), splitter layout, progress label, and signal wiring. Refresh reloads `project.yaml` from disk. Output opens an `OutputDialog` to choose between MP4 assembly and Kdenlive export. Entry point: `run()`.
+- `gui/scene_list.py` — `SceneListWidget` shows scenes with status indicators (`[OK]`/`[--]`). Uses `ExtendedSelection` mode for Cmd+click / Shift+click multi-select. `get_selected_scenes()` returns all selected scenes in order; `get_selected_scene()` returns the current row. `get_scene_status()` checks output file existence. Emits `scene_selected(Scene)`.
 - `gui/preview_panel.py` — `PreviewPanel` with `QStackedLayout` switching between placeholder, still image, clip info (thumbnail + file details), and inline video playback views. Video playback uses `QMediaPlayer` + `QVideoWidget` (QtMultimedia) with play/pause controls. Falls back to clip info view on playback error. Extracts thumbnails from video clips via ffmpeg for the fallback view.
 - `gui/console_panel.py` — `ConsolePanel` read-only text display. `QtLogHandler` bridges Python `logging` to Qt signals.
-- `gui/generate_dialog.py` — `GenerateDialog(QDialog)` with radio buttons: all scenes, all stills, all clips, or selected scene.
+- `gui/generate_dialog.py` — `GenerateDialog(QDialog)` with radio buttons: all scenes, all stills, all clips, or selected scene(s). Accepts a list of selected scenes for multi-scene generation; shows count or single scene title.
 - `gui/generate_worker.py` — `GenerateWorker(QThread)` runs generation in the background, emitting progress signals. Supports cooperative stop via `request_stop()`.
+- `gui/output_dialog.py` — `OutputDialog(QDialog)` with radio group (Assemble MP4 / Kdenlive export), preview mode checkbox, audio file picker, and output filename field. Returns options via `get_options()`.
 - `gui/yaml_viewer.py` — `YamlViewer` read-only YAML display with `YamlHighlighter(QSyntaxHighlighter)` for syntax colouring (keys, strings, comments, numbers, booleans).
 - `gui/__main__.py` — `python -m storyboard_gen.gui` and `storyboard-gen-gui` entry point.
 
