@@ -1915,3 +1915,163 @@ class TestMainWindowArchive:
         window.scene_list.list_widget.setCurrentRow(-1)
 
         assert not window._action_archive.isEnabled()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: init_project (extracted for GUI reuse)
+# ---------------------------------------------------------------------------
+
+
+class TestInitProject:
+    """Test the extracted init_project function used by both CLI and GUI."""
+
+    def test_init_project_creates_all_files(self, tmp_path):
+        """init_project should create project.yaml, .env, .gitignore, README, and dirs."""
+        from storyboard_gen.cli import init_project
+
+        target = tmp_path / "new_project"
+
+        # Act
+        init_project(target)
+
+        # Assert
+        assert (target / "project.yaml").exists()
+        assert (target / ".env").exists()
+        assert (target / ".gitignore").exists()
+        assert (target / "README.md").exists()
+        assert (target / "references").is_dir()
+        assert (target / "logs").is_dir()
+
+    def test_init_project_raises_if_project_yaml_exists(self, tmp_path):
+        """init_project should raise FileExistsError if project.yaml exists."""
+        from storyboard_gen.cli import init_project
+
+        target = tmp_path / "existing"
+        target.mkdir()
+        (target / "project.yaml").write_text("title: existing")
+
+        # Act / Assert
+        with pytest.raises(FileExistsError):
+            init_project(target)
+
+    def test_init_project_creates_parent_dirs(self, tmp_path):
+        """init_project should create parent directories if needed."""
+        from storyboard_gen.cli import init_project
+
+        target = tmp_path / "deep" / "nested" / "project"
+
+        # Act
+        init_project(target)
+
+        # Assert
+        assert (target / "project.yaml").exists()
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: MainWindow New Project action
+# ---------------------------------------------------------------------------
+
+
+class TestMainWindowNewProject:
+    """Test the New Project toolbar action in MainWindow."""
+
+    def test_main_window_toolbar_has_new_project_action(self, qtbot):
+        """MainWindow should have a New Project action in the toolbar."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        action_texts = [a.text() for a in window.toolbar.actions() if a.text()]
+        assert "New Project" in action_texts
+
+    def test_new_project_creates_and_opens_project(self, qtbot, tmp_path):
+        """New Project should scaffold and open a new project."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        target = tmp_path / "my_new_project"
+
+        # Patch the dialogs to return test values
+        with (
+            patch(
+                "storyboard_gen.gui.app.QFileDialog.getExistingDirectory",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "storyboard_gen.gui.app.QInputDialog.getText",
+                return_value=("my_new_project", True),
+            ),
+        ):
+            window._on_new_project()
+
+        # Assert — project should be created and loaded
+        assert (target / "project.yaml").exists()
+        assert window._project is not None
+        assert window.scene_list.list_widget.count() > 0
+
+    def test_new_project_cancelled_at_directory_picker(self, qtbot):
+        """Cancelling the directory picker should do nothing."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        with patch(
+            "storyboard_gen.gui.app.QFileDialog.getExistingDirectory",
+            return_value="",
+        ):
+            window._on_new_project()
+
+        # Assert — no project loaded
+        assert window._project is None
+
+    def test_new_project_cancelled_at_name_input(self, qtbot, tmp_path):
+        """Cancelling the name input should do nothing."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        with (
+            patch(
+                "storyboard_gen.gui.app.QFileDialog.getExistingDirectory",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "storyboard_gen.gui.app.QInputDialog.getText",
+                return_value=("", False),
+            ),
+        ):
+            window._on_new_project()
+
+        assert window._project is None
+
+    def test_new_project_existing_dir_shows_error(self, qtbot, tmp_path):
+        """If project.yaml already exists, should show error dialog."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Pre-create the target with a project.yaml
+        target = tmp_path / "existing_project"
+        target.mkdir()
+        (target / "project.yaml").write_text("title: existing")
+
+        with (
+            patch(
+                "storyboard_gen.gui.app.QFileDialog.getExistingDirectory",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "storyboard_gen.gui.app.QInputDialog.getText",
+                return_value=("existing_project", True),
+            ),
+            patch("storyboard_gen.gui.app.QMessageBox.critical") as mock_crit,
+        ):
+            window._on_new_project()
+
+        mock_crit.assert_called_once()

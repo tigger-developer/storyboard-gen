@@ -700,15 +700,23 @@ output/clips/
 """
 
 
-def _cmd_init(args: argparse.Namespace) -> int:
-    """Create a new storyboard project with template files."""
-    target = Path(args.directory).resolve()
+def init_project(target: Path) -> None:
+    """Scaffold a new storyboard project at the given directory.
+
+    Creates project.yaml, .env, .gitignore, README.md, references/, and logs/.
+    Reusable by both the CLI and the GUI.
+
+    Args:
+        target: Directory to create the project in (created if needed).
+
+    Raises:
+        FileExistsError: If project.yaml already exists in the target directory.
+    """
     target.mkdir(parents=True, exist_ok=True)
 
     project_yaml = target / "project.yaml"
     if project_yaml.exists():
-        logging.error("project.yaml already exists in %s", target)
-        return 1
+        raise FileExistsError(f"project.yaml already exists in {target}")
 
     # Extract title from template for use in README
     title = "My Project"
@@ -734,6 +742,17 @@ def _cmd_init(args: argparse.Namespace) -> int:
     )
     (target / "references").mkdir(exist_ok=True)
     (target / "logs").mkdir(exist_ok=True)
+
+
+def _cmd_init(args: argparse.Namespace) -> int:
+    """Create a new storyboard project with template files."""
+    target = Path(args.directory).resolve()
+
+    try:
+        init_project(target)
+    except FileExistsError as exc:
+        logging.error(str(exc))
+        return 1
 
     print(f"Created new project in {target}/")
     print("  project.yaml  — storyboard definition")

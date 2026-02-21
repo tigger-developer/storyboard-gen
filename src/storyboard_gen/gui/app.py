@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -90,6 +91,9 @@ class MainWindow(QMainWindow):
 
         self._action_open = self.toolbar.addAction("Open Project")
         self._action_open.triggered.connect(self._on_open_project)
+
+        self._action_new = self.toolbar.addAction("New Project")
+        self._action_new.triggered.connect(self._on_new_project)
 
         self._action_refresh = self.toolbar.addAction("Refresh")
         self._action_refresh.triggered.connect(self._on_refresh)
@@ -200,6 +204,37 @@ class MainWindow(QMainWindow):
         )
         if directory:
             self.open_project(Path(directory))
+
+    def _on_new_project(self) -> None:
+        """Handle New Project toolbar action.
+
+        Prompts for a parent directory and project name, scaffolds
+        the project, and opens it.
+        """
+        from storyboard_gen.cli import init_project
+
+        parent = QFileDialog.getExistingDirectory(
+            self, "Select Location for New Project", str(Path.home())
+        )
+        if not parent:
+            return
+
+        name, ok = QInputDialog.getText(self, "New Project", "Enter project name:")
+        if not ok or not name.strip():
+            return
+
+        target = Path(parent) / name.strip()
+
+        try:
+            init_project(target)
+        except FileExistsError:
+            self._show_error(f"A project already exists at {target}")
+            return
+        except OSError as exc:
+            self._show_error(f"Failed to create project: {exc}")
+            return
+
+        self.open_project(target)
 
     def _on_refresh(self) -> None:
         """Reload the current project from disk."""
