@@ -1488,3 +1488,430 @@ class TestErrorDialog:
             window.open_project(tmp_path)
 
             mock_crit.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for archive tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def gui_project_dir_with_archives(gui_project_dir_with_output):
+    """Project dir with archived versions of generated scenes."""
+    stills_archive = gui_project_dir_with_output / "output" / "stills" / "archive"
+    stills_archive.mkdir(parents=True)
+    clips_archive = gui_project_dir_with_output / "output" / "clips" / "archive"
+    clips_archive.mkdir(parents=True)
+
+    # Create a minimal valid PNG for archived stills
+    import struct
+    import zlib
+
+    def _make_png():
+        """Create a minimal 1x1 red PNG."""
+        signature = b"\x89PNG\r\n\x1a\n"
+
+        def _chunk(chunk_type, data):
+            c = chunk_type + data
+            crc = struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+            return struct.pack(">I", len(data)) + c + crc
+
+        ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+        raw = zlib.compress(b"\x00\xff\x00\x00")
+        return (
+            signature
+            + _chunk(b"IHDR", ihdr)
+            + _chunk(b"IDAT", raw)
+            + _chunk(b"IEND", b"")
+        )
+
+    # Two archived versions of scene 1 (still) — older and newer
+    (stills_archive / "scene_01_20260220_100000.png").write_bytes(_make_png())
+    (stills_archive / "scene_01_20260221_120000.png").write_bytes(_make_png())
+
+    # One archived version of scene 2 (clip)
+    (clips_archive / "scene_02_20260220_150000.mp4").write_bytes(b"fake-mp4-archived")
+
+    # An unrelated archive file (scene 3) — should not match scene 1 lookups
+    (stills_archive / "scene_03_20260219_080000.png").write_bytes(_make_png())
+
+    return gui_project_dir_with_output
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: archive utility functions
+# ---------------------------------------------------------------------------
+
+
+class TestArchiveUtils:
+    """Test archive utility functions for browsing and restoring archived outputs."""
+
+    def test_get_scene_archive_dir_still(self, tmp_path):
+        """Still scene archive dir should be output/stills/archive/."""
+        from storyboard_gen.gui.archive_dialog import get_scene_archive_dir
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        result = get_scene_archive_dir(scene, output_dir)
+
+        assert result == output_dir / "stills" / "archive"
+
+    def test_get_scene_archive_dir_clip(self, tmp_path):
+        """Clip scene archive dir should be output/clips/archive/."""
+        from storyboard_gen.gui.archive_dialog import get_scene_archive_dir
+
+        scene = Scene(
+            number="2", title="Test", scene_type="clip", prompt="test", duration=6
+        )
+        output_dir = tmp_path / "output"
+
+        result = get_scene_archive_dir(scene, output_dir)
+
+        assert result == output_dir / "clips" / "archive"
+
+    def test_get_scene_output_path_still(self, tmp_path):
+        """Still scene output path should be output/stills/scene_01.png."""
+        from storyboard_gen.gui.archive_dialog import get_scene_output_path
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        result = get_scene_output_path(scene, output_dir)
+
+        assert result == output_dir / "stills" / "scene_01.png"
+
+    def test_get_scene_output_path_clip(self, tmp_path):
+        """Clip scene output path should be output/clips/scene_02.mp4."""
+        from storyboard_gen.gui.archive_dialog import get_scene_output_path
+
+        scene = Scene(
+            number="2", title="Test", scene_type="clip", prompt="test", duration=6
+        )
+        output_dir = tmp_path / "output"
+
+        result = get_scene_output_path(scene, output_dir)
+
+        assert result == output_dir / "clips" / "scene_02.mp4"
+
+    def test_list_scene_archives_finds_matching_files(
+        self, gui_project_dir_with_archives
+    ):
+        """Should find archived versions matching the scene."""
+        from storyboard_gen.gui.archive_dialog import list_scene_archives
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        result = list_scene_archives(scene, output_dir)
+
+        assert len(result) == 2
+        assert all("scene_01_" in p.name for p in result)
+
+    def test_list_scene_archives_sorted_newest_first(
+        self, gui_project_dir_with_archives
+    ):
+        """Archived versions should be sorted newest first."""
+        from storyboard_gen.gui.archive_dialog import list_scene_archives
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        result = list_scene_archives(scene, output_dir)
+
+        assert result[0].name == "scene_01_20260221_120000.png"
+        assert result[1].name == "scene_01_20260220_100000.png"
+
+    def test_list_scene_archives_empty_when_no_archive_dir(self, tmp_path):
+        """No archive directory should return an empty list."""
+        from storyboard_gen.gui.archive_dialog import list_scene_archives
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        result = list_scene_archives(scene, output_dir)
+
+        assert result == []
+
+    def test_list_scene_archives_ignores_other_scenes(
+        self, gui_project_dir_with_archives
+    ):
+        """Should not return archives from other scenes."""
+        from storyboard_gen.gui.archive_dialog import list_scene_archives
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        result = list_scene_archives(scene, output_dir)
+
+        # Should only match scene_01, not scene_03
+        assert all("scene_01_" in p.name for p in result)
+
+    def test_list_scene_archives_for_clips(self, gui_project_dir_with_archives):
+        """Should find clip archives in output/clips/archive/."""
+        from storyboard_gen.gui.archive_dialog import list_scene_archives
+
+        scene = Scene(
+            number="2", title="Action", scene_type="clip", prompt="test", duration=6
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        result = list_scene_archives(scene, output_dir)
+
+        assert len(result) == 1
+        assert "scene_02_" in result[0].name
+
+    def test_parse_archive_timestamp(self):
+        """Should parse timestamp from archive filename."""
+        from pathlib import Path
+
+        from storyboard_gen.gui.archive_dialog import parse_archive_timestamp
+
+        archive_path = Path("scene_01_20260221_120000.png")
+
+        result = parse_archive_timestamp(archive_path)
+
+        assert result is not None
+        assert result.year == 2026
+        assert result.month == 2
+        assert result.day == 21
+        assert result.hour == 12
+        assert result.minute == 0
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: archive restore
+# ---------------------------------------------------------------------------
+
+
+class TestArchiveRestore:
+    """Test restoring archived versions."""
+
+    def test_restore_archive_swaps_files(self, gui_project_dir_with_archives):
+        """Restore should archive current output and move selected archive to current."""
+        from storyboard_gen.gui.archive_dialog import (
+            list_scene_archives,
+            restore_archive,
+        )
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        # Current output exists
+        current_path = output_dir / "stills" / "scene_01.png"
+        assert current_path.exists()
+        # Get the newest archive
+        archives = list_scene_archives(scene, output_dir)
+        archive_path = archives[0]
+        archive_content = archive_path.read_bytes()
+
+        # Act
+        restore_archive(scene, archive_path, output_dir)
+
+        # Assert — current should now contain the archive content
+        assert current_path.exists()
+        assert current_path.read_bytes() == archive_content
+
+        # The old current should be in the archive dir with a new timestamp
+        new_archives = list_scene_archives(scene, output_dir)
+        # Should have same total count (old current archived, selected moved out)
+        # Original: 2 archives + 1 current → after restore: 2 archives + 1 current
+        assert len(new_archives) == 2
+
+    def test_restore_archive_when_no_current_output(
+        self, gui_project_dir_with_archives
+    ):
+        """Restore should work even when there's no current output."""
+        from storyboard_gen.gui.archive_dialog import (
+            list_scene_archives,
+            restore_archive,
+        )
+
+        scene = Scene(
+            number="3", title="Closing", scene_type="still", prompt="test", duration=4
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        # Scene 3 has no current output but has an archive
+        current_path = output_dir / "stills" / "scene_03.png"
+        assert not current_path.exists()
+
+        archives = list_scene_archives(scene, output_dir)
+        assert len(archives) == 1
+        archive_path = archives[0]
+
+        # Act
+        restore_archive(scene, archive_path, output_dir)
+
+        # Assert — current should now exist
+        assert current_path.exists()
+
+        # Archive should be gone (moved to current)
+        new_archives = list_scene_archives(scene, output_dir)
+        assert len(new_archives) == 0
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: ArchiveDialog
+# ---------------------------------------------------------------------------
+
+
+class TestArchiveDialog:
+    """Test the archive browser dialog."""
+
+    def test_archive_dialog_creates(self, qtbot, gui_project_dir_with_archives):
+        """ArchiveDialog should instantiate without error."""
+        from storyboard_gen.gui.archive_dialog import ArchiveDialog
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        dialog = ArchiveDialog(scene, output_dir)
+        qtbot.addWidget(dialog)
+
+        assert dialog is not None
+
+    def test_archive_dialog_lists_archives(self, qtbot, gui_project_dir_with_archives):
+        """ArchiveDialog should list archived versions for the scene."""
+        from storyboard_gen.gui.archive_dialog import ArchiveDialog
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        dialog = ArchiveDialog(scene, output_dir)
+        qtbot.addWidget(dialog)
+
+        # Assert — should show 2 archived versions
+        assert dialog._list_widget.count() == 2
+
+    def test_archive_dialog_empty_state(self, qtbot, tmp_path):
+        """ArchiveDialog should show a message when no archives exist."""
+        from storyboard_gen.gui.archive_dialog import ArchiveDialog
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        dialog = ArchiveDialog(scene, output_dir)
+        qtbot.addWidget(dialog)
+
+        # Assert — list should be empty
+        assert dialog._list_widget.count() == 0
+
+    def test_archive_dialog_restore_button_disabled_initially(
+        self, qtbot, gui_project_dir_with_archives
+    ):
+        """Restore button should be disabled when no archive is selected."""
+        from storyboard_gen.gui.archive_dialog import ArchiveDialog
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        dialog = ArchiveDialog(scene, output_dir)
+        qtbot.addWidget(dialog)
+
+        # Assert
+        assert not dialog._restore_btn.isEnabled()
+
+    def test_archive_dialog_restore_button_enabled_on_selection(
+        self, qtbot, gui_project_dir_with_archives
+    ):
+        """Restore button should be enabled when an archive is selected."""
+        from storyboard_gen.gui.archive_dialog import ArchiveDialog
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        dialog = ArchiveDialog(scene, output_dir)
+        qtbot.addWidget(dialog)
+
+        # Act — select first item
+        dialog._list_widget.setCurrentRow(0)
+
+        # Assert
+        assert dialog._restore_btn.isEnabled()
+
+    def test_archive_dialog_shows_timestamp_in_items(
+        self, qtbot, gui_project_dir_with_archives
+    ):
+        """Archive list items should show human-readable timestamps."""
+        from storyboard_gen.gui.archive_dialog import ArchiveDialog
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        dialog = ArchiveDialog(scene, output_dir)
+        qtbot.addWidget(dialog)
+
+        # Assert — items should contain date info
+        item_text = dialog._list_widget.item(0).text()
+        assert "2026" in item_text
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: MainWindow Archive action
+# ---------------------------------------------------------------------------
+
+
+class TestMainWindowArchive:
+    """Test the Archive toolbar action in MainWindow."""
+
+    def test_main_window_toolbar_has_archive_action(self, qtbot):
+        """MainWindow should have an Archive action in the toolbar."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        action_texts = [a.text() for a in window.toolbar.actions() if a.text()]
+        assert "Archive" in action_texts
+
+    def test_archive_action_disabled_without_project(self, qtbot):
+        """Archive action should be disabled when no project is loaded."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert not window._action_archive.isEnabled()
+
+    def test_archive_action_disabled_without_selection(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Archive action should be disabled when no scene is selected."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir_with_output)
+
+        # Clear selection
+        window.scene_list.list_widget.clearSelection()
+        window.scene_list.list_widget.setCurrentRow(-1)
+
+        assert not window._action_archive.isEnabled()

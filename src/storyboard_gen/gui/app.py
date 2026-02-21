@@ -23,6 +23,7 @@ from storyboard_gen.config import ConfigError, load_project
 from storyboard_gen.gui.console_panel import ConsolePanel, QtLogHandler
 from storyboard_gen.gui.generate_dialog import GenerateDialog
 from storyboard_gen.gui.generate_worker import GenerateWorker
+from storyboard_gen.gui.archive_dialog import ArchiveDialog
 from storyboard_gen.gui.output_dialog import OutputDialog
 from storyboard_gen.gui.preview_panel import PreviewPanel
 from storyboard_gen.gui.scene_list import SceneListWidget, get_scene_status
@@ -77,8 +78,9 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(main_splitter)
 
-        # Connect scene selection to preview
+        # Connect scene selection to preview and archive button
         self.scene_list.scene_selected.connect(self._on_scene_selected)
+        self.scene_list.scene_selected.connect(lambda _: self._update_archive_enabled())
 
     def _setup_toolbar(self) -> None:
         """Create the toolbar with generation, output, and refresh actions."""
@@ -109,6 +111,9 @@ class MainWindow(QMainWindow):
 
         self._action_yaml = self.toolbar.addAction("View YAML")
         self._action_yaml.triggered.connect(self._on_view_yaml)
+
+        self._action_archive = self.toolbar.addAction("Archive")
+        self._action_archive.triggered.connect(self._on_archive)
 
         # Progress spinner and label in the toolbar
         spacer = QWidget()
@@ -158,6 +163,7 @@ class MainWindow(QMainWindow):
         self._action_output.setEnabled(has_project and not is_generating)
         self._action_refresh.setEnabled(has_project)
         self._action_yaml.setEnabled(has_project)
+        self._update_archive_enabled()
 
     # ----- Project loading -----
 
@@ -413,6 +419,30 @@ class MainWindow(QMainWindow):
             self.console.append_message(f"Kdenlive export complete: {output_path}")
         except (RuntimeError, OSError) as exc:
             self._show_error(f"Kdenlive export failed: {exc}")
+
+    # ----- Archive -----
+
+    def _update_archive_enabled(self) -> None:
+        """Enable the Archive action only when a scene is selected."""
+        has_project = self._project is not None
+        has_selection = has_project and self.scene_list.get_selected_scene() is not None
+        self._action_archive.setEnabled(has_selection)
+
+    def _on_archive(self) -> None:
+        """Open the Archive dialog for the currently selected scene."""
+        scene = self.scene_list.get_selected_scene()
+        if not scene or not self._output_dir:
+            return
+
+        dialog = ArchiveDialog(scene, self._output_dir, parent=self)
+        dialog.exec()
+
+        if dialog.restored:
+            self.scene_list.refresh_status()
+            self._refresh_preview_if_selected(scene)
+            self.console.append_message(
+                f"Restored archived version for scene {scene.number}"
+            )
 
     # ----- YAML viewer -----
 
