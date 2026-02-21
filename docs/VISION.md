@@ -1,4 +1,4 @@
-<!-- Version: 0.3 | Last updated: 2026-02-21 -->
+<!-- Version: 0.4 | Last updated: 2026-02-21 -->
 
 # Vision: storyboard-gen
 
@@ -19,10 +19,14 @@ Separate the creative decisions (storyboard, prompts, character designs, style) 
 1. Creative planning (in conversation, sketches, notes) produces a `project.yaml`
 2. Reference images go in `references/`
 3. `storyboard-gen generate` calls the APIs and saves results to `output/`
-4. `storyboard-gen assemble` applies Ken Burns effects and concatenates
-5. User adds voice-over, music, and final edits in their editor (Kdenlive, etc.)
+4. `storyboard-gen assemble` applies Ken Burns effects and concatenates a quick-preview video
+5. `storyboard-gen kdenlive` exports a complete Kdenlive project for professional editing
 
 The optional GUI (`storyboard-gen-gui`) provides visual scene management for steps 3–4 without replacing the CLI.
+
+## Kdenlive export
+
+The Kdenlive export is what makes storyboard-gen more than a batch image generator. It produces a fully editable timeline project: every scene placed at the correct duration, Ken Burns effects applied as native Kdenlive transforms, audio track included, dissolve transitions between scenes. Open the `.kdenlive` file and you have a working first cut — adjust timing, tweak effects, add titles, swap scenes, or re-render at any resolution. This bridges the gap between AI generation and professional video editing without trying to be a video editor itself.
 
 ## Non-goals
 
