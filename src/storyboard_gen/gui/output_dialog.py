@@ -42,8 +42,8 @@ class OutputDialog(QDialog):
         self._radio_kdenlive.setChecked(True)
 
         mode_layout = QVBoxLayout()
-        mode_layout.addWidget(self._radio_assemble)
         mode_layout.addWidget(self._radio_kdenlive)
+        mode_layout.addWidget(self._radio_assemble)
         mode_group.setLayout(mode_layout)
 
         # Update default filename when mode changes
