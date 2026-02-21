@@ -24,6 +24,9 @@ storyboard-gen kdenlive --dissolve 30   # 30-frame dissolves (1s at 30fps)
 storyboard-gen kdenlive --no-dissolve   # Hard cuts, no transitions
 ```
 
+<img width="2040" height="1279" alt="image" src="https://github.com/user-attachments/assets/62876b0d-e692-4615-b1d6-4553c26de6ce" />
+
+
 ## Quickstart
 
 ### Install via Homebrew (recommended)
@@ -74,6 +77,9 @@ pip install storyboard-gen[gui]        # Or: make install-gui
 storyboard-gen-gui                     # Launch the GUI
 storyboard-gen-gui ~/Movies/my-proj    # Launch with a project
 ```
+
+<img width="803" height="783" alt="image" src="https://github.com/user-attachments/assets/ad0380aa-e18b-4c7d-b064-0c734321b941" />
+
 
 ## Dependencies
 
