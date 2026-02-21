@@ -38,6 +38,10 @@ storyboard-gen kdenlive --dissolve 30   # 30-frame dissolves (1s at 30fps)
 storyboard-gen kdenlive --no-dissolve   # Hard cuts, no transitions
 storyboard-gen validate                 # Validate project.yaml
 storyboard-gen list                     # List all scenes with status
+
+# GUI (requires: pip install .[gui])
+storyboard-gen-gui                      # Launch GUI
+storyboard-gen-gui ~/Movies/my-video    # Launch GUI with project
 ```
 
 ## Architecture
@@ -74,6 +78,14 @@ storyboard-gen/
 │       │   ├── google.py      # Google Vertex AI (Imagen + Veo)
 │       │   ├── fal.py         # FAL.ai (Flux models)
 │       │   └── replicate.py   # Replicate (Flux models)
+│       ├── gui/           # Optional PySide6 GUI (pip install .[gui])
+│       │   ├── __init__.py
+│       │   ├── __main__.py        # python -m storyboard_gen.gui entry
+│       │   ├── app.py             # MainWindow, toolbar, signal wiring
+│       │   ├── scene_list.py      # Scene list with status indicators
+│       │   ├── preview_panel.py   # Image preview (stacked placeholder/image)
+│       │   ├── console_panel.py   # Log output panel + QtLogHandler
+│       │   └── generate_worker.py # QThread background generation
 │       ├── ken_burns.py   # Ken Burns effects via FFmpeg
 │       ├── assemble.py    # Final video assembly via FFmpeg
 │       └── kdenlive.py    # Kdenlive project export (MLT XML)
@@ -84,6 +96,7 @@ storyboard-gen/
     ├── test_models.py
     ├── test_generate.py
     ├── test_cli.py
+    ├── test_gui.py        # GUI widget and integration tests (pytest-qt)
     └── test_kdenlive.py
 ```
 
@@ -113,6 +126,10 @@ Core:
 - `pytest` — testing
 - `ruff` — linting and formatting
 - `ffmpeg` — system dependency for Ken Burns and assembly
+
+GUI (optional):
+- `PySide6>=6.6.0` — Qt6 graphical interface (`pip install .[gui]`)
+- `pytest-qt` — GUI testing
 
 Provider SDKs (optional, install as needed):
 - `google-genai>=1.0.0` — Google Vertex AI (Imagen + Veo)

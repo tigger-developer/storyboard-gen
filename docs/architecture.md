@@ -1,10 +1,10 @@
-<!-- Version: 1.3 | Last updated: 2026-02-21 -->
+<!-- Version: 1.4 | Last updated: 2026-02-21 -->
 
 # Architecture: storyboard-gen
 
 ## Overview
 
-storyboard-gen is a Python CLI tool. It reads a `project.yaml` from the current working directory, calls AI image/video APIs to generate stills and clips, and optionally assembles them into a final video with Ken Burns effects.
+storyboard-gen is a Python CLI tool with an optional GUI. It reads a `project.yaml` from the current working directory, calls AI image/video APIs to generate stills and clips, and optionally assembles them into a final video with Ken Burns effects. The GUI provides visual scene management and generation controls via PySide6, complementing (not replacing) the CLI.
 
 ## Components
 
@@ -50,6 +50,17 @@ Concatenates all scene outputs (Ken Burns stills + video clips) in order using F
 ### Kdenlive export (`kdenlive.py`)
 
 Generates a Kdenlive project file (MLT XML format) for timeline editing. References still PNGs directly (not pre-rendered intermediate MP4s), with Ken Burns pan/zoom effects applied via Kdenlive's native `qtblend` transform filter. Audio producers are tagged with `video_index=-1`, `audio_index=0`, and `kdenlive:clip_type=1` so MLT handles them as audio-only clips. When ffprobe is available, audio metadata (sample rate, channels, codec) is probed at export time. The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adjusting Ken Burns keyframes, and adding transitions before final render.
+
+### GUI layer (`gui/`) — optional
+
+A PySide6 (Qt6) graphical interface that wraps the operational commands. Installed via `pip install storyboard-gen[gui]`. The GUI does not edit `project.yaml` — it only reads.
+
+- `gui/app.py` — `MainWindow` with toolbar, splitter layout, and signal wiring. Entry point: `run()`.
+- `gui/scene_list.py` — `SceneListWidget` shows scenes with status indicators (`[OK]`/`[--]`). `get_scene_status()` checks output file existence. Emits `scene_selected(Scene)`.
+- `gui/preview_panel.py` — `PreviewPanel` with `QStackedLayout` switching between placeholder and image view.
+- `gui/console_panel.py` — `ConsolePanel` read-only text display. `QtLogHandler` bridges Python `logging` to Qt signals.
+- `gui/generate_worker.py` — `GenerateWorker(QThread)` runs generation in the background, emitting progress signals.
+- `gui/__main__.py` — `python -m storyboard_gen.gui` and `storyboard-gen-gui` entry point.
 
 ## Data flow
 
@@ -122,6 +133,7 @@ Multiple FAL models support character-consistent generation via `@character_id` 
 - Google Vertex AI / Gemini API (optional — `pip install storyboard-gen[google]`)
 - FAL.ai API (optional — `pip install storyboard-gen[fal]`)
 - Replicate API (optional — `pip install storyboard-gen[replicate]`)
+- PySide6 (optional — `pip install storyboard-gen[gui]`)
 - FFmpeg (system binary, must be on PATH)
 - Python 3.12+
 

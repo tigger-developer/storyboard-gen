@@ -1,6 +1,6 @@
 # storyboard-gen
 
-A CLI tool that generates video stills and clips from a YAML storyboard definition. Supports multiple AI providers: Google (Imagen/Veo), FAL.ai (Flux), and Replicate (Flux).
+A CLI tool (with optional GUI) that generates video stills and clips from a YAML storyboard definition. Supports multiple AI providers: Google (Imagen/Veo), FAL.ai (Flux), and Replicate (Flux).
 
 ## Quickstart
 
@@ -49,6 +49,8 @@ storyboard-gen kdenlive                # Export Kdenlive project for editing
 storyboard-gen kdenlive --dissolve 30  # Custom dissolve length
 storyboard-gen kdenlive --no-dissolve  # Hard cuts, no transitions
 storyboard-gen --version               # Show version
+storyboard-gen-gui                    # Launch GUI (requires PySide6)
+storyboard-gen-gui ~/Movies/my-proj   # Launch GUI with project
 ```
 
 ## Dependencies
@@ -60,12 +62,13 @@ storyboard-gen --version               # Show version
   - **FAL.ai:** `pip install storyboard-gen[fal]` — requires FAL_KEY
   - **Replicate:** `pip install storyboard-gen[replicate]` — requires REPLICATE_API_TOKEN
   - **All providers:** `pip install storyboard-gen[all]`
+  - **GUI:** `pip install storyboard-gen[gui]` — PySide6 (Qt6) graphical interface
 
 ## Project structure
 
 | File/Dir | Purpose |
 |----------|---------|
-| `src/storyboard_gen/` | Tool source code |
+| `src/storyboard_gen/` | Tool source code (CLI + optional GUI) |
 | `tests/` | Test suite |
 | `scripts/release.sh` | Release automation |
 | `docs/VISION.md` | Project vision and goals |

@@ -1,5 +1,5 @@
-# ABOUTME: Package configuration for storyboard-gen CLI tool.
-# ABOUTME: Enables `pip install .` and `storyboard-gen` CLI entry point.
+# ABOUTME: Package configuration for storyboard-gen CLI tool and optional GUI.
+# ABOUTME: Enables `pip install .` for CLI and `pip install .[gui]` for GUI.
 
 from setuptools import find_packages, setup
 
@@ -21,6 +21,7 @@ setup(
     extras_require={
         "fal": ["fal-client>=0.5.0"],
         "replicate": ["replicate>=1.0.0"],
+        "gui": ["PySide6>=6.6.0"],
         "all": [
             "google-genai>=1.0.0",
             "fal-client>=0.5.0",
@@ -30,6 +31,7 @@ setup(
     entry_points={
         "console_scripts": [
             "storyboard-gen=storyboard_gen.cli:main",
+            "storyboard-gen-gui=storyboard_gen.gui.__main__:main",
         ],
     },
 )
