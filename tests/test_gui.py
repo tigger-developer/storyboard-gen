@@ -1184,8 +1184,8 @@ class TestOutputDialog:
 
         assert dialog is not None
 
-    def test_output_dialog_defaults_to_assemble(self, qtbot):
-        """OutputDialog should default to assemble mode."""
+    def test_output_dialog_defaults_to_kdenlive(self, qtbot):
+        """OutputDialog should default to kdenlive mode."""
         from storyboard_gen.gui.output_dialog import OutputDialog
 
         dialog = OutputDialog()
@@ -1193,7 +1193,7 @@ class TestOutputDialog:
 
         # Assert
         options = dialog.get_options()
-        assert options["mode"] == "assemble"
+        assert options["mode"] == "kdenlive"
 
     def test_output_dialog_kdenlive_mode(self, qtbot):
         """Selecting kdenlive radio should return kdenlive mode."""

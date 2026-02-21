@@ -39,7 +39,7 @@ class OutputDialog(QDialog):
         mode_group = QGroupBox("Output mode")
         self._radio_assemble = QRadioButton("Assemble (MP4)")
         self._radio_kdenlive = QRadioButton("Kdenlive export")
-        self._radio_assemble.setChecked(True)
+        self._radio_kdenlive.setChecked(True)
 
         mode_layout = QVBoxLayout()
         mode_layout.addWidget(self._radio_assemble)
@@ -67,7 +67,7 @@ class OutputDialog(QDialog):
         # Output filename
         filename_layout = QHBoxLayout()
         filename_layout.addWidget(QLabel("Output filename:"))
-        self._filename_edit = QLineEdit(f"{default_title}.mp4")
+        self._filename_edit = QLineEdit(f"{default_title}.kdenlive")
         filename_layout.addWidget(self._filename_edit, 1)
 
         # Dialog buttons
