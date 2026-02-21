@@ -1,17 +1,21 @@
 # ABOUTME: Scene list widget for storyboard-gen GUI.
-# ABOUTME: Displays scenes with status indicators and emits selection signals.
+# ABOUTME: Displays scenes with status indicators, inline action buttons, and emits selection signals.
 
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QSize, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QHBoxLayout,
+    QLabel,
     QListWidget,
     QListWidgetItem,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
+from storyboard_gen.gui.archive_dialog import list_scene_archives
 from storyboard_gen.models import Project, Scene, format_scene_number
 
 
@@ -35,13 +39,92 @@ def get_scene_status(scene: Scene, output_dir: Path) -> str:
     return "pending"
 
 
+class SceneItemWidget(QWidget):
+    """Custom widget for a scene list item with inline action buttons.
+
+    Shows scene info (status, number, type, title) alongside
+    Generate/Regenerate and Archive buttons.
+    """
+
+    generate_clicked = Signal(object)
+    archive_clicked = Signal(object)
+
+    def __init__(
+        self,
+        scene: Scene,
+        output_dir: Path,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self._scene = scene
+        self._output_dir = output_dir
+
+        status = get_scene_status(scene, output_dir)
+        indicator = "[OK]" if status == "generated" else "[--]"
+        type_label = "S" if scene.scene_type == "still" else "C"
+
+        # Scene info label
+        self._label = QLabel(
+            f"{indicator} {scene.number:>3} [{type_label}] {scene.title}"
+        )
+
+        # Generate / Regenerate button
+        gen_text = "Regenerate" if status == "generated" else "Generate"
+        self._gen_btn = QPushButton(gen_text)
+        self._gen_btn.setFixedWidth(90)
+        self._gen_btn.setToolTip(
+            "Regenerate this scene" if status == "generated" else "Generate this scene"
+        )
+        self._gen_btn.clicked.connect(lambda: self.generate_clicked.emit(self._scene))
+
+        # Archive button
+        has_archives = len(list_scene_archives(scene, output_dir)) > 0
+        self._archive_btn = QPushButton("Archive")
+        self._archive_btn.setFixedWidth(70)
+        self._archive_btn.setToolTip("Browse archived versions")
+        self._archive_btn.setEnabled(has_archives)
+        self._archive_btn.clicked.connect(
+            lambda: self.archive_clicked.emit(self._scene)
+        )
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.addWidget(self._label, stretch=1)
+        layout.addWidget(self._gen_btn)
+        layout.addWidget(self._archive_btn)
+        self.setLayout(layout)
+
+    def refresh(self) -> None:
+        """Update the widget state from current output and archive status."""
+        status = get_scene_status(self._scene, self._output_dir)
+        indicator = "[OK]" if status == "generated" else "[--]"
+        type_label = "S" if self._scene.scene_type == "still" else "C"
+
+        self._label.setText(
+            f"{indicator} {self._scene.number:>3} [{type_label}] {self._scene.title}"
+        )
+
+        gen_text = "Regenerate" if status == "generated" else "Generate"
+        self._gen_btn.setText(gen_text)
+        self._gen_btn.setToolTip(
+            "Regenerate this scene" if status == "generated" else "Generate this scene"
+        )
+
+        has_archives = len(list_scene_archives(self._scene, self._output_dir)) > 0
+        self._archive_btn.setEnabled(has_archives)
+
+
 class SceneListWidget(QWidget):
-    """Scrollable list of scenes with status indicators.
+    """Scrollable list of scenes with status indicators and action buttons.
 
     Emits ``scene_selected(Scene)`` when the user clicks a scene.
+    Emits ``generate_requested(Scene)`` when a scene's Generate button is clicked.
+    Emits ``archive_requested(Scene)`` when a scene's Archive button is clicked.
     """
 
     scene_selected = Signal(object)
+    generate_requested = Signal(object)
+    archive_requested = Signal(object)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -72,23 +155,24 @@ class SceneListWidget(QWidget):
         self._output_dir = output_dir
 
         for scene in self._scenes:
-            status = get_scene_status(scene, output_dir)
-            indicator = "[OK]" if status == "generated" else "[--]"
-            type_label = "S" if scene.scene_type == "still" else "C"
-            text = f"{indicator} {scene.number:>3} [{type_label}] {scene.title}"
-            item = QListWidgetItem(text)
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, 36))
             self.list_widget.addItem(item)
 
+            item_widget = SceneItemWidget(scene, output_dir)
+            item_widget.generate_clicked.connect(self.generate_requested.emit)
+            item_widget.archive_clicked.connect(self.archive_requested.emit)
+            self.list_widget.setItemWidget(item, item_widget)
+
     def refresh_status(self) -> None:
-        """Refresh status indicators for all scenes."""
+        """Refresh status indicators and button states for all scenes."""
         if not self._output_dir:
             return
-        for i, scene in enumerate(self._scenes):
-            status = get_scene_status(scene, self._output_dir)
-            indicator = "[OK]" if status == "generated" else "[--]"
-            type_label = "S" if scene.scene_type == "still" else "C"
-            text = f"{indicator} {scene.number:>3} [{type_label}] {scene.title}"
-            self.list_widget.item(i).setText(text)
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            item_widget = self.list_widget.itemWidget(item)
+            if isinstance(item_widget, SceneItemWidget):
+                item_widget.refresh()
 
     def get_selected_scene(self) -> Scene | None:
         """Return the currently selected scene, or None."""

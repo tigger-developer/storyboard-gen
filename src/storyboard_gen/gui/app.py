@@ -83,6 +83,10 @@ class MainWindow(QMainWindow):
         self.scene_list.scene_selected.connect(self._on_scene_selected)
         self.scene_list.scene_selected.connect(lambda _: self._update_archive_enabled())
 
+        # Connect per-scene action buttons
+        self.scene_list.generate_requested.connect(self._on_generate_scene)
+        self.scene_list.archive_requested.connect(self._on_archive_scene)
+
     def _setup_toolbar(self) -> None:
         """Create the toolbar with generation, output, and refresh actions."""
         self.toolbar = QToolBar("Main")
@@ -348,6 +352,27 @@ class MainWindow(QMainWindow):
         self._worker = None
         self._update_actions_enabled()
         self.scene_list.refresh_status()
+
+    def _on_generate_scene(self, scene: Scene) -> None:
+        """Handle per-scene Generate/Regenerate button click."""
+        if not self._project:
+            return
+        self._start_generation([scene])
+
+    def _on_archive_scene(self, scene: Scene) -> None:
+        """Handle per-scene Archive button click."""
+        if not self._output_dir:
+            return
+
+        dialog = ArchiveDialog(scene, self._output_dir, parent=self)
+        dialog.exec()
+
+        if dialog.restored:
+            self.scene_list.refresh_status()
+            self._refresh_preview_if_selected(scene)
+            self.console.append_message(
+                f"Restored archived version for scene {scene.number}"
+            )
 
     # ----- Output (Assemble / Kdenlive) -----
 

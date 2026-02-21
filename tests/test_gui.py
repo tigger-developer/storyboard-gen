@@ -457,13 +457,13 @@ class TestSceneListWidget:
         qtbot.addWidget(widget)
         widget.load_project(project, output_dir)
 
-        # Assert — check item text contains status indicators
-        item0_text = widget.list_widget.item(0).text()
-        item2_text = widget.list_widget.item(2).text()
+        # Assert — check item widget label text contains status indicators
+        item0_widget = widget.list_widget.itemWidget(widget.list_widget.item(0))
+        item2_widget = widget.list_widget.itemWidget(widget.list_widget.item(2))
 
         # Scene 1 is generated, scene 3 is pending
-        assert "[OK]" in item0_text or "✓" in item0_text
-        assert "[--]" in item2_text or "✗" in item2_text
+        assert "[OK]" in item0_widget._label.text()
+        assert "[--]" in item2_widget._label.text()
 
 
 # ---------------------------------------------------------------------------
@@ -2075,3 +2075,254 @@ class TestMainWindowNewProject:
             window._on_new_project()
 
         mock_crit.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: per-scene action buttons
+# ---------------------------------------------------------------------------
+
+
+class TestSceneItemWidget:
+    """Test the custom scene item widget with inline action buttons."""
+
+    def test_scene_item_widget_creates(self, qtbot, gui_project_dir_with_output):
+        """SceneItemWidget should instantiate for a scene."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        assert widget is not None
+
+    def test_scene_item_shows_scene_info(self, qtbot, gui_project_dir_with_output):
+        """SceneItemWidget should display scene number, type, and title."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1",
+            title="Opening shot",
+            scene_type="still",
+            prompt="t",
+            duration=5,
+        )
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        label_text = widget._label.text()
+        assert "1" in label_text
+        assert "Opening shot" in label_text
+
+    def test_scene_item_shows_generate_for_pending(self, qtbot, tmp_path):
+        """Pending scene should show 'Generate' button."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        assert widget._gen_btn.text() == "Generate"
+
+    def test_scene_item_shows_regenerate_for_generated(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Generated scene should show 'Regenerate' button."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        assert widget._gen_btn.text() == "Regenerate"
+
+    def test_scene_item_generate_emits_signal(self, qtbot, tmp_path):
+        """Clicking Generate should emit generate_clicked signal."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        received = []
+        widget.generate_clicked.connect(received.append)
+
+        # Act
+        widget._gen_btn.click()
+
+        assert len(received) == 1
+        assert received[0].number == "1"
+
+    def test_scene_item_archive_disabled_when_no_archives(self, qtbot, tmp_path):
+        """Archive button should be disabled when no archives exist."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        assert not widget._archive_btn.isEnabled()
+
+    def test_scene_item_archive_enabled_when_archives_exist(
+        self, qtbot, gui_project_dir_with_archives
+    ):
+        """Archive button should be enabled when archives exist."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        assert widget._archive_btn.isEnabled()
+
+    def test_scene_item_archive_emits_signal(
+        self, qtbot, gui_project_dir_with_archives
+    ):
+        """Clicking Archive should emit archive_clicked signal."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Opening", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = gui_project_dir_with_archives / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        received = []
+        widget.archive_clicked.connect(received.append)
+
+        # Act
+        widget._archive_btn.click()
+
+        assert len(received) == 1
+        assert received[0].number == "1"
+
+
+class TestSceneListSignals:
+    """Test SceneListWidget emits generate and archive signals from item buttons."""
+
+    def test_scene_list_emits_generate_requested(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """SceneListWidget should emit generate_requested when button is clicked."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        received = []
+        widget.generate_requested.connect(received.append)
+
+        # Act — click the generate button on the first scene item
+        item = widget.list_widget.item(0)
+        item_widget = widget.list_widget.itemWidget(item)
+        item_widget._gen_btn.click()
+
+        assert len(received) == 1
+        assert received[0].number == "1"
+
+    def test_scene_list_emits_archive_requested(
+        self, qtbot, gui_project_dir_with_archives
+    ):
+        """SceneListWidget should emit archive_requested when button is clicked."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        project = load_project(gui_project_dir_with_archives)
+        output_dir = gui_project_dir_with_archives / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        received = []
+        widget.archive_requested.connect(received.append)
+
+        # Act — click the archive button on the first scene item
+        item = widget.list_widget.item(0)
+        item_widget = widget.list_widget.itemWidget(item)
+        item_widget._archive_btn.click()
+
+        assert len(received) == 1
+        assert received[0].number == "1"
+
+    def test_scene_list_refresh_updates_item_widgets(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """refresh_status should update button labels and archive availability."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Scene 3 is pending
+        item2 = widget.list_widget.item(2)
+        item2_widget = widget.list_widget.itemWidget(item2)
+        assert item2_widget._gen_btn.text() == "Generate"
+
+        # Create output for scene 3
+        import struct
+        import zlib
+
+        def _make_png():
+            signature = b"\x89PNG\r\n\x1a\n"
+
+            def _chunk(chunk_type, data):
+                c = chunk_type + data
+                crc = struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+                return struct.pack(">I", len(data)) + c + crc
+
+            ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+            raw = zlib.compress(b"\x00\xff\x00\x00")
+            return (
+                signature
+                + _chunk(b"IHDR", ihdr)
+                + _chunk(b"IDAT", raw)
+                + _chunk(b"IEND", b"")
+            )
+
+        (output_dir / "stills" / "scene_03.png").write_bytes(_make_png())
+
+        # Act
+        widget.refresh_status()
+
+        # Assert — button should now say "Regenerate"
+        item2_refreshed = widget.list_widget.item(2)
+        item2_widget_refreshed = widget.list_widget.itemWidget(item2_refreshed)
+        assert item2_widget_refreshed._gen_btn.text() == "Regenerate"
