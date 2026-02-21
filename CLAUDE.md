@@ -309,9 +309,11 @@ Tests first. The generate module should be testable with mocked API responses (e
 ## Makefile targets
 
 - `make install` — create venv, install deps
+- `make install-gui` — install with GUI dependencies (PySide6, pytest-qt)
 - `make test` — run all tests
 - `make lint` — ruff check + format check
 - `make lint-fix` — auto-fix
+- `make gui` — launch the GUI
 - `make clean` — remove build artefacts
 - `make release [VERSION=x.y.z]` — full release: test, tag, GitHub release, Homebrew update
 - `make formula` — update Homebrew formula SHA256 for current version

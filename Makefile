@@ -13,7 +13,7 @@ PYTEST := $(VENV)/bin/pytest
 VERSION_FILE := src/storyboard_gen/__init__.py
 CURRENT_VERSION := $(shell grep '__version__' $(VERSION_FILE) 2>/dev/null | sed 's/.*"\(.*\)".*/\1/')
 
-.PHONY: help install test lint lint-fix clean sync release formula brew-upgrade
+.PHONY: help install install-gui test lint lint-fix clean sync release formula brew-upgrade gui
 
 help: ## Show this help
 	@echo "storyboard-gen v$(CURRENT_VERSION)"
@@ -31,6 +31,11 @@ install: $(VENV)/bin/activate ## Create venv, install deps, install tool in dev 
 	$(PIP) install -e . -q
 	@echo "Setup complete. Run: source $(VENV)/bin/activate"
 
+install-gui: install ## Install with GUI dependencies (PySide6)
+	$(PIP) install PySide6 pytest-qt -q
+	$(PIP) install -e ".[gui]" -q
+	@echo "GUI dependencies installed. Run: make gui"
+
 test: ## Run all tests
 	$(PYTEST) tests/ -v
 
@@ -41,6 +46,13 @@ lint: ## Run Ruff linter and formatter check
 lint-fix: ## Auto-fix lint issues
 	$(RUFF) check --fix src/ tests/
 	$(RUFF) format src/ tests/
+
+gui: ## Launch the GUI (install-gui first if needed)
+	@if ! $(PYTHON) -c "import PySide6" 2>/dev/null; then \
+		echo "PySide6 not installed. Run: make install-gui"; \
+		exit 1; \
+	fi
+	$(PYTHON) -m storyboard_gen.gui
 
 clean: ## Remove build artefacts
 	rm -rf build/ dist/ *.egg-info src/*.egg-info
