@@ -1,4 +1,4 @@
-<!-- Version: 1.8 | Last updated: 2026-02-18 -->
+<!-- Version: 1.9 | Last updated: 2026-02-21 -->
 
 # project.yaml Specification
 
@@ -177,10 +177,10 @@ characters:
 
 You can reference characters in scene prompts using `@character_id` (e.g. `@hero`, `@guide`). The behaviour depends on the provider:
 
-- **Kling O3 models:** `@hero` → `@Element1`, `@guide` → `@Element2` (mapped to O3's character element system). Reference images are uploaded as elements for multi-character consistency.
-- **All other models:** The `@` prefix is stripped (e.g. `@hero` → `hero`). The character name remains in the prompt as natural text.
+- **Kling O3 clip models:** `@hero` → `@Element1`, `@guide` → `@Element2` (mapped to O3's character element system). Reference images are uploaded as elements for multi-character consistency. When no `@character_id` tokens are present, O3 auto-prepends `@ElementN is <description>.` lines.
+- **All other models (including all still models):** The `@` prefix is stripped (e.g. `@hero` → `hero`). The character name remains in the prompt as natural text. No multi-reference mapping occurs.
 
-When a scene lists characters but the prompt contains no `@character_id` tokens, O3 models auto-prepend `@ElementN is <description>.` lines for each character.
+**Current scope:** `@character_id` → `@ElementN` mapping is only active for **Kling O3 clip models**. For stills, multi-character reference support via Kling O1 Image and Kontext Max Multi is planned ([#46](https://github.com/tigger04/storyboard-gen/issues/46)).
 
 ```yaml
 scenes:

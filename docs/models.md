@@ -1,4 +1,4 @@
-<!-- Version: 1.1 | Last updated: 2026-02-18 -->
+<!-- Version: 1.2 | Last updated: 2026-02-21 -->
 
 # Model Reference
 
@@ -118,6 +118,31 @@ Kontext uses `safety_tolerance` (string, "1"–"6") like Flux 1.x.
 | `fal-ai/kling-video/o3/pro/text-to-video` | Kling O3 Pro | O3 with higher quality. |
 
 **Clip options:** `cfg_scale` (float), `negative_prompt` (string), `generate_audio` (bool, default false).
+
+### `@character_id` prompt syntax (Kling O3 clips only)
+
+Kling O3 clip models support multi-character consistency via an `elements[]` array. storyboard-gen maps your `project.yaml` character definitions automatically:
+
+- Write `@character_id` tokens in scene prompts (e.g. `@boy`, `@mum`) using the character IDs from your YAML
+- O3 models: `@boy` → `@Element1`, `@mum` → `@Element2` (ordered by scene `characters` list)
+- Character reference images are uploaded as elements (`frontal_image_url` + `reference_image_urls`)
+- When no `@character_id` tokens appear, O3 auto-prepends `@ElementN is <description>.` lines
+- Non-O3 Kling models: the `@` prefix is simply stripped (`@boy` → `boy`)
+
+```yaml
+scenes:
+  - number: 3
+    type: clip
+    duration: 5
+    characters: [boy, mum]
+    provider:
+      backend: fal
+      model: "fal-ai/kling-video/o3/standard/image-to-video"
+    prompt: >
+      @boy runs toward @mum who is standing at the door.
+```
+
+**Note:** This feature currently applies to **Kling O3 clips only**. For stills, `@character_id` tokens are stripped to plain text. Multi-character still support via Kling O1 Image and Kontext Max Multi is tracked in [#46](https://github.com/tigger04/storyboard-gen/issues/46).
 
 ### Safety defaults
 
