@@ -16,7 +16,7 @@ Multiple AI providers are supported — use one or mix and match per scene. See 
 
 ### Kdenlive export
 
-The `kdenlive` command generates a Kdenlive project file with every scene on the timeline at the correct duration, Ken Burns effects as native Kdenlive transforms, audio included, and dissolve transitions between scenes. The resulting `.kdenlive` file opens directly in Kdenlive for editing — adjust timing, tweak keyframes, add titles, swap scenes, or re-render at any resolution.
+Where AI generation meets real video editing. The `kdenlive` command generates a complete Kdenlive project file — every scene on the timeline at the correct duration, Ken Burns effects as native Kdenlive transforms, audio included, and dissolve transitions between scenes. Open the `.kdenlive` file and you have a working first cut ready for editing: adjust timing, tweak keyframes, add titles, swap scenes, or re-render at any resolution.
 
 ```bash
 storyboard-gen kdenlive                 # Export with default 15-frame dissolves
