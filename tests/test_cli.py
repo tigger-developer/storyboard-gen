@@ -272,6 +272,33 @@ class TestCliInit:
         assert exit_code == 1
         assert "already exists" in caplog.text
 
+    def test_init_creates_readme(self, tmp_path, capsys):
+        # Arrange
+        os.chdir(tmp_path)
+
+        # Act
+        main(["init"])
+
+        # Assert
+        readme = tmp_path / "README.md"
+        assert readme.exists()
+        content = readme.read_text()
+        assert "storyboard-gen" in content
+        assert "project.yaml" in content
+
+    def test_init_readme_uses_project_title(self, tmp_path, capsys):
+        # Arrange
+        os.chdir(tmp_path)
+
+        # Act
+        main(["init"])
+
+        # Assert
+        readme = tmp_path / "README.md"
+        content = readme.read_text()
+        # The template project.yaml has title "My Project"
+        assert "My Project" in content
+
     def test_init_prints_summary(self, tmp_path, capsys):
         # Arrange
         os.chdir(tmp_path)
@@ -286,6 +313,7 @@ class TestCliInit:
         assert ".gitignore" in output
         assert "references/" in output
         assert "logs/" in output
+        assert "README.md" in output
 
 
 class TestCliDryRun:

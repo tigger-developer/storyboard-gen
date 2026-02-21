@@ -710,14 +710,34 @@ def _cmd_init(args: argparse.Namespace) -> int:
         logging.error("project.yaml already exists in %s", target)
         return 1
 
+    # Extract title from template for use in README
+    title = "My Project"
+    for line in _TEMPLATE_PROJECT_YAML.splitlines():
+        if line.startswith("title:"):
+            title = line.split(":", 1)[1].strip().strip('"').strip("'")
+            break
+
     project_yaml.write_text(_TEMPLATE_PROJECT_YAML)
     (target / ".env").write_text(_TEMPLATE_ENV)
     (target / ".gitignore").write_text(_TEMPLATE_GITIGNORE)
+    (target / "README.md").write_text(
+        f"# {title}\n"
+        "\n"
+        "A [storyboard-gen](https://github.com/tigger04/storyboard-gen) project.\n"
+        "\n"
+        "Edit `project.yaml` to define your scenes, characters, and style,"
+        " then run `storyboard-gen generate` to create your assets.\n"
+        "\n"
+        "See the [project.yaml spec]"
+        "(https://github.com/tigger04/storyboard-gen/blob/master/"
+        "docs/project-yaml-spec.md) for the full schema reference.\n"
+    )
     (target / "references").mkdir(exist_ok=True)
     (target / "logs").mkdir(exist_ok=True)
 
     print(f"Created new project in {target}/")
     print("  project.yaml  — storyboard definition")
+    print("  README.md     — project overview")
     print("  .env          — API credentials (edit before use)")
     print("  .gitignore    — excludes secrets and video, keeps stills and Kdenlive")
     print("  references/   — add character/style reference images here")
