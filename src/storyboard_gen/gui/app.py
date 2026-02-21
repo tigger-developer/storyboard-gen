@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QSplitter,
     QToolBar,
     QWidget,
@@ -129,6 +130,15 @@ class MainWindow(QMainWindow):
         root_logger = logging.getLogger()
         root_logger.addHandler(self._log_handler)
 
+    def _show_error(self, message: str) -> None:
+        """Show an error to the user via a message box and the console.
+
+        Args:
+            message: The error message to display.
+        """
+        self.console.append_message(f"Error: {message}")
+        QMessageBox.critical(self, "Error", message)
+
     def _update_actions_enabled(self) -> None:
         """Enable/disable toolbar actions based on current state."""
         has_project = self._project is not None
@@ -155,7 +165,7 @@ class MainWindow(QMainWindow):
         try:
             self._project = load_project(project_dir)
         except ConfigError as exc:
-            self.console.append_message(f"Error: {exc}")
+            self._show_error(str(exc))
             self._project = None
             self._update_actions_enabled()
             return
@@ -269,7 +279,7 @@ class MainWindow(QMainWindow):
     def _on_gen_error(self, message: str) -> None:
         """Handle generation error."""
         self._gen_done += 1
-        self.console.append_message(f"Error: {message}")
+        self._show_error(message)
         self._progress_label.setText(f"{self._gen_done} / {self._gen_total}")
 
     def _on_gen_all_finished(self) -> None:
@@ -318,9 +328,7 @@ class MainWindow(QMainWindow):
                 scene_num = format_scene_number(scene.number)
                 image_path = self._output_dir / "stills" / f"scene_{scene_num}.png"
                 if not image_path.exists():
-                    self.console.append_message(
-                        f"Error: Missing still for scene {scene.number}"
-                    )
+                    self._show_error(f"Missing still for scene {scene.number}")
                     return
                 apply_ken_burns(
                     image_path, scene, self._project.aspect_ratio, self._output_dir
@@ -348,7 +356,7 @@ class MainWindow(QMainWindow):
             )
             self.console.append_message("Assembly complete.")
         except (RuntimeError, OSError) as exc:
-            self.console.append_message(f"Error: Assembly failed: {exc}")
+            self._show_error(f"Assembly failed: {exc}")
 
     def _run_kdenlive(self, options: dict) -> None:
         """Export a Kdenlive project file.
@@ -386,7 +394,7 @@ class MainWindow(QMainWindow):
             )
             self.console.append_message(f"Kdenlive export complete: {output_path}")
         except (RuntimeError, OSError) as exc:
-            self.console.append_message(f"Error: Kdenlive export failed: {exc}")
+            self._show_error(f"Kdenlive export failed: {exc}")
 
     # ----- YAML viewer -----
 

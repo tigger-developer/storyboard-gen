@@ -274,6 +274,44 @@ class TestConsolePanel:
         # Assert
         assert "Hello world" in panel.text_edit.toPlainText()
 
+    def test_console_panel_error_highlighted_red(self, qtbot):
+        """Error messages should be rendered in red text."""
+        from PySide6.QtGui import QColor
+
+        from storyboard_gen.gui.console_panel import ConsolePanel
+
+        panel = ConsolePanel()
+        qtbot.addWidget(panel)
+
+        # Act
+        panel.append_message("Error: something broke")
+
+        # Assert — check that the text colour is red
+        cursor = panel.text_edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.Start)
+        cursor.movePosition(cursor.MoveOperation.Right)
+        fmt = cursor.charFormat()
+        assert fmt.foreground().color() == QColor("#cc0000")
+
+    def test_console_panel_warning_highlighted_amber(self, qtbot):
+        """Warning messages should be rendered in amber text."""
+        from PySide6.QtGui import QColor
+
+        from storyboard_gen.gui.console_panel import ConsolePanel
+
+        panel = ConsolePanel()
+        qtbot.addWidget(panel)
+
+        # Act
+        panel.append_message("WARNING: heads up")
+
+        # Assert
+        cursor = panel.text_edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.Start)
+        cursor.movePosition(cursor.MoveOperation.Right)
+        fmt = cursor.charFormat()
+        assert fmt.foreground().color() == QColor("#cc8800")
+
     def test_console_panel_clear(self, qtbot):
         """ConsolePanel.clear should empty the text display."""
         from storyboard_gen.gui.console_panel import ConsolePanel
@@ -1294,3 +1332,68 @@ class TestMainWindowOutputAndRefresh:
         # Assert — scene list should still be populated (reloaded)
         assert window.scene_list.list_widget.count() == 3
         assert "GUI Test Project" in window.windowTitle()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: error dialog surfacing
+# ---------------------------------------------------------------------------
+
+
+class TestErrorDialog:
+    """Test that errors are surfaced via QMessageBox, not just the console."""
+
+    def test_show_error_displays_message_box(self, qtbot):
+        """_show_error should open a QMessageBox.critical dialog."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Patch QMessageBox.critical to capture the call
+        with patch("storyboard_gen.gui.app.QMessageBox.critical") as mock_crit:
+            window._show_error("Something broke")
+
+            # Assert — message box was shown
+            mock_crit.assert_called_once()
+            args = mock_crit.call_args
+            assert "Something broke" in args[0][2]  # message text
+
+    def test_show_error_also_logs_to_console(self, qtbot):
+        """_show_error should also append to the console panel."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        with patch("storyboard_gen.gui.app.QMessageBox.critical"):
+            window._show_error("Something broke")
+
+        # Assert — console should contain the error
+        assert "Something broke" in window.console.text_edit.toPlainText()
+
+    def test_generation_error_shows_message_box(self, qtbot, gui_project_dir):
+        """Generation errors should pop a visible error dialog."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        with patch("storyboard_gen.gui.app.QMessageBox.critical") as mock_crit:
+            window._on_gen_error("Scene 1: fal-client is not installed")
+
+            mock_crit.assert_called_once()
+
+    def test_config_error_shows_message_box(self, qtbot, tmp_path):
+        """Config load errors should pop a visible error dialog."""
+        from storyboard_gen.gui.app import MainWindow
+
+        (tmp_path / "project.yaml").write_text("scenes: []")
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        with patch("storyboard_gen.gui.app.QMessageBox.critical") as mock_crit:
+            window.open_project(tmp_path)
+
+            mock_crit.assert_called_once()

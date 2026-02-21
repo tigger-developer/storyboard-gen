@@ -4,6 +4,7 @@
 import logging
 
 from PySide6.QtCore import QObject, Signal
+from PySide6.QtGui import QColor, QTextCharFormat
 from PySide6.QtWidgets import QTextEdit, QVBoxLayout, QWidget
 
 
@@ -51,8 +52,25 @@ class ConsolePanel(QWidget):
         self.setLayout(layout)
 
     def append_message(self, text: str) -> None:
-        """Append a log message and scroll to the bottom."""
-        self.text_edit.append(text)
+        """Append a log message and scroll to the bottom.
+
+        Error and warning lines are highlighted in red/amber for visibility.
+        """
+        text_lower = text.lower()
+        if "error" in text_lower:
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor("#cc0000"))
+            cursor = self.text_edit.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            cursor.insertText(text + "\n", fmt)
+        elif "warning" in text_lower:
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor("#cc8800"))
+            cursor = self.text_edit.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            cursor.insertText(text + "\n", fmt)
+        else:
+            self.text_edit.append(text)
         scrollbar = self.text_edit.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
