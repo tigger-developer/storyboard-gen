@@ -720,6 +720,53 @@ class TestGuiEndToEnd:
         # Assert — preview should show an image
         assert not window.preview.image_label.pixmap().isNull()
 
+    def test_scene_gen_finished_refreshes_preview(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """After generation completes, the preview should update for the selected scene."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir_with_output)
+
+        # Select scene 3 (pending still — no output yet)
+        window.scene_list.list_widget.setCurrentRow(2)
+        assert (
+            window.preview._layout.currentWidget() is window.preview.placeholder_label
+        )
+
+        # Simulate generation completing: create the output file
+        stills_dir = gui_project_dir_with_output / "output" / "stills"
+        import struct
+        import zlib
+
+        def _make_png():
+            signature = b"\x89PNG\r\n\x1a\n"
+
+            def _chunk(chunk_type, data):
+                c = chunk_type + data
+                crc = struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+                return struct.pack(">I", len(data)) + c + crc
+
+            ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+            raw = zlib.compress(b"\x00\xff\x00\x00")
+            return (
+                signature
+                + _chunk(b"IHDR", ihdr)
+                + _chunk(b"IDAT", raw)
+                + _chunk(b"IEND", b"")
+            )
+
+        (stills_dir / "scene_03.png").write_bytes(_make_png())
+
+        # Act — fire the scene_finished signal
+        scene3 = window._project.scenes[2]
+        window._on_scene_gen_finished(scene3)
+
+        # Assert — preview should now show the image, not placeholder
+        assert not window.preview.image_label.pixmap().isNull()
+
     def test_open_project_and_select_pending_scene_shows_placeholder(
         self, qtbot, gui_project_dir_with_output
     ):

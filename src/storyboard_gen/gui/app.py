@@ -275,6 +275,13 @@ class MainWindow(QMainWindow):
         self.console.append_message(f"Finished scene {scene.number}: {scene.title}")
         self._progress_label.setText(f"{self._gen_done} / {self._gen_total}")
         self.scene_list.refresh_status()
+        self._refresh_preview_if_selected(scene)
+
+    def _refresh_preview_if_selected(self, scene: Scene) -> None:
+        """Refresh the preview panel if the given scene is currently selected."""
+        selected = self.scene_list.get_selected_scene()
+        if selected and selected.number == scene.number:
+            self._on_scene_selected(scene)
 
     def _on_gen_error(self, message: str) -> None:
         """Handle generation error."""
