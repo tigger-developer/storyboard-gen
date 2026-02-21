@@ -430,3 +430,11 @@ storyboard-gen kdenlive                     # Export Kdenlive project with Ken B
 storyboard-gen kdenlive --output my.kdenlive # Custom output filename
 storyboard-gen --version                    # Show version
 ```
+
+---
+
+## See also
+
+- [models.md](models.md) — full model reference with capabilities, options, and safety defaults
+- [architecture.md](architecture.md) — technical architecture and data flow
+- [VISION.md](VISION.md) — project goals and non-goals

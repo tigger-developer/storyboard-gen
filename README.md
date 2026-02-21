@@ -1,6 +1,18 @@
 # storyboard-gen
 
-A CLI tool (with optional GUI) that generates video stills and clips from a YAML storyboard definition. Supports multiple AI providers: Google (Imagen/Veo), FAL.ai (Flux), and Replicate (Flux).
+Turn a YAML storyboard into AI-generated video. Define your scenes, characters, and visual style in a `project.yaml`, then let storyboard-gen handle the API calls, Ken Burns effects, and final assembly.
+
+The idea is simple: separate the creative decisions (what your video looks like) from the plumbing (API clients, polling, file handling, FFmpeg commands). You focus on the storyboard; the tool does the rest.
+
+## What it does
+
+1. **Generate stills** — AI-rendered images from your scene prompts (Google Imagen, FAL Flux/Kontext, Replicate Flux)
+2. **Generate clips** — AI-rendered video from your scene prompts (Google Veo, FAL Kling)
+3. **Apply Ken Burns effects** — zoom, pan, and static effects on stills via FFmpeg
+4. **Assemble** — concatenate everything in scene order with optional audio
+5. **Export to Kdenlive** — for fine-tuning in a proper video editor
+
+Multiple AI providers are supported — use one or mix and match per scene. See [docs/models.md](docs/models.md) for the full model reference.
 
 ## Quickstart
 
@@ -22,35 +34,35 @@ source .venv/bin/activate
 ### Set up a project
 
 ```bash
-# Scaffold a new project directory
 storyboard-gen init ~/Movies/social/my-project
 cd ~/Movies/social/my-project
 
-# Authenticate with Google Cloud
-gcloud auth application-default login
-
-# Edit .env with your credentials
+# Edit .env with your provider credentials
 # Edit project.yaml with your storyboard
 # Add reference images to references/
 ```
 
-### Use it
+See [docs/project-yaml-spec.md](docs/project-yaml-spec.md) for the full `project.yaml` schema.
+
+### Generate and assemble
 
 ```bash
-storyboard-gen init [directory]         # Create a new project
 storyboard-gen validate                # Check project.yaml
 storyboard-gen list                    # List all scenes
 storyboard-gen generate --scene 1      # Generate one scene
-storyboard-gen generate --all-stills   # All stills
-storyboard-gen generate --all          # Everything
-storyboard-gen assemble                # Assemble final video (with audio if configured)
-storyboard-gen assemble --audio vo.m4a # Override audio track
+storyboard-gen generate --all          # Generate everything
+storyboard-gen assemble                # Assemble final video
 storyboard-gen kdenlive                # Export Kdenlive project for editing
-storyboard-gen kdenlive --dissolve 30  # Custom dissolve length
-storyboard-gen kdenlive --no-dissolve  # Hard cuts, no transitions
-storyboard-gen --version               # Show version
-storyboard-gen-gui                    # Launch GUI (requires PySide6)
-storyboard-gen-gui ~/Movies/my-proj   # Launch GUI with project
+```
+
+### GUI (optional)
+
+An optional graphical interface provides visual scene management, image preview, and generation controls. Install with:
+
+```bash
+pip install storyboard-gen[gui]        # Or: make install-gui
+storyboard-gen-gui                     # Launch the GUI
+storyboard-gen-gui ~/Movies/my-proj    # Launch with a project
 ```
 
 ## Dependencies
@@ -64,28 +76,36 @@ storyboard-gen-gui ~/Movies/my-proj   # Launch GUI with project
   - **All providers:** `pip install storyboard-gen[all]`
   - **GUI:** `pip install storyboard-gen[gui]` — PySide6 (Qt6) graphical interface
 
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [docs/VISION.md](docs/VISION.md) | Project vision, goals, and non-goals |
+| [docs/architecture.md](docs/architecture.md) | Technical architecture and data flow |
+| [docs/models.md](docs/models.md) | AI model reference — capabilities, options, safety defaults, choosing guide |
+| [docs/project-yaml-spec.md](docs/project-yaml-spec.md) | Complete `project.yaml` schema with examples |
+
 ## Project structure
 
 | File/Dir | Purpose |
 |----------|---------|
 | `src/storyboard_gen/` | Tool source code (CLI + optional GUI) |
-| `tests/` | Test suite |
+| `src/storyboard_gen/gui/` | Optional PySide6 graphical interface |
+| `tests/` | Test suite (421 tests) |
 | `scripts/release.sh` | Release automation |
-| `docs/VISION.md` | Project vision and goals |
-| `docs/architecture.md` | Technical architecture |
-| `docs/models.md` | AI model reference (capabilities, options, safety defaults) |
-| `docs/project-yaml-spec.md` | project.yaml schema specification |
-| `CLAUDE.md` | Claude Code configuration |
 | `Makefile` | Build, test, lint, release targets |
+| `CLAUDE.md` | Claude Code configuration |
 
 ## Makefile targets
 
 | Target | Description |
 |--------|-------------|
 | `make install` | Create venv, install deps |
+| `make install-gui` | Install with GUI dependencies (PySide6) |
 | `make test` | Run all tests |
 | `make lint` | Ruff check + format check |
 | `make lint-fix` | Auto-fix lint issues |
+| `make gui` | Launch the GUI |
 | `make clean` | Remove build artefacts |
 | `make release [VERSION=x.y.z]` | Full release: test, tag, GitHub release, Homebrew update |
 | `make formula` | Update Homebrew formula SHA256 for current version |
@@ -99,16 +119,16 @@ Each video project is a directory containing:
 ```
 my-project/
 ├── project.yaml      # Storyboard definition
-├── .env              # API credentials
+├── .env              # API credentials (not committed)
 ├── audio.m4a         # Optional audio track for assembly
 ├── references/       # Character/style reference images
 └── output/           # Generated assets (created by tool)
-    ├── stills/       # Imagen output (PNG)
-    ├── clips/        # Veo output (MP4)
+    ├── stills/       # Generated still images (PNG)
+    ├── clips/        # Generated video clips (MP4)
     ├── intermediate/ # Ken Burns output (MP4)
     └── final/        # Assembled video
 ```
 
 ## Licence
 
-MIT. Copyright Taḋg Paul
+MIT. Copyright Taḋg Paul O'Brien.

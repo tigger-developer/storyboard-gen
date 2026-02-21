@@ -1,4 +1,4 @@
-<!-- Version: 1.4 | Last updated: 2026-02-21 -->
+<!-- Version: 1.5 | Last updated: 2026-02-21 -->
 
 # Architecture: storyboard-gen
 
@@ -146,3 +146,9 @@ Multiple FAL models support character-consistent generation via `@character_id` 
 5. `.env` in project directory
 6. Environment variables
 7. Defaults in code
+
+## See also
+
+- [VISION.md](VISION.md) — project goals and non-goals
+- [models.md](models.md) — full model reference with capabilities, options, and safety defaults
+- [project-yaml-spec.md](project-yaml-spec.md) — complete `project.yaml` schema

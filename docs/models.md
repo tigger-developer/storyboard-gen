@@ -262,3 +262,11 @@ REPLICATE_API_TOKEN=your-replicate-token
 | Safety toggle | No | Yes | Yes | Yes | Yes | Yes | No | Yes |
 | Character elements | No | No | No | No | No | Yes (`elements[]`) | Yes (O3) | No |
 | Auth method | GCP / API key | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | Token |
+
+---
+
+## See also
+
+- [project-yaml-spec.md](project-yaml-spec.md) — complete `project.yaml` schema with provider configuration examples
+- [architecture.md](architecture.md) — how providers are resolved and how generation works
+- [VISION.md](VISION.md) — project goals and non-goals

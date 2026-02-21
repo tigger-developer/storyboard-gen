@@ -1,10 +1,10 @@
-<!-- Version: 0.2 | Last updated: 2026-02-13 -->
+<!-- Version: 0.3 | Last updated: 2026-02-21 -->
 
 # Vision: storyboard-gen
 
 ## Purpose
 
-A CLI tool that turns a YAML storyboard into a sequence of AI-generated images and video clips, ready for assembly in a video editor.
+A CLI tool (with optional GUI) that turns a YAML storyboard into a sequence of AI-generated images and video clips, ready for assembly in a video editor.
 
 ## Problem
 
@@ -20,21 +20,27 @@ Separate the creative decisions (storyboard, prompts, character designs, style) 
 2. Reference images go in `references/`
 3. `storyboard-gen generate` calls the APIs and saves results to `output/`
 4. `storyboard-gen assemble` applies Ken Burns effects and concatenates
-5. User adds voice-over, music, and final edits in their editor (kdenlive, etc.)
+5. User adds voice-over, music, and final edits in their editor (Kdenlive, etc.)
+
+The optional GUI (`storyboard-gen-gui`) provides visual scene management for steps 3–4 without replacing the CLI.
 
 ## Non-goals
 
 - This is not a full video editor
 - This does not handle audio editing (mixing, effects, trimming) — it can overlay a pre-prepared audio track during assembly
 - This does not upload to social media
-- This does not manage Google Cloud billing or quotas
+- This does not manage cloud billing or quotas
 
 ## Audio support
 
 The `assemble` command can mux a single audio file (voice-over, soundtrack) into the final video. Audio is configured via the `audio:` field in `project.yaml` or the `--audio` CLI flag. The `--preview` flag skips audio. Full audio editing (mixing, trimming, effects) remains out of scope — prepare audio externally.
 
-## Supported backends
+## Supported providers
 
-- Google Vertex AI (Imagen for stills, Veo for clips)
-- Google Gemini Developer API (same models, simpler auth)
-- Future: other providers could be added behind the same interface
+storyboard-gen has a pluggable provider system. Multiple providers can be used within the same project — configure a default in `project.yaml` and override per scene.
+
+- **Google** — Imagen (stills), Veo (clips). Auth via Vertex AI (GCP) or Gemini API key. Default provider.
+- **FAL.ai** — Flux, Kontext, Kling (stills and clips). Multi-character support via `@character_id` mapping. Auth via `FAL_KEY`.
+- **Replicate** — Flux models (stills only). Auth via `REPLICATE_API_TOKEN`.
+
+See [models.md](models.md) for the full model reference, including capabilities, options, and a choosing guide.
