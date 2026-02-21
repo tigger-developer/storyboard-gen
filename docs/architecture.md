@@ -1,4 +1,4 @@
-<!-- Version: 1.2 | Last updated: 2026-02-18 -->
+<!-- Version: 1.3 | Last updated: 2026-02-21 -->
 
 # Architecture: storyboard-gen
 
@@ -26,7 +26,7 @@ Pluggable image/video generation backends. Each provider implements the `ImagePr
 
 - `providers/base.py` — Abstract base class defining `generate_still()` and `generate_clip()` interface.
 - `providers/google.py` — Google Vertex AI / Gemini (Imagen for stills, Veo for clips).
-- `providers/fal.py` — FAL.ai (Flux 1.x, Flux 2, and Kontext models for stills, Kling models for clips). Kontext models auto-route to image-to-image (when a reference image exists) or text-to-image (when no reference). Flux 2 models (`_is_flux2` detection) do not support reference images. Kling O3 models support character elements for multi-character consistency. Safety defaults are injected per model family before user options merge.
+- `providers/fal.py` — FAL.ai (Flux 1.x, Flux 2, Kontext, O1 Image models for stills; Kling models for clips). Kontext models auto-route to image-to-image (with reference) or text-to-image (without). Flux 2 models (`_is_flux2`) do not support reference images. Kling O3 clips and O1 Image stills support character elements and `@character_id` prompt rewriting (`@ElementN`/`@ImageN`). Kontext Max Multi (`_is_kontext_multi`) accepts multiple references without explicit mapping. Safety defaults are injected per model family before user options merge.
 - `providers/replicate.py` — Replicate (Flux models for stills).
 - `providers/__init__.py` — Registry and factory. Uses lazy imports so unused SDKs are not required.
 
@@ -103,16 +103,19 @@ Both `Character.reference` and `Scene.reference` are `list[Path]` (empty list wh
 3. Project-level `providers.still` / `providers.clip`
 4. Default: Google with Imagen 4 (stills) / Veo 3.1 (clips)
 
-## Character elements (O3)
+## Character elements and `@character_id` mapping
 
-Kling O3 models support character-consistent video generation via an `elements[]` array. storyboard-gen maps `project.yaml` character definitions to O3 elements automatically:
+Multiple FAL models support character-consistent generation via `@character_id` prompt tokens and multi-reference uploads. storyboard-gen maps `project.yaml` character definitions automatically:
 
 - Users write `@character_id` tokens (e.g. `@boy`, `@mum`) in scene prompts
-- For O3 models: `@boy` → `@Element1`, `@mum` → `@Element2` (ordered by scene's `characters` list)
-- For non-O3 models: the `@` prefix is stripped (e.g. `@boy` → `boy`)
-- When no `@character_id` tokens appear, descriptions are auto-prepended as `@ElementN is <description>`
+- **O3 clips:** `@boy` → `@Element1` (character `elements[]` array)
+- **O1 Image stills:** `@boy` → `@Image1` (multi-ref `image_urls` + `elements[]`)
+- **Kontext Multi stills:** `@` prefix stripped; model infers associations from context
+- **All other models:** `@` prefix stripped (e.g. `@boy` → `boy`)
+- When no `@character_id` tokens appear, O3 and O1 auto-prepend `@ElementN/@ImageN is <description>` lines
 - Character reference images are uploaded to FAL CDN and mapped to `frontal_image_url` (first ref) and `reference_image_urls` (additional refs)
 - CDN URLs are cached in `logs/cdn_cache.json` (SHA-256 hash → URL) to avoid re-uploading across sessions
+- Multi-ref models (O1 Image, Kontext Multi) use `_upload_all_references()` to upload all character refs
 
 ## External dependencies
 

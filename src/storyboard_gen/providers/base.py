@@ -16,6 +16,9 @@ class ImageProvider(ABC):
         aspect_ratio: str,
         reference_images: list[Path] | None = None,
         options: dict | None = None,
+        *,
+        scene_characters: list | None = None,
+        project_dir: Path | None = None,
     ) -> bytes:
         """Generate a still image from a prompt.
 
@@ -25,6 +28,8 @@ class ImageProvider(ABC):
             aspect_ratio: Target ratio as "W:H" string (e.g. "9:16").
             reference_images: Optional list of reference image paths.
             options: Provider-specific options from project.yaml.
+            scene_characters: Ordered list of Character objects for this scene.
+            project_dir: Project root directory for caching.
 
         Returns:
             Raw image bytes (PNG).

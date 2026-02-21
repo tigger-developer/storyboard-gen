@@ -1,4 +1,4 @@
-<!-- Version: 1.2 | Last updated: 2026-02-21 -->
+<!-- Version: 1.3 | Last updated: 2026-02-21 -->
 
 # Model Reference
 
@@ -107,6 +107,26 @@ Kontext uses `safety_tolerance` (string, "1"–"6") like Flux 1.x.
 
 **Options:** `seed` (int), `safety_tolerance` (string, "1"–"6"), `guidance_scale` (float).
 
+### Kling O1 Image (stills)
+
+| Model ID | Name | Reference support | Notes |
+|----------|------|-------------------|-------|
+| `fal-ai/kling-image/o1` | Kling O1 Image | Yes (multi-ref via `image_urls` + `elements[]`) | Multi-character stills with `@ImageN` prompt syntax. |
+
+O1 Image uses `aspect_ratio` directly (raw ratio strings, not `image_size` presets). Supports up to 10 reference images via `image_urls` and character elements for multi-reference consistency.
+
+**Options:** `resolution` (`"1K"` or `"2K"`), `num_images` (int), `output_format` (string).
+
+### Kontext Max Multi (stills)
+
+| Model ID | Name | Reference support | Notes |
+|----------|------|-------------------|-------|
+| `fal-ai/flux-pro/kontext/max/multi` | Kontext Max Multi | Yes (multi-ref via `image_urls`) | Multiple reference images; model infers associations from context. |
+
+Kontext Multi uses `aspect_ratio` directly (raw ratio strings). The model infers which reference maps to which subject from prompt context — no explicit `@ImageN` tags needed.
+
+**Options:** `seed` (int), `safety_tolerance` (string, "1"–"6"), `guidance_scale` (float), `enhance_prompt` (bool).
+
 ### Kling (clips)
 
 | Model ID | Name | Notes |
@@ -119,15 +139,20 @@ Kontext uses `safety_tolerance` (string, "1"–"6") like Flux 1.x.
 
 **Clip options:** `cfg_scale` (float), `negative_prompt` (string), `generate_audio` (bool, default false).
 
-### `@character_id` prompt syntax (Kling O3 clips only)
+### `@character_id` prompt syntax
 
-Kling O3 clip models support multi-character consistency via an `elements[]` array. storyboard-gen maps your `project.yaml` character definitions automatically:
+Write `@character_id` tokens in scene prompts (e.g. `@boy`, `@mum`) using the character IDs from your `project.yaml`. The behaviour depends on the model:
 
-- Write `@character_id` tokens in scene prompts (e.g. `@boy`, `@mum`) using the character IDs from your YAML
-- O3 models: `@boy` → `@Element1`, `@mum` → `@Element2` (ordered by scene `characters` list)
-- Character reference images are uploaded as elements (`frontal_image_url` + `reference_image_urls`)
-- When no `@character_id` tokens appear, O3 auto-prepends `@ElementN is <description>.` lines
-- Non-O3 Kling models: the `@` prefix is simply stripped (`@boy` → `boy`)
+| Model | Mapping | Description |
+|-------|---------|-------------|
+| Kling O3 clips | `@boy` → `@Element1` | Mapped to O3's character element system |
+| Kling O1 Image stills | `@boy` → `@Image1` | Mapped to O1's image reference system |
+| Kontext Max Multi stills | `@boy` → `boy` | `@` stripped; model infers from context |
+| All other models | `@boy` → `boy` | `@` stripped; name remains as text |
+
+When no `@character_id` tokens are present, O3 and O1 auto-prepend `@ElementN is <description>.` / `@ImageN is <description>.` lines for each character.
+
+**O3 clip example:**
 
 ```yaml
 scenes:
@@ -142,7 +167,22 @@ scenes:
       @boy runs toward @mum who is standing at the door.
 ```
 
-**Note:** This feature currently applies to **Kling O3 clips only**. For stills, `@character_id` tokens are stripped to plain text. Multi-character still support via Kling O1 Image and Kontext Max Multi is tracked in [#46](https://github.com/tigger04/storyboard-gen/issues/46).
+**O1 Image still example:**
+
+```yaml
+scenes:
+  - number: 4
+    type: still
+    duration: 8
+    ken_burns: "zoom_in"
+    characters: [boy, sheep, collie]
+    provider:
+      backend: fal
+      model: "fal-ai/kling-image/o1"
+    prompt: >
+      @boy kneels on a park path as @sheep leaps into his arms
+      while @collie watches from behind.
+```
 
 ### Safety defaults
 
@@ -151,8 +191,9 @@ storyboard-gen injects safety defaults before merging user options, so user `opt
 | Model family | Default injected | Override via |
 |--------------|-----------------|--------------|
 | Flux 1.x / Flux 2 | `enable_safety_checker: false` | `options.enable_safety_checker` |
-| Kontext | `safety_tolerance: "6"` | `options.safety_tolerance` |
-| Kling | No default | — |
+| Kontext / Kontext Multi | `safety_tolerance: "6"` | `options.safety_tolerance` |
+| Kling O1 Image | `enable_safety_checker: false` | `options.enable_safety_checker` |
+| Kling clips | No default | — |
 
 ### Authentication
 
@@ -195,6 +236,8 @@ REPLICATE_API_TOKEN=your-replicate-token
 |------|-------------------|-----|
 | Best quality, no references | `imagen-4.0-generate-001` (Google) | Strongest photorealistic output |
 | Reference image consistency | `fal-ai/flux-general` (FAL) | Best reference support with LoRAs |
+| Multi-character consistency | `fal-ai/kling-image/o1` (FAL) | `@ImageN` mapping + `elements[]` |
+| Multi-ref, implicit mapping | `fal-ai/flux-pro/kontext/max/multi` (FAL) | Model infers associations |
 | Style transfer from a reference | `fal-ai/flux-pro/kontext` (FAL) | Purpose-built for image-to-image |
 | Fast iteration | `fal-ai/flux-2/turbo` (FAL) | Fastest generation time |
 | No API key setup | `black-forest-labs/flux-dev` (Replicate) | Simple token-based auth |
@@ -211,11 +254,11 @@ REPLICATE_API_TOKEN=your-replicate-token
 
 ## Provider comparison
 
-| Feature | Google | FAL (Flux 1.x) | FAL (Flux 2) | FAL (Kontext) | FAL (Kling) | Replicate |
-|---------|--------|-----------------|--------------|---------------|-------------|-----------|
-| Stills | Yes | Yes | Yes | Yes | No | Yes |
-| Clips | Yes (Veo) | No | No | No | Yes | No |
-| Reference images | Yes (up to 3) | Yes (1) | **No** | Yes (1, i2i) | N/A | Yes (1) |
-| Safety toggle | No | Yes | Yes | Yes | No | Yes |
-| Character elements | No | No | No | No | Yes (O3) | No |
-| Auth method | GCP / API key | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | Token |
+| Feature | Google | FAL (Flux 1.x) | FAL (Flux 2) | FAL (Kontext) | FAL (Kontext Multi) | FAL (O1 Image) | FAL (Kling clips) | Replicate |
+|---------|--------|-----------------|--------------|---------------|---------------------|----------------|-------------------|-----------|
+| Stills | Yes | Yes | Yes | Yes | Yes | Yes | No | Yes |
+| Clips | Yes (Veo) | No | No | No | No | No | Yes | No |
+| Reference images | Yes (up to 3) | Yes (1) | **No** | Yes (1, i2i) | Yes (multi) | Yes (multi, `@ImageN`) | N/A | Yes (1) |
+| Safety toggle | No | Yes | Yes | Yes | Yes | Yes | No | Yes |
+| Character elements | No | No | No | No | No | Yes (`elements[]`) | Yes (O3) | No |
+| Auth method | GCP / API key | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | Token |

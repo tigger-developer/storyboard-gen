@@ -69,6 +69,18 @@ class FalProvider(ImageProvider):
         """Detect whether this provider is configured for a Flux 2 model."""
         return "flux-2" in self.model.lower()
 
+    @property
+    def _is_o1_image(self) -> bool:
+        """Detect whether this provider is configured for a Kling O1 Image model."""
+        lower = self.model.lower()
+        return "kling-image" in lower and "/o1" in lower
+
+    @property
+    def _is_kontext_multi(self) -> bool:
+        """Detect whether this provider is configured for Kontext Max Multi."""
+        lower = self.model.lower()
+        return "kontext" in lower and "multi" in lower
+
     def _upload_reference(self, reference_images: list[Path] | None) -> str | None:
         """Upload the first valid reference image to FAL CDN.
 
@@ -166,6 +178,89 @@ class FalProvider(ImageProvider):
                 arguments["reference_image_url"] = ref_url
         return self.model, arguments
 
+    def _build_o1_image_args(
+        self,
+        prompt: str,
+        aspect_ratio: str,
+        scene_characters: list,
+        cdn_cache: dict[str, str],
+    ) -> tuple[str, dict]:
+        """Build arguments for Kling O1 Image models.
+
+        O1 Image supports multi-reference stills via image_urls and elements.
+
+        Args:
+            prompt: Full prompt text (with @character_id tokens).
+            aspect_ratio: Raw "W:H" string.
+            scene_characters: Ordered list of Character objects.
+            cdn_cache: Mutable CDN cache dict.
+
+        Returns:
+            Tuple of (endpoint, arguments dict).
+        """
+        # Collect all reference images from all characters
+        all_refs: list[Path] = []
+        for char in scene_characters:
+            all_refs.extend(r for r in char.reference if r.exists())
+
+        image_urls = self._upload_all_references(all_refs, cdn_cache)
+
+        arguments: dict = {
+            "prompt": prompt,
+            "aspect_ratio": aspect_ratio,
+            "num_images": 1,
+            "output_format": "png",
+        }
+        if image_urls:
+            arguments["image_urls"] = image_urls
+
+        # Build elements for characters with multiple references
+        elements = self._build_elements(scene_characters, cdn_cache)
+        if elements:
+            arguments["elements"] = elements
+
+        return self.model, arguments
+
+    def _build_kontext_multi_args(
+        self,
+        prompt: str,
+        aspect_ratio: str,
+        scene_characters: list,
+        cdn_cache: dict[str, str],
+    ) -> tuple[str, dict]:
+        """Build arguments for Kontext Max Multi models.
+
+        Kontext Multi accepts multiple reference images via image_urls.
+        The model infers associations from prompt context — no explicit
+        @ImageN mapping needed.
+
+        Args:
+            prompt: Full prompt text.
+            aspect_ratio: Raw "W:H" string.
+            scene_characters: Ordered list of Character objects.
+            cdn_cache: Mutable CDN cache dict.
+
+        Returns:
+            Tuple of (endpoint, arguments dict).
+        """
+        # Collect all reference images from all characters
+        all_refs: list[Path] = []
+        for char in scene_characters:
+            all_refs.extend(r for r in char.reference if r.exists())
+
+        image_urls = self._upload_all_references(all_refs, cdn_cache)
+
+        arguments: dict = {
+            "prompt": prompt,
+            "aspect_ratio": aspect_ratio,
+            "num_images": 1,
+            "output_format": "png",
+        }
+        if image_urls:
+            arguments["image_urls"] = image_urls
+
+        return self.model, arguments
+
     def generate_still(
         self,
         prompt: str,
@@ -173,6 +268,9 @@ class FalProvider(ImageProvider):
         aspect_ratio: str,
         reference_images: list[Path] | None = None,
         options: dict | None = None,
+        *,
+        scene_characters: list | None = None,
+        project_dir: Path | None = None,
     ) -> bytes:
         """Generate a still image via FAL Flux or Kontext models.
 
@@ -199,14 +297,53 @@ class FalProvider(ImageProvider):
                 "fal-client is not installed. Run: pip install fal-client"
             )
 
-        ref_url = self._upload_reference(reference_images)
+        # O1 Image and Kontext Multi: multi-ref models with CDN caching
+        if (self._is_o1_image or self._is_kontext_multi) and scene_characters:
+            cdn_cache = self._load_cdn_cache(project_dir)
 
-        if self._is_kontext:
-            endpoint, arguments = self._build_kontext_args(
-                prompt, aspect_ratio, ref_url
-            )
+            # Rewrite @character_id tokens in prompt
+            prompt = self._rewrite_prompt(prompt, scene_characters)
+
+            if self._is_o1_image:
+                endpoint, arguments = self._build_o1_image_args(
+                    prompt, aspect_ratio, scene_characters, cdn_cache
+                )
+            else:
+                endpoint, arguments = self._build_kontext_multi_args(
+                    prompt, aspect_ratio, scene_characters, cdn_cache
+                )
+
+            self._save_cdn_cache(project_dir, cdn_cache)
+        elif self._is_o1_image:
+            # O1 Image without characters — basic args with raw aspect_ratio
+            endpoint = self.model
+            arguments = {
+                "prompt": prompt,
+                "aspect_ratio": aspect_ratio,
+                "num_images": 1,
+                "output_format": "png",
+            }
+        elif self._is_kontext_multi:
+            # Kontext Multi without characters — basic args with raw aspect_ratio
+            endpoint = self.model
+            arguments = {
+                "prompt": prompt,
+                "aspect_ratio": aspect_ratio,
+                "num_images": 1,
+                "output_format": "png",
+            }
         else:
-            endpoint, arguments = self._build_flux_args(prompt, aspect_ratio, ref_url)
+            # Standard Flux/Kontext path
+            ref_url = self._upload_reference(reference_images)
+
+            if self._is_kontext:
+                endpoint, arguments = self._build_kontext_args(
+                    prompt, aspect_ratio, ref_url
+                )
+            else:
+                endpoint, arguments = self._build_flux_args(
+                    prompt, aspect_ratio, ref_url
+                )
 
         # Inject safety defaults (overridable by user options)
         if self._is_kontext:
@@ -259,11 +396,12 @@ class FalProvider(ImageProvider):
     def _rewrite_prompt(self, prompt: str, scene_characters: list) -> str:
         """Rewrite @character_id tokens in a prompt.
 
-        For O3 models: replaces @char_id with @ElementN (1-indexed).
-        For non-O3 models: strips the @ prefix from @char_id tokens.
+        For O3 clip models: replaces @char_id with @ElementN (1-indexed).
+        For O1 Image still models: replaces @char_id with @ImageN (1-indexed).
+        For all other models: strips the @ prefix from @char_id tokens.
 
-        When O3 and no @char_id tokens are found, auto-prepends
-        @ElementN descriptions using each character's description field.
+        When O3/O1 and no @char_id tokens are found, auto-prepends
+        @ElementN/@ImageN descriptions using each character's description field.
 
         Args:
             prompt: Original prompt with possible @character_id tokens.
@@ -274,7 +412,14 @@ class FalProvider(ImageProvider):
         """
         char_ids = [c.id for c in scene_characters]
 
+        # Determine the tag prefix based on model type
+        tag_prefix = None
         if self._is_o3:
+            tag_prefix = "Element"
+        elif self._is_o1_image:
+            tag_prefix = "Image"
+
+        if tag_prefix:
             # Check if any @character_id tokens are present
             has_tokens = any(
                 re.search(rf"@{re.escape(cid)}\b", prompt, flags=re.IGNORECASE)
@@ -282,24 +427,24 @@ class FalProvider(ImageProvider):
             )
 
             if has_tokens:
-                # Replace @char_id with @ElementN
+                # Replace @char_id with @TagN
                 for idx, cid in enumerate(char_ids, start=1):
                     prompt = re.sub(
                         rf"@{re.escape(cid)}\b",
-                        f"@Element{idx}",
+                        f"@{tag_prefix}{idx}",
                         prompt,
                         flags=re.IGNORECASE,
                     )
             else:
-                # Auto-prepend @ElementN descriptions
+                # Auto-prepend @TagN descriptions
                 prepend_lines = []
                 for idx, char in enumerate(scene_characters, start=1):
                     prepend_lines.append(
-                        f"@Element{idx} is {char.description.strip()}."
+                        f"@{tag_prefix}{idx} is {char.description.strip()}."
                     )
                 prompt = "\n".join(prepend_lines) + "\n" + prompt
         else:
-            # Non-O3: strip @ prefix from character tokens (preserve casing)
+            # All other models: strip @ prefix from character tokens
             for cid in char_ids:
                 prompt = re.sub(
                     rf"@({re.escape(cid)})\b",
@@ -350,6 +495,31 @@ class FalProvider(ImageProvider):
         cdn_cache[file_hash] = url
         logger.info("Uploaded %s -> %s (hash=%s...)", path.name, url, file_hash[:8])
         return url
+
+    def _upload_all_references(
+        self,
+        reference_images: list[Path],
+        cdn_cache: dict[str, str],
+    ) -> list[str]:
+        """Upload all valid reference images to FAL CDN.
+
+        Unlike _upload_reference() which uses only the first image,
+        this uploads every existing file and returns all URLs.
+        Used by O1 Image and Kontext Multi models.
+
+        Args:
+            reference_images: List of reference image paths.
+            cdn_cache: Mutable CDN cache dict.
+
+        Returns:
+            List of CDN URL strings for existing files.
+        """
+        urls = []
+        for ref_path in reference_images:
+            if ref_path.exists():
+                url = self._upload_with_cache(ref_path, cdn_cache)
+                urls.append(url)
+        return urls
 
     def _build_elements(
         self, scene_characters: list, cdn_cache: dict[str, str]

@@ -67,6 +67,8 @@ class GoogleProvider(ImageProvider):
         options: dict | None = None,
         *,
         client: object | None = None,
+        scene_characters: list | None = None,
+        project_dir: Path | None = None,
     ) -> bytes:
         """Generate a still image via Imagen.
 

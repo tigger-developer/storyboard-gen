@@ -129,6 +129,7 @@ def generate_still(
     project: Project,
     output_dir: Path,
     provider: ImageProvider | None = None,
+    project_dir: Path | None = None,
 ) -> Path:
     """Generate a still image for a scene.
 
@@ -167,12 +168,19 @@ def generate_still(
     reference_images = project.get_reference_images(scene)
     output_path = stills_dir / f"scene_{format_scene_number(scene.number)}.png"
 
+    # Resolve scene characters to Character objects (#46)
+    scene_characters = [
+        project.characters[cid] for cid in scene.characters if cid in project.characters
+    ]
+
     image_bytes = provider.generate_still(
         prompt=full_prompt,
         output_path=output_path,
         aspect_ratio=project.aspect_ratio,
         reference_images=reference_images or None,
         options=provider.options,
+        scene_characters=scene_characters or None,
+        project_dir=project_dir,
     )
 
     # Post-process: ensure aspect ratio is correct

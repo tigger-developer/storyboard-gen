@@ -328,7 +328,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
 
     for scene in scenes:
         if scene.scene_type == "still":
-            generate_still(scene, project, output_dir)
+            generate_still(scene, project, output_dir, project_dir=project_dir)
         else:
             generate_clip(scene, project, output_dir, project_dir=project_dir)
 
@@ -475,7 +475,9 @@ PROVIDERS
     options       (object)            Provider-specific options
 
   Google models:    imagen-4.0-generate-001 (still), veo-3.1-fast-generate-001 (clip)
-  FAL.ai models:    fal-ai/flux-general, fal-ai/flux-2, fal-ai/flux-2/turbo, fal-ai/flux-pro/kontext, fal-ai/kling-video/*
+  FAL.ai stills:    fal-ai/flux-general, fal-ai/flux-2, fal-ai/flux-2/turbo, fal-ai/flux-pro/kontext
+                    fal-ai/flux-pro/kontext/max/multi (multi-ref), fal-ai/kling-image/o1 (multi-ref)
+  FAL.ai clips:     fal-ai/kling-video/*
   Replicate models: black-forest-labs/flux-1.1-pro, black-forest-labs/flux-dev
 
 CHARACTERS
@@ -603,6 +605,53 @@ scenes:
     prompt: >
       Clips generate video — describe the motion and action
       you want. Ken Burns is not used for clips.
+
+  # === PER-SCENE PROVIDER EXAMPLES (uncomment to use) ===
+
+  # Multi-character still with Kling O1 Image:
+  # Uses @character_id tokens mapped to @ImageN references.
+  # - number: 4
+  #   title: "Group portrait (O1 Image)"
+  #   camera: "WIDE"
+  #   type: still
+  #   duration: 5
+  #   ken_burns: "static"
+  #   characters: [character_one, character_two]
+  #   provider:
+  #     backend: fal
+  #     model: "fal-ai/kling-image/o1"
+  #   prompt: >
+  #     @character_one and @character_two stand side by side.
+
+  # Multi-character still with Kontext Max Multi:
+  # Accepts multiple reference images; model infers associations.
+  # No @character_id mapping needed — just describe naturally.
+  # - number: 5
+  #   title: "Group portrait (Kontext Multi)"
+  #   camera: "MEDIUM"
+  #   type: still
+  #   duration: 5
+  #   ken_burns: "zoom_in"
+  #   characters: [character_one, character_two]
+  #   provider:
+  #     backend: fal
+  #     model: "fal-ai/flux-pro/kontext/max/multi"
+  #   prompt: >
+  #     Two characters standing together in a field at sunset.
+
+  # Multi-character clip with Kling O3 (video):
+  # Uses @character_id tokens mapped to @ElementN references.
+  # - number: 6
+  #   title: "Chase sequence (O3)"
+  #   camera: "MEDIUM"
+  #   type: clip
+  #   duration: 5
+  #   characters: [character_one, character_two]
+  #   provider:
+  #     backend: fal
+  #     model: "fal-ai/kling-video/o3/standard/image-to-video"
+  #   prompt: >
+  #     @character_one chases @character_two through a garden.
 """
 
 _TEMPLATE_ENV = """\

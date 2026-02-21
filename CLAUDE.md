@@ -171,11 +171,13 @@ GCS_OUTPUT_BUCKET=gs://your-bucket-name/
 - FAL Flux: `fal-ai/flux-general`, `fal-ai/flux-pro/v1.1`
 - FAL Flux 2: `fal-ai/flux-2`, `fal-ai/flux-2/turbo`, `fal-ai/flux-2/dev` (no reference support)
 - FAL Kontext: `fal-ai/flux-pro/kontext` (image-to-image with ref, text-to-image without)
+- FAL Kontext Multi: `fal-ai/flux-pro/kontext/max/multi` (multi-ref stills, model infers associations)
+- FAL O1 Image: `fal-ai/kling-image/o1` (multi-ref stills with `@ImageN` mapping)
 - Replicate Flux: `black-forest-labs/flux-1.1-pro`, `black-forest-labs/flux-dev`
 
 Safety defaults are injected automatically (overridable via user `options`):
-- FAL Flux/Flux 2: `enable_safety_checker: false`
-- FAL Kontext: `safety_tolerance: "6"`
+- FAL Flux/Flux 2/O1 Image: `enable_safety_checker: false`
+- FAL Kontext/Kontext Multi: `safety_tolerance: "6"`
 - Replicate: `safety_tolerance: 6`
 - Google: no toggle available
 

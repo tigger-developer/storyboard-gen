@@ -1604,3 +1604,499 @@ class TestFalCdnCache:
         new_hash = hashlib.sha256(b"new-image-data").hexdigest()
         updated_cache = json.loads((logs_dir / "cdn_cache.json").read_text())
         assert updated_cache[new_hash] == "https://fal.media/files/new_boy.png"
+
+
+class TestO1ImageDetection:
+    """Tests for Kling O1 Image model detection (#46)."""
+
+    def test_is_o1_image_positive(self):
+        """fal-ai/kling-image/o1 should be detected as O1 Image."""
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+        assert provider._is_o1_image is True
+
+    def test_is_o1_image_case_insensitive(self):
+        """O1 Image detection should be case-insensitive."""
+        provider = FalProvider(model="fal-ai/Kling-Image/O1")
+        assert provider._is_o1_image is True
+
+    def test_is_o1_image_negative_flux(self):
+        """Flux models are not O1 Image."""
+        provider = FalProvider(model="fal-ai/flux-general")
+        assert provider._is_o1_image is False
+
+    def test_is_o1_image_negative_kling_video(self):
+        """Kling video models are not O1 Image."""
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+        assert provider._is_o1_image is False
+
+    def test_is_o1_image_negative_kontext(self):
+        """Kontext models are not O1 Image."""
+        provider = FalProvider(model="fal-ai/flux-pro/kontext")
+        assert provider._is_o1_image is False
+
+
+class TestKontextMultiDetection:
+    """Tests for Kontext Max Multi model detection (#46)."""
+
+    def test_is_kontext_multi_positive(self):
+        """fal-ai/flux-pro/kontext/max/multi should be detected."""
+        provider = FalProvider(model="fal-ai/flux-pro/kontext/max/multi")
+        assert provider._is_kontext_multi is True
+
+    def test_is_kontext_multi_case_insensitive(self):
+        """Detection should be case-insensitive."""
+        provider = FalProvider(model="fal-ai/flux-pro/Kontext/Max/Multi")
+        assert provider._is_kontext_multi is True
+
+    def test_is_kontext_multi_negative_plain_kontext(self):
+        """Plain Kontext is not Kontext Multi."""
+        provider = FalProvider(model="fal-ai/flux-pro/kontext")
+        assert provider._is_kontext_multi is False
+
+    def test_is_kontext_multi_negative_flux(self):
+        """Flux models are not Kontext Multi."""
+        provider = FalProvider(model="fal-ai/flux-general")
+        assert provider._is_kontext_multi is False
+
+    def test_kontext_multi_is_also_kontext(self):
+        """Kontext Multi should also satisfy _is_kontext."""
+        provider = FalProvider(model="fal-ai/flux-pro/kontext/max/multi")
+        assert provider._is_kontext is True
+
+
+class TestUploadAllReferences:
+    """Tests for _upload_all_references() multi-ref upload (#46)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_uploads_all_existing_references(self, mock_fal, tmp_path):
+        """All existing reference images should be uploaded and URLs returned."""
+        # Arrange
+        ref1 = tmp_path / "ref1.png"
+        ref2 = tmp_path / "ref2.png"
+        ref1.write_bytes(b"image-1")
+        ref2.write_bytes(b"image-2")
+
+        cdn_cache: dict[str, str] = {}
+        mock_fal.upload_file.side_effect = [
+            "https://fal.media/files/ref1.png",
+            "https://fal.media/files/ref2.png",
+        ]
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        # Act
+        urls = provider._upload_all_references([ref1, ref2], cdn_cache)
+
+        # Assert
+        assert urls == [
+            "https://fal.media/files/ref1.png",
+            "https://fal.media/files/ref2.png",
+        ]
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_skips_nonexistent_references(self, mock_fal, tmp_path):
+        """Missing reference files should be skipped silently."""
+        # Arrange
+        ref1 = tmp_path / "ref1.png"
+        ref1.write_bytes(b"image-1")
+        ref2 = tmp_path / "missing.png"  # does not exist
+
+        cdn_cache: dict[str, str] = {}
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref1.png"
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        # Act
+        urls = provider._upload_all_references([ref1, ref2], cdn_cache)
+
+        # Assert — only the existing one
+        assert urls == ["https://fal.media/files/ref1.png"]
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_uses_cdn_cache(self, mock_fal, tmp_path):
+        """Cached references should not be re-uploaded."""
+        # Arrange
+        ref = tmp_path / "ref.png"
+        ref.write_bytes(b"image-data")
+        file_hash = hashlib.sha256(b"image-data").hexdigest()
+        cdn_cache = {file_hash: "https://fal.media/files/cached.png"}
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        # Act
+        urls = provider._upload_all_references([ref], cdn_cache)
+
+        # Assert — cache hit, no upload
+        mock_fal.upload_file.assert_not_called()
+        assert urls == ["https://fal.media/files/cached.png"]
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_returns_empty_for_no_references(self, mock_fal):
+        """No references should return an empty list."""
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+        cdn_cache: dict[str, str] = {}
+
+        urls = provider._upload_all_references([], cdn_cache)
+        assert urls == []
+
+
+class TestO1ImageArgBuilding:
+    """Tests for O1 Image argument building and generate_still (#46)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_o1_image_builds_image_urls(self, mock_fal, tmp_path):
+        """O1 Image should pass all character refs as image_urls."""
+        # Arrange
+        ref1 = tmp_path / "boy.jpg"
+        ref2 = tmp_path / "sheep.jpg"
+        ref1.write_bytes(b"boy-image")
+        ref2.write_bytes(b"sheep-image")
+
+        upload_urls = iter(
+            [
+                "https://fal.media/files/boy.png",
+                "https://fal.media/files/sheep.png",
+            ]
+        )
+        mock_fal.upload_file.side_effect = lambda _: next(upload_urls)
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+
+        chars = [
+            Character(id="boy", description="A boy", reference=[ref1]),
+            Character(id="sheep", description="A sheep", reference=[ref2]),
+        ]
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="@boy pats @sheep",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+            )
+
+        # Assert — image_urls built from all character refs
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_urls"] == [
+            "https://fal.media/files/boy.png",
+            "https://fal.media/files/sheep.png",
+        ]
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_o1_image_builds_elements(self, mock_fal, tmp_path):
+        """O1 Image with multiple refs per char should build elements array."""
+        # Arrange
+        ref_front = tmp_path / "boy_front.jpg"
+        ref_side = tmp_path / "boy_side.jpg"
+        ref_front.write_bytes(b"front-image")
+        ref_side.write_bytes(b"side-image")
+
+        upload_urls = iter(
+            [
+                "https://fal.media/files/front.png",
+                "https://fal.media/files/side.png",
+            ]
+        )
+        mock_fal.upload_file.side_effect = lambda _: next(upload_urls)
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+
+        chars = [
+            Character(
+                id="boy",
+                description="A boy",
+                reference=[ref_front, ref_side],
+            ),
+        ]
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="@boy waves",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+            )
+
+        # Assert — elements with frontal + reference_image_urls
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        elements = arguments["elements"]
+        assert len(elements) == 1
+        assert elements[0]["frontal_image_url"] == "https://fal.media/files/front.png"
+        assert elements[0]["reference_image_urls"] == [
+            "https://fal.media/files/side.png"
+        ]
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_o1_image_uses_raw_aspect_ratio(self, mock_fal, tmp_path):
+        """O1 Image should use raw aspect_ratio, not image_size preset."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A portrait",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert — raw aspect_ratio, not image_size
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["aspect_ratio"] == "9:16"
+        assert "image_size" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_o1_image_endpoint_is_model(self, mock_fal, tmp_path):
+        """O1 Image should use the model as the endpoint directly."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A portrait",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/kling-image/o1"
+
+
+class TestO1ImagePromptRewrite:
+    """Tests for O1 Image @character_id → @ImageN prompt rewriting (#46)."""
+
+    def test_o1_rewrites_at_char_to_at_image(self):
+        """@boy → @Image1, @sheep → @Image2 for O1 Image."""
+        # Arrange
+        chars = [
+            Character(id="boy", description="A boy", reference=[]),
+            Character(id="sheep", description="A sheep", reference=[]),
+        ]
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        # Act
+        result = provider._rewrite_prompt("@boy pats @sheep in the field.", chars)
+
+        # Assert
+        assert result == "@Image1 pats @Image2 in the field."
+
+    def test_o1_auto_prepends_image_descriptions(self):
+        """When no @char tokens, O1 should auto-prepend @ImageN descriptions."""
+        # Arrange
+        chars = [
+            Character(id="boy", description="A boy with curly hair", reference=[]),
+            Character(id="sheep", description="A fluffy sheep", reference=[]),
+        ]
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        # Act
+        result = provider._rewrite_prompt("A child with an animal.", chars)
+
+        # Assert
+        assert result.startswith("@Image1 is A boy with curly hair.")
+        assert "@Image2 is A fluffy sheep." in result
+        assert "A child with an animal." in result
+
+    def test_o1_rewrite_case_insensitive(self):
+        """@Boy and @BOY should both map to @Image1."""
+        # Arrange
+        chars = [Character(id="boy", description="A boy", reference=[])]
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        # Act
+        result = provider._rewrite_prompt("@Boy and @BOY wave.", chars)
+
+        # Assert
+        assert result == "@Image1 and @Image1 wave."
+
+
+class TestKontextMultiArgBuilding:
+    """Tests for Kontext Max Multi argument building (#46)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_multi_builds_image_urls(self, mock_fal, tmp_path):
+        """Kontext Multi should pass all refs as image_urls."""
+        # Arrange
+        ref1 = tmp_path / "boy.jpg"
+        ref2 = tmp_path / "sheep.jpg"
+        ref1.write_bytes(b"boy-image")
+        ref2.write_bytes(b"sheep-image")
+
+        upload_urls = iter(
+            [
+                "https://fal.media/files/boy.png",
+                "https://fal.media/files/sheep.png",
+            ]
+        )
+        mock_fal.upload_file.side_effect = lambda _: next(upload_urls)
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+
+        chars = [
+            Character(id="boy", description="A boy", reference=[ref1]),
+            Character(id="sheep", description="A sheep", reference=[ref2]),
+        ]
+        provider = FalProvider(model="fal-ai/flux-pro/kontext/max/multi")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy with a sheep",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+            )
+
+        # Assert — image_urls list
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_urls"] == [
+            "https://fal.media/files/boy.png",
+            "https://fal.media/files/sheep.png",
+        ]
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_multi_uses_raw_aspect_ratio(self, mock_fal, tmp_path):
+        """Kontext Multi should use raw aspect_ratio, not image_size preset."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-pro/kontext/max/multi")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A portrait",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["aspect_ratio"] == "9:16"
+        assert "image_size" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_multi_no_at_rewrite(self, mock_fal, tmp_path):
+        """Kontext Multi should strip @ prefix, not map to @ImageN."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+
+        chars = [
+            Character(id="boy", description="A boy", reference=[]),
+        ]
+        provider = FalProvider(model="fal-ai/flux-pro/kontext/max/multi")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="@boy waves",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+            )
+
+        # Assert — @ stripped, NOT replaced with @ImageN
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["prompt"] == "boy waves"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_multi_gets_safety_tolerance_6(self, mock_fal, tmp_path):
+        """Kontext Multi should inherit Kontext safety default."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-pro/kontext/max/multi")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="Prompt",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert — inherits Kontext safety default
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["safety_tolerance"] == "6"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_multi_endpoint_is_model(self, mock_fal, tmp_path):
+        """Kontext Multi should use model as endpoint (no /text-to-image suffix)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-pro/kontext/max/multi")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A portrait",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert — always use base endpoint (multi doesn't have /text-to-image)
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/flux-pro/kontext/max/multi"
+
+
+class TestO1ImageSafetyDefaults:
+    """Tests for O1 Image safety defaults (#46)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_o1_image_gets_enable_safety_checker_false(self, mock_fal, tmp_path):
+        """O1 Image is not Kontext, so it should get enable_safety_checker: False."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="Prompt",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["enable_safety_checker"] is False

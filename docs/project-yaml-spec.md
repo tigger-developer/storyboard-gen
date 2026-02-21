@@ -1,4 +1,4 @@
-<!-- Version: 1.9 | Last updated: 2026-02-21 -->
+<!-- Version: 2.0 | Last updated: 2026-02-21 -->
 
 # project.yaml Specification
 
@@ -101,6 +101,8 @@ providers:
 | `fal-ai/flux-2` | still | Flux 2 — no reference image support |
 | `fal-ai/flux-2/turbo` | still | Flux 2 Turbo — fast, no reference image support |
 | `fal-ai/flux-pro/kontext` | still | Kontext — image-to-image (with ref) or text-to-image (without) |
+| `fal-ai/flux-pro/kontext/max/multi` | still | Kontext Max Multi — multiple reference images, model infers associations |
+| `fal-ai/kling-image/o1` | still | Kling O1 Image — multi-character stills with `@ImageN` mapping |
 | `fal-ai/kling-video/v2.1/pro/text-to-video` | clip | Kling v2.1 Pro — text-to-video |
 | `fal-ai/kling-video/v2.1/pro/image-to-video` | clip | Kling v2.1 Pro — image-to-video (with source_frame) |
 | `fal-ai/kling-video/v3/standard/image-to-video` | clip | Kling v3 Standard — image-to-video |
@@ -175,15 +177,20 @@ characters:
 
 ### `@character_id` in prompts
 
-You can reference characters in scene prompts using `@character_id` (e.g. `@hero`, `@guide`). The behaviour depends on the provider:
+You can reference characters in scene prompts using `@character_id` (e.g. `@hero`, `@guide`). The behaviour depends on the model:
 
-- **Kling O3 clip models:** `@hero` → `@Element1`, `@guide` → `@Element2` (mapped to O3's character element system). Reference images are uploaded as elements for multi-character consistency. When no `@character_id` tokens are present, O3 auto-prepends `@ElementN is <description>.` lines.
-- **All other models (including all still models):** The `@` prefix is stripped (e.g. `@hero` → `hero`). The character name remains in the prompt as natural text. No multi-reference mapping occurs.
+| Model | Mapping | Description |
+|-------|---------|-------------|
+| Kling O3 clips | `@hero` → `@Element1` | Mapped to O3's character element system |
+| Kling O1 Image stills | `@hero` → `@Image1` | Mapped to O1's image reference system |
+| Kontext Max Multi stills | `@hero` → `hero` | `@` stripped; model infers from context |
+| All other models | `@hero` → `hero` | `@` stripped; name remains as text |
 
-**Current scope:** `@character_id` → `@ElementN` mapping is only active for **Kling O3 clip models**. For stills, multi-character reference support via Kling O1 Image and Kontext Max Multi is planned ([#46](https://github.com/tigger04/storyboard-gen/issues/46)).
+When no `@character_id` tokens are present, O3 and O1 auto-prepend `@ElementN is <description>.` / `@ImageN is <description>.` lines for each character.
 
 ```yaml
 scenes:
+  # O3 clip with @character_id → @ElementN mapping
   - number: 3
     type: clip
     duration: 5
@@ -193,6 +200,29 @@ scenes:
       model: "fal-ai/kling-video/o3/standard/image-to-video"
     prompt: >
       @hero runs toward @guide who is standing at the door.
+
+  # O1 Image still with @character_id → @ImageN mapping
+  - number: 4
+    type: still
+    duration: 8
+    ken_burns: "zoom_in"
+    characters: [hero, guide]
+    provider:
+      backend: fal
+      model: "fal-ai/kling-image/o1"
+    prompt: >
+      @hero and @guide stand side by side on a hilltop.
+
+  # Kontext Multi — no mapping needed, model infers from context
+  - number: 5
+    type: still
+    duration: 5
+    characters: [hero, guide]
+    provider:
+      backend: fal
+      model: "fal-ai/flux-pro/kontext/max/multi"
+    prompt: >
+      Two characters standing together at sunset.
 ```
 
 ---

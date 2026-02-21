@@ -28,6 +28,9 @@ class ReplicateProvider(ImageProvider):
         aspect_ratio: str,
         reference_images: list[Path] | None = None,
         options: dict | None = None,
+        *,
+        scene_characters: list | None = None,
+        project_dir: Path | None = None,
     ) -> bytes:
         """Generate a still image via Replicate Flux models.
 
