@@ -29,54 +29,21 @@ storyboard-gen kdenlive --no-dissolve   # Hard cuts, no transitions
 
 ## Quickstart
 
-### Install via Homebrew (recommended)
-
 ```bash
-brew install tigger04/tap/storyboard-gen
-```
+brew install tigger04/tap/storyboard-gen    # macOS (Homebrew)
+pip install storyboard-gen[all]             # macOS / Linux / Windows (pip)
 
-### Install from source
-
-```bash
-git clone https://github.com/tigger04/storyboard-gen.git
-cd storyboard-gen
-make install
-source .venv/bin/activate
-```
-
-### Set up a project
-
-```bash
-storyboard-gen init ~/Movies/social/my-project
-cd ~/Movies/social/my-project
-
+storyboard-gen init ~/Movies/my-project
+cd ~/Movies/my-project
 # Edit .env with your provider credentials
 # Edit project.yaml with your storyboard
-# Add reference images to references/
+
+storyboard-gen generate --all               # Generate everything
+storyboard-gen assemble                     # Assemble final video
+storyboard-gen kdenlive                     # Export Kdenlive project
 ```
 
-See [docs/project-yaml-spec.md](docs/project-yaml-spec.md) for the full `project.yaml` schema.
-
-### Generate and assemble
-
-```bash
-storyboard-gen validate                # Check project.yaml
-storyboard-gen list                    # List all scenes
-storyboard-gen generate --scene 1      # Generate one scene
-storyboard-gen generate --all          # Generate everything
-storyboard-gen assemble                # Assemble final video
-storyboard-gen kdenlive                # Export Kdenlive project for editing
-```
-
-### GUI (optional)
-
-An optional graphical interface provides visual scene management, image preview, and generation controls. Install with:
-
-```bash
-pip install storyboard-gen[gui]        # Or: make install-gui
-storyboard-gen-gui                     # Launch the GUI
-storyboard-gen-gui ~/Movies/my-proj    # Launch with a project
-```
+See [docs/quickstart.md](docs/quickstart.md) for full installation instructions (macOS, Linux, Windows), provider setup, and GUI.
 
 <img width="803" height="783" alt="image" src="https://github.com/user-attachments/assets/ad0380aa-e18b-4c7d-b064-0c734321b941" />
 
@@ -84,18 +51,14 @@ storyboard-gen-gui ~/Movies/my-proj    # Launch with a project
 ## Dependencies
 
 - Python 3.12+
-- FFmpeg (system install, must be on PATH)
-- At least one provider SDK:
-  - **Google:** `pip install storyboard-gen[google]` — requires GCP project or Gemini API key
-  - **FAL.ai:** `pip install storyboard-gen[fal]` — requires FAL_KEY
-  - **Replicate:** `pip install storyboard-gen[replicate]` — requires REPLICATE_API_TOKEN
-  - **All providers:** `pip install storyboard-gen[all]`
-  - **GUI:** `pip install storyboard-gen[gui]` — PySide6 (Qt6) graphical interface
+- FFmpeg (must be on PATH — see [quickstart](docs/quickstart.md#installing-ffmpeg) for install commands)
+- At least one provider SDK — see [docs/models.md](docs/models.md) for options
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
+| [docs/quickstart.md](docs/quickstart.md) | Installation (macOS, Linux, Windows), project setup, first run |
 | [docs/VISION.md](docs/VISION.md) | Project vision, goals, and non-goals |
 | [docs/architecture.md](docs/architecture.md) | Technical architecture and data flow |
 | [docs/models.md](docs/models.md) | AI model reference — capabilities, options, safety defaults, choosing guide |
