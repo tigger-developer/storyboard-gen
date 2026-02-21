@@ -10,15 +10,13 @@ The idea is simple: separate the creative decisions (what your video looks like)
 2. **Generate clips** — AI-rendered video from your scene prompts (Google Veo, FAL Kling)
 3. **Apply Ken Burns effects** — zoom, pan, and static effects on stills via FFmpeg
 4. **Assemble** — concatenate everything in scene order with optional audio
-5. **Export to Kdenlive** — the killer feature (see below)
+5. **Export to Kdenlive** — full editing project (see below)
 
 Multiple AI providers are supported — use one or mix and match per scene. See [docs/models.md](docs/models.md) for the full model reference.
 
 ### Kdenlive export
 
-The `kdenlive` command generates a complete Kdenlive project file from your storyboard — every scene placed on the timeline at the right duration, Ken Burns effects applied as native Kdenlive transforms, audio track included, dissolve transitions between scenes. Open the `.kdenlive` file and you have a fully editable timeline ready for fine-tuning: adjust timing, tweak Ken Burns keyframes, add titles, swap out scenes, or re-render at any resolution.
-
-This bridges the gap between AI generation and professional editing. Instead of manually importing dozens of clips and images, setting durations, and re-creating effects, `storyboard-gen kdenlive` gives you a working first cut that you can refine.
+The `kdenlive` command generates a Kdenlive project file with every scene on the timeline at the correct duration, Ken Burns effects as native Kdenlive transforms, audio included, and dissolve transitions between scenes. The resulting `.kdenlive` file opens directly in Kdenlive for editing — adjust timing, tweak keyframes, add titles, swap scenes, or re-render at any resolution.
 
 ```bash
 storyboard-gen kdenlive                 # Export with default 15-frame dissolves
