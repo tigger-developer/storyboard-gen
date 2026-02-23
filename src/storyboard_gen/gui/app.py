@@ -86,6 +86,7 @@ class MainWindow(QMainWindow):
         # Connect per-scene action buttons
         self.scene_list.generate_requested.connect(self._on_generate_scene)
         self.scene_list.archive_requested.connect(self._on_archive_scene)
+        self.scene_list.stop_requested.connect(self._on_stop)
 
     def _setup_toolbar(self) -> None:
         """Create the toolbar with generation, output, and refresh actions."""
@@ -296,6 +297,10 @@ class MainWindow(QMainWindow):
         if not scenes or not self._project:
             return
 
+        # Concurrency guard — reject if already generating
+        if self._worker and self._worker.isRunning():
+            return
+
         self._gen_total = len(scenes)
         self._gen_done = 0
         self._progress_label.setText(f"0 / {self._gen_total}")
@@ -313,6 +318,7 @@ class MainWindow(QMainWindow):
         self._worker.error.connect(self._on_gen_error)
         self._worker.all_finished.connect(self._on_gen_all_finished)
         self._update_actions_enabled()
+        self.scene_list.set_generation_state({str(s.number) for s in scenes})
         self._worker.start()
 
     def _on_scene_gen_started(self, scene: Scene) -> None:
@@ -323,12 +329,14 @@ class MainWindow(QMainWindow):
         self._progress_label.setText(
             f"{self._gen_done} / {self._gen_total} — scene {scene.number}"
         )
+        self.scene_list.set_scene_generating(str(scene.number))
 
     def _on_scene_gen_finished(self, scene: Scene) -> None:
         """Handle scene generation finished."""
         self._gen_done += 1
         self.console.append_message(f"Finished scene {scene.number}: {scene.title}")
         self._progress_label.setText(f"{self._gen_done} / {self._gen_total}")
+        self.scene_list.set_scene_finished(str(scene.number))
         self.scene_list.refresh_status()
         self._refresh_preview_if_selected(scene)
 
@@ -351,6 +359,7 @@ class MainWindow(QMainWindow):
         self._spinner.setVisible(False)
         self._worker = None
         self._update_actions_enabled()
+        self.scene_list.clear_generation_state()
         self.scene_list.refresh_status()
 
     def _on_generate_scene(self, scene: Scene) -> None:

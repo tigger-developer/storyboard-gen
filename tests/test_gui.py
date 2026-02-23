@@ -2326,3 +2326,273 @@ class TestSceneListSignals:
         item2_refreshed = widget.list_widget.item(2)
         item2_widget_refreshed = widget.list_widget.itemWidget(item2_refreshed)
         assert item2_widget_refreshed._gen_btn.text() == "Regenerate"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: SceneItemWidget generation states
+# ---------------------------------------------------------------------------
+
+
+class TestSceneItemState:
+    """Test per-scene generation state (idle, queued, generating)."""
+
+    def test_scene_item_idle_state(self, qtbot, tmp_path):
+        """Idle state: generate button enabled, spinner hidden."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        # Act
+        widget.set_state("idle")
+
+        # Assert
+        assert widget._gen_btn.isEnabled()
+        assert widget._gen_btn.text() == "Generate"
+        assert widget._spinner.isHidden()
+        assert widget._archive_btn.isEnabled() or not widget._archive_btn.isEnabled()
+
+    def test_scene_item_queued_state(self, qtbot, tmp_path):
+        """Queued state: button text 'Queued', disabled, spinner hidden."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        # Act
+        widget.set_state("queued")
+
+        # Assert
+        assert widget._gen_btn.text() == "Queued"
+        assert not widget._gen_btn.isEnabled()
+        assert widget._spinner.isHidden()
+        assert not widget._archive_btn.isEnabled()
+
+    def test_scene_item_generating_state(self, qtbot, tmp_path):
+        """Generating state: button text 'Stop', enabled, spinner visible."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        # Act
+        widget.set_state("generating")
+
+        # Assert
+        assert widget._gen_btn.text() == "Stop"
+        assert widget._gen_btn.isEnabled()
+        assert not widget._spinner.isHidden()
+        assert not widget._archive_btn.isEnabled()
+
+    def test_scene_item_stop_emits_signal(self, qtbot, tmp_path):
+        """Clicking Stop in generating state should emit stop_clicked."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        widget.set_state("generating")
+
+        received = []
+        widget.stop_clicked.connect(received.append)
+
+        # Act
+        widget._gen_btn.click()
+
+        # Assert
+        assert len(received) == 1
+        assert received[0].number == "1"
+
+    def test_scene_item_generating_to_idle(self, qtbot, tmp_path):
+        """Transitioning from generating to idle should restore button and hide spinner."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        # Arrange — go to generating state
+        widget.set_state("generating")
+        assert widget._gen_btn.text() == "Stop"
+
+        # Act — back to idle
+        widget.set_state("idle")
+
+        # Assert
+        assert widget._gen_btn.text() == "Generate"
+        assert widget._gen_btn.isEnabled()
+        assert widget._spinner.isHidden()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: SceneListWidget generation state management
+# ---------------------------------------------------------------------------
+
+
+class TestSceneListGenerationState:
+    """Test SceneListWidget generation state management methods."""
+
+    def test_set_generation_state_disables_all_buttons(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """set_generation_state should disable generate buttons on non-queued scenes."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneItemWidget, SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Act — mark scene 1 as queued
+        widget.set_generation_state({"1"})
+
+        # Assert — scene 1 should be queued, scenes 2 and 3 should have disabled gen buttons
+        item0 = widget.list_widget.itemWidget(widget.list_widget.item(0))
+        item1 = widget.list_widget.itemWidget(widget.list_widget.item(1))
+        item2 = widget.list_widget.itemWidget(widget.list_widget.item(2))
+
+        assert isinstance(item0, SceneItemWidget)
+        assert item0._gen_btn.text() == "Queued"
+        assert not item0._gen_btn.isEnabled()
+
+        assert not item1._gen_btn.isEnabled()
+        assert not item2._gen_btn.isEnabled()
+
+    def test_set_scene_generating_shows_spinner(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """set_scene_generating should show spinner on the active scene."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneItemWidget, SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Arrange — set generation state
+        widget.set_generation_state({"1", "2"})
+
+        # Act — mark scene 1 as generating
+        widget.set_scene_generating("1")
+
+        # Assert
+        item0 = widget.list_widget.itemWidget(widget.list_widget.item(0))
+        assert isinstance(item0, SceneItemWidget)
+        assert not item0._spinner.isHidden()
+        assert item0._gen_btn.text() == "Stop"
+
+    def test_clear_generation_state_restores_all(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """clear_generation_state should restore all items to idle."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneItemWidget, SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Arrange — set some state
+        widget.set_generation_state({"1", "2"})
+        widget.set_scene_generating("1")
+
+        # Act
+        widget.clear_generation_state()
+
+        # Assert — all buttons should be enabled, spinners hidden
+        for i in range(widget.list_widget.count()):
+            item_widget = widget.list_widget.itemWidget(widget.list_widget.item(i))
+            assert isinstance(item_widget, SceneItemWidget)
+            assert item_widget._gen_btn.isEnabled()
+            assert item_widget._spinner.isHidden()
+            assert item_widget._gen_btn.text() in ("Generate", "Regenerate")
+
+    def test_stop_requested_signal_relayed(self, qtbot, gui_project_dir_with_output):
+        """Clicking Stop on generating scene should relay stop_requested signal."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Arrange — set scene 1 as generating
+        widget.set_generation_state({"1"})
+        widget.set_scene_generating("1")
+
+        received = []
+        widget.stop_requested.connect(lambda: received.append(True))
+
+        # Act — click Stop on scene 1
+        item0 = widget.list_widget.itemWidget(widget.list_widget.item(0))
+        item0._gen_btn.click()
+
+        # Assert
+        assert len(received) == 1
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: MainWindow concurrency guard
+# ---------------------------------------------------------------------------
+
+
+class TestMainWindowConcurrencyGuard:
+    """Test that concurrent generation is rejected."""
+
+    def test_concurrent_generation_rejected(self, qtbot, gui_project_dir):
+        """Calling _start_generation while already generating should be rejected."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scenes = list(window._project.scenes)
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            # First call — should create worker
+            window._start_generation(scenes)
+            assert mock_cls.call_count == 1
+
+            # Second call while running — should be rejected
+            window._start_generation(scenes)
+            assert mock_cls.call_count == 1  # still 1, not 2

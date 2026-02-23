@@ -80,9 +80,10 @@ brew-upgrade: ## Upgrade local Homebrew install
 	brew update
 	brew upgrade tigger04/tap/storyboard-gen
 
-sync: ## Git sync: add, commit, pull, push
-	@read -r -p "Commit message: " msg; \
+MSG ?= $(shell hostname):$(USER)
+
+sync: ## Git sync: add, commit, pull, push. Usage: make sync [MSG="message"]
 	git add --all && \
-	git commit -m "$$msg" && \
+	git commit -m "$(MSG)" && \
 	git pull --rebase && \
 	git push
