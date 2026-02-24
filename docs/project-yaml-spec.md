@@ -1,4 +1,4 @@
-<!-- Version: 2.0 | Last updated: 2026-02-21 -->
+<!-- Version: 2.1 | Last updated: 2026-02-24 -->
 
 # project.yaml Specification
 
@@ -33,6 +33,7 @@ my-project/
 | `aspect_ratio` | string | no | `"16:9"` | Output aspect ratio |
 | `audio` | string | no | `null` | Path to audio file for assembly (relative to project dir) |
 | `style_prefix` | string | no | `""` | Visual style description prepended to every scene prompt |
+| `style_reference` | list | no | `[]` | Style reference image paths for Ideogram Character (`image_urls`) |
 | `providers` | object | no | — | AI provider configuration (defaults to Google) |
 | `characters` | object | no | `{}` | Named characters with descriptions and reference images |
 | `scenes` | list | **yes** | — | At least one scene required |
@@ -52,6 +53,20 @@ audio: "audio.m4a"
 ### `style_prefix`
 
 A detailed visual style description that gets prepended to every scene's prompt. Be specific about art style, colour palette, lighting, setting details. This is what keeps your scenes visually consistent.
+
+### `style_reference`
+
+Optional list of style/aesthetic reference image paths. These are passed to the Ideogram Character model as `image_urls` (the style channel), separate from character identity references.
+
+Only used by `fal-ai/ideogram/character`. If configured with a non-Ideogram model, storyboard-gen logs a warning and ignores the style references.
+
+```yaml
+style_reference:
+  - "references/style_ref_1.jpg"
+  - "references/style_ref_2.jpg"
+```
+
+Must be a list. A bare string value produces a `ConfigError` with migration instructions.
 
 ---
 
@@ -103,6 +118,7 @@ providers:
 | `fal-ai/flux-pro/kontext` | still | Kontext — image-to-image (with ref) or text-to-image (without) |
 | `fal-ai/flux-pro/kontext/max/multi` | still | Kontext Max Multi — multiple reference images, model infers associations |
 | `fal-ai/kling-image/o1` | still | Kling O1 Image — multi-character stills with `@ImageN` mapping |
+| `fal-ai/ideogram/character` | still | Ideogram Character — dual-channel refs (character + style) |
 | `fal-ai/kling-video/v2.1/pro/text-to-video` | clip | Kling v2.1 Pro — text-to-video |
 | `fal-ai/kling-video/v2.1/pro/image-to-video` | clip | Kling v2.1 Pro — image-to-video (with source_frame) |
 | `fal-ai/kling-video/v3/standard/image-to-video` | clip | Kling v3 Standard — image-to-video |

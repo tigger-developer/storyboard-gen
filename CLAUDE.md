@@ -190,6 +190,7 @@ GCS_OUTPUT_BUCKET=gs://your-bucket-name/
 - FAL Kontext: `fal-ai/flux-pro/kontext` (image-to-image with ref, text-to-image without)
 - FAL Kontext Multi: `fal-ai/flux-pro/kontext/max/multi` (multi-ref stills, model infers associations)
 - FAL O1 Image: `fal-ai/kling-image/o1` (multi-ref stills with `@ImageN` mapping)
+- FAL Ideogram Character: `fal-ai/ideogram/character` (dual-channel: character + style refs)
 - Replicate Flux: `black-forest-labs/flux-1.1-pro`, `black-forest-labs/flux-dev`
 
 Safety defaults are injected automatically (overridable via user `options`):

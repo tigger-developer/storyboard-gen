@@ -18,6 +18,53 @@ from storyboard_gen.providers.google import (
 logger = logging.getLogger(__name__)
 
 
+def check_reference_warnings(
+    scene: Scene, project: Project, provider_cfg: ProviderConfig
+) -> list[str]:
+    """Check for reference image/model mismatches and log warnings.
+
+    Returns a list of warning strings for display in CLI and GUI.
+    This function is safe to call from dry-run (no side effects).
+
+    Warnings:
+        - Style references configured but model is not Ideogram Character
+        - Character references configured but model is Flux 2 (ignores refs)
+    """
+    warnings: list[str] = []
+    model_lower = provider_cfg.model.lower()
+    is_ideogram_char = "ideogram" in model_lower and "character" in model_lower
+    is_flux2 = "flux-2" in model_lower
+
+    # Warn: style references on non-Ideogram Character models
+    if project.style_reference and not is_ideogram_char:
+        msg = (
+            f"Scene {scene.number}: style reference images configured but "
+            f"model '{provider_cfg.model}' does not support them "
+            f"(only fal-ai/ideogram/character does). "
+            f"Style references will be ignored."
+        )
+        logger.warning(msg)
+        warnings.append(msg)
+
+    # Warn: character references on Flux 2 models (which ignore them)
+    if is_flux2:
+        has_char_refs = any(
+            project.characters.get(cid) and project.characters[cid].reference
+            for cid in scene.characters
+        )
+        has_scene_refs = bool(scene.reference)
+        if has_char_refs or has_scene_refs:
+            msg = (
+                f"Scene {scene.number}: reference images configured but "
+                f"Flux 2 model '{provider_cfg.model}' does not support "
+                f"reference images. References will be ignored."
+            )
+            logger.warning(msg)
+            warnings.append(msg)
+
+    return warnings
+
+
 def resolve_provider_config(
     scene: Scene, project: Project, scene_type: str
 ) -> ProviderConfig:
@@ -173,6 +220,8 @@ def generate_still(
         project.characters[cid] for cid in scene.characters if cid in project.characters
     ]
 
+    style_refs = [r for r in project.style_reference if r.exists()] or None
+
     image_bytes = provider.generate_still(
         prompt=full_prompt,
         output_path=output_path,
@@ -181,6 +230,7 @@ def generate_still(
         options=provider.options,
         scene_characters=scene_characters or None,
         project_dir=project_dir,
+        style_reference_images=style_refs,
     )
 
     # Post-process: ensure aspect ratio is correct

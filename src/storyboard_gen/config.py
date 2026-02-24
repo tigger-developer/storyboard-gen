@@ -72,6 +72,7 @@ def _parse_project(data: dict, project_dir: Path) -> Project:
     if audio_str:
         audio_path = project_dir / audio_str
 
+    style_reference = _parse_style_reference(data.get("style_reference"), project_dir)
     still_provider, clip_provider = _parse_providers(data.get("providers", {}))
 
     characters = _parse_characters(data.get("characters", {}), project_dir)
@@ -83,10 +84,38 @@ def _parse_project(data: dict, project_dir: Path) -> Project:
         style_prefix=style_prefix,
         characters=characters,
         scenes=scenes,
+        style_reference=style_reference,
         still_provider=still_provider,
         clip_provider=clip_provider,
         audio=audio_path,
     )
+
+
+def _parse_style_reference(raw, project_dir: Path) -> list[Path]:
+    """Parse the top-level style_reference field.
+
+    Args:
+        raw: Raw value from YAML (None, list, or invalid).
+        project_dir: Project directory for resolving relative paths.
+
+    Returns:
+        List of resolved Path objects (may be empty).
+
+    Raises:
+        ConfigError: If the value is not a list.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        raise ConfigError(
+            "'style_reference' must be a list. "
+            f'Change:\n  style_reference: "{raw}"\n'
+            f"to:\n  style_reference:\n"
+            f'    - "{raw}"'
+        )
+    if not isinstance(raw, list):
+        raise ConfigError("'style_reference' must be a list")
+    return [project_dir / r for r in raw]
 
 
 def _parse_provider_config(raw: dict, context: str) -> ProviderConfig:

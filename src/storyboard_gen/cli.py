@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from storyboard_gen import __version__
 from storyboard_gen.config import ConfigError, load_project
 from storyboard_gen.generate import (
+    check_reference_warnings,
     generate_clip,
     generate_still,
     resolve_provider_config,
@@ -327,6 +328,10 @@ def _cmd_generate(args: argparse.Namespace) -> int:
             print(f"Generating {len(clips)} clips...")
 
     for scene in scenes:
+        # Show reference/model mismatch warnings (#62)
+        provider_cfg = resolve_provider_config(scene, project, scene.scene_type)
+        check_reference_warnings(scene, project, provider_cfg)
+
         if scene.scene_type == "still":
             generate_still(scene, project, output_dir, project_dir=project_dir)
         else:
@@ -360,8 +365,18 @@ def _dry_run(project, scenes) -> int:
             for ref in refs:
                 status = "ok" if ref.exists() else "MISSING"
                 print(f"    [{status}] {ref}")
+        if project.style_reference:
+            print("  Style references:")
+            for ref in project.style_reference:
+                status = "ok" if ref.exists() else "MISSING"
+                print(f"    [{status}] {ref}")
         print("  Prompt:")
         print(f"    {prompt}")
+
+        # Show reference/model mismatch warnings (#62)
+        warns = check_reference_warnings(scene, project, provider_cfg)
+        for w in warns:
+            print(f"  WARNING: {w}")
 
     return 0
 
@@ -461,6 +476,8 @@ TOP-LEVEL FIELDS
   audio           (string)            Audio file path, relative to project dir.
                                       Muxed into assembled video.
   style_prefix    (string)            Visual style prepended to every prompt.
+  style_reference (list)              Style reference image paths for Ideogram Character.
+                                      Only used by fal-ai/ideogram/character.
   providers       (object)            AI provider config (see below).
   characters      (object)            Named characters (see below).
   scenes          (list, required)    Scene definitions (see below).
@@ -477,6 +494,7 @@ PROVIDERS
   Google models:    imagen-4.0-generate-001 (still), veo-3.1-fast-generate-001 (clip)
   FAL.ai stills:    fal-ai/flux-general, fal-ai/flux-2, fal-ai/flux-2/turbo, fal-ai/flux-pro/kontext
                     fal-ai/flux-pro/kontext/max/multi (multi-ref), fal-ai/kling-image/o1 (multi-ref)
+                    fal-ai/ideogram/character (style + character refs)
   FAL.ai clips:     fal-ai/kling-video/*
   Replicate models: black-forest-labs/flux-1.1-pro, black-forest-labs/flux-dev
 
@@ -538,6 +556,12 @@ aspect_ratio: "9:16"
 #     backend: google
 #     model: "veo-3.1-fast-generate-001"
 #     options: {}
+
+# Optional: style reference images for Ideogram Character model
+# These are passed as aesthetic/style references (image_urls), separate
+# from character references. Only used by fal-ai/ideogram/character.
+# style_reference:
+#   - "references/style_ref.jpg"
 
 style_prefix: >
   Describe your visual style here. Be specific: art style, colour
@@ -639,9 +663,25 @@ scenes:
   #   prompt: >
   #     Two characters standing together in a field at sunset.
 
+  # Ideogram Character with separate style + character references:
+  # Character refs → reference_image_urls (identity).
+  # Style refs → image_urls (aesthetic). Requires style_reference at top level.
+  # - number: 6
+  #   title: "Portrait (Ideogram Character)"
+  #   camera: "CLOSE"
+  #   type: still
+  #   duration: 5
+  #   ken_burns: "static"
+  #   characters: [character_one]
+  #   provider:
+  #     backend: fal
+  #     model: "fal-ai/ideogram/character"
+  #   prompt: >
+  #     A portrait of character_one in a warm studio setting.
+
   # Multi-character clip with Kling O3 (video):
   # Uses @character_id tokens mapped to @ElementN references.
-  # - number: 6
+  # - number: 7
   #   title: "Chase sequence (O3)"
   #   camera: "MEDIUM"
   #   type: clip

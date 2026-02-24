@@ -1,4 +1,4 @@
-<!-- Version: 1.3 | Last updated: 2026-02-21 -->
+<!-- Version: 1.4 | Last updated: 2026-02-24 -->
 
 # Model Reference
 
@@ -127,6 +127,23 @@ Kontext Multi uses `aspect_ratio` directly (raw ratio strings). The model infers
 
 **Options:** `seed` (int), `safety_tolerance` (string, "1"–"6"), `guidance_scale` (float), `enhance_prompt` (bool).
 
+### Ideogram Character (stills)
+
+| Model ID | Name | Reference support | Notes |
+|----------|------|-------------------|-------|
+| `fal-ai/ideogram/character` | Ideogram Character | Yes (dual-channel) | Separate character refs (`reference_image_urls`) and style refs (`image_urls`). |
+
+Ideogram Character uses `image_size` presets (same mapping as Flux: `portrait_16_9`, etc.). It has two independent reference channels:
+
+- **`reference_image_urls`**: Character identity references — sourced from scene `characters` with `reference` images.
+- **`image_urls`**: Style/aesthetic references — sourced from the top-level `style_reference` field in `project.yaml`.
+
+The model defaults to `style: "AUTO"` (overridable via `options.style`). No safety toggle is available.
+
+**Options:** `style` (string, e.g. `"AUTO"`, `"GENERAL"`, `"REALISTIC"`, `"DESIGN"`), `seed` (int).
+
+**Note:** If you configure `style_reference` but use a non-Ideogram model, storyboard-gen logs a warning and ignores the style references (see [reference warnings](#reference-image-warnings)).
+
 ### Kling (clips)
 
 | Model ID | Name | Notes |
@@ -193,6 +210,7 @@ storyboard-gen injects safety defaults before merging user options, so user `opt
 | Flux 1.x / Flux 2 | `enable_safety_checker: false` | `options.enable_safety_checker` |
 | Kontext / Kontext Multi | `safety_tolerance: "6"` | `options.safety_tolerance` |
 | Kling O1 Image | `enable_safety_checker: false` | `options.enable_safety_checker` |
+| Ideogram Character | No toggle | — |
 | Kling clips | No default | — |
 
 ### Authentication
@@ -228,6 +246,17 @@ REPLICATE_API_TOKEN=your-replicate-token
 
 ---
 
+## Reference image warnings
+
+storyboard-gen checks for reference/model mismatches and logs warnings. These warnings appear during both `--dry-run` and real generation:
+
+| Condition | Warning |
+|-----------|---------|
+| `style_reference` configured but model is not Ideogram Character | Style references will be ignored |
+| Character or scene references configured but model is Flux 2 | References will be ignored |
+
+---
+
 ## Choosing a model
 
 ### For stills
@@ -239,6 +268,7 @@ REPLICATE_API_TOKEN=your-replicate-token
 | Multi-character consistency | `fal-ai/kling-image/o1` (FAL) | `@ImageN` mapping + `elements[]` |
 | Multi-ref, implicit mapping | `fal-ai/flux-pro/kontext/max/multi` (FAL) | Model infers associations |
 | Style transfer from a reference | `fal-ai/flux-pro/kontext` (FAL) | Purpose-built for image-to-image |
+| Character + style refs | `fal-ai/ideogram/character` (FAL) | Dual-channel: identity + aesthetic |
 | Fast iteration | `fal-ai/flux-2/turbo` (FAL) | Fastest generation time |
 | No API key setup | `black-forest-labs/flux-dev` (Replicate) | Simple token-based auth |
 
@@ -254,14 +284,15 @@ REPLICATE_API_TOKEN=your-replicate-token
 
 ## Provider comparison
 
-| Feature | Google | FAL (Flux 1.x) | FAL (Flux 2) | FAL (Kontext) | FAL (Kontext Multi) | FAL (O1 Image) | FAL (Kling clips) | Replicate |
-|---------|--------|-----------------|--------------|---------------|---------------------|----------------|-------------------|-----------|
-| Stills | Yes | Yes | Yes | Yes | Yes | Yes | No | Yes |
-| Clips | Yes (Veo) | No | No | No | No | No | Yes | No |
-| Reference images | Yes (up to 3) | Yes (1) | **No** | Yes (1, i2i) | Yes (multi) | Yes (multi, `@ImageN`) | N/A | Yes (1) |
-| Safety toggle | No | Yes | Yes | Yes | Yes | Yes | No | Yes |
-| Character elements | No | No | No | No | No | Yes (`elements[]`) | Yes (O3) | No |
-| Auth method | GCP / API key | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | Token |
+| Feature | Google | FAL (Flux 1.x) | FAL (Flux 2) | FAL (Kontext) | FAL (Kontext Multi) | FAL (O1 Image) | FAL (Ideogram Char) | FAL (Kling clips) | Replicate |
+|---------|--------|-----------------|--------------|---------------|---------------------|----------------|---------------------|-------------------|-----------|
+| Stills | Yes | Yes | Yes | Yes | Yes | Yes | Yes | No | Yes |
+| Clips | Yes (Veo) | No | No | No | No | No | No | Yes | No |
+| Reference images | Yes (up to 3) | Yes (1) | **No** | Yes (1, i2i) | Yes (multi) | Yes (multi, `@ImageN`) | Yes (dual-channel) | N/A | Yes (1) |
+| Style references | No | No | No | No | No | No | Yes (`image_urls`) | No | No |
+| Safety toggle | No | Yes | Yes | Yes | Yes | Yes | No | No | Yes |
+| Character elements | No | No | No | No | No | Yes (`elements[]`) | No | Yes (O3) | No |
+| Auth method | GCP / API key | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | Token |
 
 ---
 

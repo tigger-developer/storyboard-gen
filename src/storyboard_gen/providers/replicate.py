@@ -31,6 +31,7 @@ class ReplicateProvider(ImageProvider):
         *,
         scene_characters: list | None = None,
         project_dir: Path | None = None,
+        style_reference_images: list[Path] | None = None,
     ) -> bytes:
         """Generate a still image via Replicate Flux models.
 

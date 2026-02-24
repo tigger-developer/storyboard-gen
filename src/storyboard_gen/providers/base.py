@@ -19,6 +19,7 @@ class ImageProvider(ABC):
         *,
         scene_characters: list | None = None,
         project_dir: Path | None = None,
+        style_reference_images: list[Path] | None = None,
     ) -> bytes:
         """Generate a still image from a prompt.
 
@@ -30,6 +31,7 @@ class ImageProvider(ABC):
             options: Provider-specific options from project.yaml.
             scene_characters: Ordered list of Character objects for this scene.
             project_dir: Project root directory for caching.
+            style_reference_images: Optional list of style reference image paths.
 
         Returns:
             Raw image bytes (PNG).

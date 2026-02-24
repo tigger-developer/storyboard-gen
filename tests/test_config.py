@@ -952,6 +952,75 @@ class TestProjectAudio:
         assert project.audio is None
 
 
+class TestStyleReference:
+    def test_load_project_with_style_reference(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Style Ref",
+            "style_reference": ["references/style.jpg"],
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert — path resolved relative to project_dir
+        assert project.style_reference == [tmp_path / "references" / "style.jpg"]
+
+    def test_load_project_without_style_reference_defaults_to_empty(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "No Style Ref",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.style_reference == []
+
+    def test_load_project_with_multiple_style_references(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Multi Style Ref",
+            "style_reference": ["refs/style1.jpg", "refs/style2.png"],
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert len(project.style_reference) == 2
+        assert project.style_reference[0] == tmp_path / "refs" / "style1.jpg"
+        assert project.style_reference[1] == tmp_path / "refs" / "style2.png"
+
+    def test_load_project_with_string_style_reference_raises(self, tmp_path):
+        # Arrange — string instead of list
+        data = {
+            "title": "Bad Style Ref",
+            "style_reference": "references/style.jpg",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act & Assert
+        with pytest.raises(ConfigError, match="style_reference.*must be a list"):
+            load_project(tmp_path)
+
+
 class TestGetEnvConfig:
     def test_get_env_config_reads_dotenv_from_cwd(self, tmp_path, monkeypatch):
         # Arrange: create .env in a temp dir and chdir to it

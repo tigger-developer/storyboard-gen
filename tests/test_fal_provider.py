@@ -2075,6 +2075,221 @@ class TestKontextMultiArgBuilding:
         assert call_args.args[0] == "fal-ai/flux-pro/kontext/max/multi"
 
 
+class TestIdeogramCharacterDetection:
+    """Tests for Ideogram Character model detection (#61)."""
+
+    def test_is_ideogram_character_positive(self):
+        """fal-ai/ideogram/character should be detected."""
+        provider = FalProvider(model="fal-ai/ideogram/character")
+        assert provider._is_ideogram_character is True
+
+    def test_is_ideogram_character_edit(self):
+        """fal-ai/ideogram/character/edit should be detected."""
+        provider = FalProvider(model="fal-ai/ideogram/character/edit")
+        assert provider._is_ideogram_character is True
+
+    def test_is_ideogram_character_remix(self):
+        """fal-ai/ideogram/character/remix should be detected."""
+        provider = FalProvider(model="fal-ai/ideogram/character/remix")
+        assert provider._is_ideogram_character is True
+
+    def test_is_ideogram_character_case_insensitive(self):
+        """Detection should be case-insensitive."""
+        provider = FalProvider(model="fal-ai/Ideogram/Character")
+        assert provider._is_ideogram_character is True
+
+    def test_is_ideogram_character_negative_flux(self):
+        """Flux models are not Ideogram Character."""
+        provider = FalProvider(model="fal-ai/flux-general")
+        assert provider._is_ideogram_character is False
+
+    def test_is_ideogram_character_negative_kontext(self):
+        """Kontext models are not Ideogram Character."""
+        provider = FalProvider(model="fal-ai/flux-pro/kontext")
+        assert provider._is_ideogram_character is False
+
+
+class TestIdeogramCharacterStill:
+    """Tests for Ideogram Character still generation (#61)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_ideogram_char_uses_reference_image_urls_for_characters(
+        self, mock_fal, tmp_path
+    ):
+        """Character refs → reference_image_urls."""
+        # Arrange
+        ref = tmp_path / "boy.jpg"
+        ref.write_bytes(b"boy-image")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/boy.png"
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+
+        chars = [Character(id="boy", description="A boy", reference=[ref])]
+        provider = FalProvider(model="fal-ai/ideogram/character")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy standing",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["reference_image_urls"] == ["https://fal.media/files/boy.png"]
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_ideogram_char_uses_image_urls_for_style_refs(self, mock_fal, tmp_path):
+        """Style refs → image_urls (only first used)."""
+        # Arrange
+        style_ref = tmp_path / "style.jpg"
+        style_ref.write_bytes(b"style-image")
+
+        mock_fal.upload_file.return_value = "https://fal.media/files/style.png"
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+
+        provider = FalProvider(model="fal-ai/ideogram/character")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A scene",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                style_reference_images=[style_ref],
+            )
+
+        # Assert — style refs passed as image_urls
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_urls"] == ["https://fal.media/files/style.png"]
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_ideogram_char_uses_image_size_preset(self, mock_fal, tmp_path):
+        """Ideogram Character should use image_size preset, not raw aspect_ratio."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+
+        provider = FalProvider(model="fal-ai/ideogram/character")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A portrait",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert — image_size used, not aspect_ratio
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_size"] == "portrait_16_9"
+        assert "aspect_ratio" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_ideogram_char_defaults_style_auto(self, mock_fal, tmp_path):
+        """Ideogram Character should default style to AUTO."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+
+        provider = FalProvider(model="fal-ai/ideogram/character")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A portrait",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["style"] == "AUTO"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_ideogram_char_style_overridable_via_options(self, mock_fal, tmp_path):
+        """User can override style via options."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+
+        provider = FalProvider(
+            model="fal-ai/ideogram/character",
+            options={"style": "REALISTIC"},
+        )
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A portrait",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert — user option overrides default
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["style"] == "REALISTIC"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_ideogram_char_with_both_char_and_style_refs(self, mock_fal, tmp_path):
+        """Both character and style refs should be passed to separate params."""
+        # Arrange
+        char_ref = tmp_path / "boy.jpg"
+        style_ref = tmp_path / "style.jpg"
+        char_ref.write_bytes(b"boy-image")
+        style_ref.write_bytes(b"style-image")
+
+        upload_urls = iter(
+            [
+                "https://fal.media/files/boy.png",
+                "https://fal.media/files/style.png",
+            ]
+        )
+        mock_fal.upload_file.side_effect = lambda _: next(upload_urls)
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+
+        chars = [Character(id="boy", description="A boy", reference=[char_ref])]
+        provider = FalProvider(model="fal-ai/ideogram/character")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy in a stylized scene",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+                style_reference_images=[style_ref],
+            )
+
+        # Assert — character refs and style refs in separate params
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["reference_image_urls"] == ["https://fal.media/files/boy.png"]
+        assert arguments["image_urls"] == ["https://fal.media/files/style.png"]
+
+
 class TestO1ImageSafetyDefaults:
     """Tests for O1 Image safety defaults (#46)."""
 

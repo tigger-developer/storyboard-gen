@@ -81,6 +81,12 @@ class FalProvider(ImageProvider):
         lower = self.model.lower()
         return "kontext" in lower and "multi" in lower
 
+    @property
+    def _is_ideogram_character(self) -> bool:
+        """Detect whether this provider is configured for an Ideogram Character model."""
+        lower = self.model.lower()
+        return "ideogram" in lower and "character" in lower
+
     def _upload_reference(self, reference_images: list[Path] | None) -> str | None:
         """Upload the first valid reference image to FAL CDN.
 
@@ -261,6 +267,57 @@ class FalProvider(ImageProvider):
 
         return self.model, arguments
 
+    def _build_ideogram_character_args(
+        self,
+        prompt: str,
+        aspect_ratio: str,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        cdn_cache: dict[str, str],
+    ) -> tuple[str, dict]:
+        """Build arguments for Ideogram Character models.
+
+        Ideogram Character has two separate reference channels:
+        - reference_image_urls: character identity (from scene_characters)
+        - image_urls: style/aesthetic reference (from style_reference_images)
+
+        Args:
+            prompt: Full prompt text.
+            aspect_ratio: Raw "W:H" string.
+            scene_characters: Ordered list of Character objects.
+            style_reference_images: List of style reference image paths.
+            cdn_cache: Mutable CDN cache dict.
+
+        Returns:
+            Tuple of (endpoint, arguments dict).
+        """
+        image_size = _map_aspect_ratio(aspect_ratio)
+        arguments: dict = {
+            "prompt": prompt,
+            "image_size": image_size,
+            "num_images": 1,
+            "output_format": "png",
+            "style": "AUTO",
+        }
+
+        # Character refs → reference_image_urls
+        if scene_characters:
+            char_refs: list[Path] = []
+            for char in scene_characters:
+                char_refs.extend(r for r in char.reference if r.exists())
+            if char_refs:
+                char_urls = self._upload_all_references(char_refs, cdn_cache)
+                arguments["reference_image_urls"] = char_urls
+
+        # Style refs → image_urls (all existing)
+        if style_reference_images:
+            existing_style = [r for r in style_reference_images if r.exists()]
+            if existing_style:
+                style_urls = self._upload_all_references(existing_style, cdn_cache)
+                arguments["image_urls"] = style_urls
+
+        return self.model, arguments
+
     def generate_still(
         self,
         prompt: str,
@@ -271,6 +328,7 @@ class FalProvider(ImageProvider):
         *,
         scene_characters: list | None = None,
         project_dir: Path | None = None,
+        style_reference_images: list[Path] | None = None,
     ) -> bytes:
         """Generate a still image via FAL Flux or Kontext models.
 
@@ -297,8 +355,20 @@ class FalProvider(ImageProvider):
                 "fal-client is not installed. Run: pip install fal-client"
             )
 
+        # Ideogram Character: separate character + style reference channels
+        if self._is_ideogram_character:
+            cdn_cache = self._load_cdn_cache(project_dir)
+            endpoint, arguments = self._build_ideogram_character_args(
+                prompt,
+                aspect_ratio,
+                scene_characters,
+                style_reference_images,
+                cdn_cache,
+            )
+            self._save_cdn_cache(project_dir, cdn_cache)
+
         # O1 Image and Kontext Multi: multi-ref models with CDN caching
-        if (self._is_o1_image or self._is_kontext_multi) and scene_characters:
+        elif (self._is_o1_image or self._is_kontext_multi) and scene_characters:
             cdn_cache = self._load_cdn_cache(project_dir)
 
             # Rewrite @character_id tokens in prompt
@@ -346,7 +416,10 @@ class FalProvider(ImageProvider):
                 )
 
         # Inject safety defaults (overridable by user options)
-        if self._is_kontext:
+        # Ideogram Character has no safety toggle
+        if self._is_ideogram_character:
+            pass
+        elif self._is_kontext:
             arguments["safety_tolerance"] = "6"
         else:
             arguments["enable_safety_checker"] = False

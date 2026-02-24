@@ -91,6 +91,7 @@ class Project:
     style_prefix: str
     characters: dict[str, Character]
     scenes: list[Scene]
+    style_reference: list[Path] = field(default_factory=list)
     still_provider: ProviderConfig | None = None
     clip_provider: ProviderConfig | None = None
     audio: Path | None = None

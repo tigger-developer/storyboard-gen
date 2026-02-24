@@ -9,6 +9,7 @@ from PIL import Image as PILImage
 
 from storyboard_gen.generate import (
     _resolve_provider,
+    check_reference_warnings,
     crop_to_aspect_ratio,
     generate_clip,
     generate_still,
@@ -759,3 +760,229 @@ class TestVariantFileNaming:
         archived_bare = list(archive_dir.glob("scene_01_*.mp4"))
         # At least one archived bare file (the one without _v suffix)
         assert any("_v" not in f.stem.split("scene_01_", 1)[1] for f in archived_bare)
+
+
+class TestCheckReferenceWarnings:
+    """Tests for check_reference_warnings() (#62)."""
+
+    def test_warns_style_ref_on_non_ideogram_model(self, caplog):
+        """Style references should warn when model is not Ideogram Character."""
+        import logging
+        from pathlib import Path
+
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="still",
+                    prompt="x",
+                    duration=5,
+                ),
+            ],
+            style_reference=[Path("refs/style.jpg")],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="fal", model="fal-ai/flux-general")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_reference_warnings(scene, project, provider_cfg)
+
+        assert any("style reference" in w.lower() for w in warnings)
+        assert any("style reference" in r.message.lower() for r in caplog.records)
+
+    def test_no_warn_style_ref_on_ideogram_character(self, caplog):
+        """Style references should NOT warn on Ideogram Character model."""
+        import logging
+        from pathlib import Path
+
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="still",
+                    prompt="x",
+                    duration=5,
+                ),
+            ],
+            style_reference=[Path("refs/style.jpg")],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="fal", model="fal-ai/ideogram/character")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_reference_warnings(scene, project, provider_cfg)
+
+        assert not any("style reference" in w.lower() for w in warnings)
+
+    def test_warns_char_refs_on_flux2(self, caplog):
+        """Character references should warn when model is Flux 2."""
+        import logging
+        from pathlib import Path
+
+        chars = {
+            "hero": Character(
+                id="hero",
+                description="A hero",
+                reference=[Path("refs/hero.png")],
+            ),
+        }
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters=chars,
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="still",
+                    prompt="x",
+                    duration=5,
+                    characters=["hero"],
+                ),
+            ],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="fal", model="fal-ai/flux-2/turbo")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_reference_warnings(scene, project, provider_cfg)
+
+        assert any("reference" in w.lower() and "flux 2" in w.lower() for w in warnings)
+
+    def test_no_warn_char_refs_on_flux_general(self, caplog):
+        """Character references on Flux general should NOT warn."""
+        import logging
+        from pathlib import Path
+
+        chars = {
+            "hero": Character(
+                id="hero",
+                description="A hero",
+                reference=[Path("refs/hero.png")],
+            ),
+        }
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters=chars,
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="still",
+                    prompt="x",
+                    duration=5,
+                    characters=["hero"],
+                ),
+            ],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="fal", model="fal-ai/flux-general")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_reference_warnings(scene, project, provider_cfg)
+
+        assert len(warnings) == 0
+
+    def test_no_warnings_when_no_references(self, caplog):
+        """No warnings when no references are configured."""
+        import logging
+
+        project = _make_project()
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="fal", model="fal-ai/flux-2/turbo")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_reference_warnings(scene, project, provider_cfg)
+
+        assert len(warnings) == 0
+
+    def test_warns_style_ref_on_google(self, caplog):
+        """Style references should warn on Google provider."""
+        import logging
+        from pathlib import Path
+
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="still",
+                    prompt="x",
+                    duration=5,
+                ),
+            ],
+            style_reference=[Path("refs/style.jpg")],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="google", model="imagen-4.0-generate-001")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_reference_warnings(scene, project, provider_cfg)
+
+        assert any("style reference" in w.lower() for w in warnings)
+
+
+class TestStyleReferencePassthrough:
+    """Tests for passing style_reference images to providers (#61)."""
+
+    def test_generate_still_passes_style_references(self, tmp_path):
+        """generate_still should pass style_reference_images to the provider."""
+        style_ref = tmp_path / "refs" / "style.jpg"
+        style_ref.parent.mkdir(parents=True, exist_ok=True)
+        style_ref.write_bytes(b"fake-style-image")
+
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="still",
+                    prompt="A scene.",
+                    duration=5,
+                ),
+            ],
+            style_reference=[style_ref],
+        )
+        scene = project.scenes[0]
+        provider = _make_mock_provider()
+
+        # Act
+        generate_still(scene, project, tmp_path / "output", provider=provider)
+
+        # Assert — style_reference_images passed to provider
+        call_kwargs = provider.generate_still.call_args.kwargs
+        assert call_kwargs.get("style_reference_images") == [style_ref]
+
+    def test_generate_still_passes_none_when_no_style_references(self, tmp_path):
+        """No style references → style_reference_images is None."""
+        project = _make_project()
+        scene = project.scenes[0]
+        provider = _make_mock_provider()
+
+        # Act
+        generate_still(scene, project, tmp_path, provider=provider)
+
+        # Assert
+        call_kwargs = provider.generate_still.call_args.kwargs
+        assert not call_kwargs.get("style_reference_images")
