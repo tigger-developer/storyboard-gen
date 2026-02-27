@@ -220,11 +220,6 @@ class FalProvider(ImageProvider):
         if image_urls:
             arguments["image_urls"] = image_urls
 
-        # Build elements for characters with multiple references
-        elements = self._build_elements(scene_characters, cdn_cache)
-        if elements:
-            arguments["elements"] = elements
-
         return self.model, arguments
 
     def _build_kontext_multi_args(

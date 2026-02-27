@@ -1785,8 +1785,8 @@ class TestO1ImageArgBuilding:
         ]
 
     @patch("storyboard_gen.providers.fal.fal_client")
-    def test_o1_image_builds_elements(self, mock_fal, tmp_path):
-        """O1 Image with multiple refs per char should build elements array."""
+    def test_o1_image_does_not_send_elements(self, mock_fal, tmp_path):
+        """O1 Image uses image_urls + @ImageN, not elements (#63)."""
         # Arrange
         ref_front = tmp_path / "boy_front.jpg"
         ref_side = tmp_path / "boy_side.jpg"
@@ -1824,14 +1824,13 @@ class TestO1ImageArgBuilding:
                 scene_characters=chars,
             )
 
-        # Assert — elements with frontal + reference_image_urls
+        # Assert — image_urls has all refs, no elements sent
         arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
-        elements = arguments["elements"]
-        assert len(elements) == 1
-        assert elements[0]["frontal_image_url"] == "https://fal.media/files/front.png"
-        assert elements[0]["reference_image_urls"] == [
-            "https://fal.media/files/side.png"
+        assert arguments["image_urls"] == [
+            "https://fal.media/files/front.png",
+            "https://fal.media/files/side.png",
         ]
+        assert "elements" not in arguments
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_o1_image_uses_raw_aspect_ratio(self, mock_fal, tmp_path):
@@ -2291,7 +2290,10 @@ class TestIdeogramCharacterStill:
 
 
 class TestElementsSingleRef:
-    """Tests for elements with single-reference characters (#63)."""
+    """Tests for elements with single-reference characters (#63).
+
+    Elements are used by O3 clips (not O1 Image stills).
+    """
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_single_ref_element_has_empty_reference_image_urls(
@@ -2303,21 +2305,21 @@ class TestElementsSingleRef:
         ref.write_bytes(b"boy-image")
         mock_fal.upload_file.return_value = "https://fal.media/files/boy.png"
         mock_fal.subscribe.return_value = {
-            "images": [{"url": "https://fal.media/files/out.png"}],
+            "video": {"url": "https://fal.media/files/video.mp4"},
         }
         chars = [Character(id="boy", description="A boy", reference=[ref])]
-        provider = FalProvider(model="fal-ai/kling-image/o1")
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
 
         with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
-            mock_dl.return_value = b"png-bytes"
+            mock_dl.return_value = b"video-bytes"
 
             # Act
-            provider.generate_still(
+            provider.generate_clip(
                 prompt="@boy on a chair",
-                output_path=tmp_path / "scene_01.png",
-                aspect_ratio="1:1",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
                 scene_characters=chars,
-                project_dir=tmp_path,
             )
 
         # Assert — reference_image_urls must be [] not absent/None
@@ -2341,21 +2343,21 @@ class TestElementsSingleRef:
             "https://fal.media/files/side.png",
         ]
         mock_fal.subscribe.return_value = {
-            "images": [{"url": "https://fal.media/files/out.png"}],
+            "video": {"url": "https://fal.media/files/video.mp4"},
         }
         chars = [Character(id="boy", description="A boy", reference=[ref1, ref2])]
-        provider = FalProvider(model="fal-ai/kling-image/o1")
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
 
         with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
-            mock_dl.return_value = b"png-bytes"
+            mock_dl.return_value = b"video-bytes"
 
             # Act
-            provider.generate_still(
+            provider.generate_clip(
                 prompt="@boy on a chair",
-                output_path=tmp_path / "scene_01.png",
-                aspect_ratio="1:1",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
                 scene_characters=chars,
-                project_dir=tmp_path,
             )
 
         # Assert
