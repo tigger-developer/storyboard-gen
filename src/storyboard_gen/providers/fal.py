@@ -619,13 +619,13 @@ class FalProvider(ImageProvider):
                 continue
 
             frontal_url = self._upload_with_cache(existing_refs[0], cdn_cache)
-            element: dict = {"frontal_image_url": frontal_url}
-
-            if len(existing_refs) > 1:
-                extra_urls = [
-                    self._upload_with_cache(r, cdn_cache) for r in existing_refs[1:]
-                ]
-                element["reference_image_urls"] = extra_urls
+            extra_urls = [
+                self._upload_with_cache(r, cdn_cache) for r in existing_refs[1:]
+            ]
+            element: dict = {
+                "frontal_image_url": frontal_url,
+                "reference_image_urls": extra_urls,
+            }
 
             elements.append(element)
         return elements

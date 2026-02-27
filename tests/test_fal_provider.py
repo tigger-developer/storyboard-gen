@@ -2290,6 +2290,83 @@ class TestIdeogramCharacterStill:
         assert arguments["image_urls"] == ["https://fal.media/files/style.png"]
 
 
+class TestElementsSingleRef:
+    """Tests for elements with single-reference characters (#63)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_single_ref_element_has_empty_reference_image_urls(
+        self, mock_fal, tmp_path
+    ):
+        """Character with 1 ref should have reference_image_urls: [] not omitted."""
+        # Arrange
+        ref = tmp_path / "boy.jpg"
+        ref.write_bytes(b"boy-image")
+        mock_fal.upload_file.return_value = "https://fal.media/files/boy.png"
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        chars = [Character(id="boy", description="A boy", reference=[ref])]
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="@boy on a chair",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="1:1",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert — reference_image_urls must be [] not absent/None
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        elements = arguments["elements"]
+        assert len(elements) == 1
+        assert elements[0]["reference_image_urls"] == []
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_multi_ref_element_has_populated_reference_image_urls(
+        self, mock_fal, tmp_path
+    ):
+        """Character with 2+ refs should have reference_image_urls populated."""
+        # Arrange
+        ref1 = tmp_path / "boy_front.jpg"
+        ref2 = tmp_path / "boy_side.jpg"
+        ref1.write_bytes(b"front-image")
+        ref2.write_bytes(b"side-image")
+        mock_fal.upload_file.side_effect = [
+            "https://fal.media/files/front.png",
+            "https://fal.media/files/side.png",
+        ]
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        chars = [Character(id="boy", description="A boy", reference=[ref1, ref2])]
+        provider = FalProvider(model="fal-ai/kling-image/o1")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="@boy on a chair",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="1:1",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        elements = arguments["elements"]
+        assert len(elements) == 1
+        assert elements[0]["reference_image_urls"] == [
+            "https://fal.media/files/side.png"
+        ]
+
+
 class TestO1ImageSafetyDefaults:
     """Tests for O1 Image safety defaults (#46)."""
 
