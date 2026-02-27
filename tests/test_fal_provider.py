@@ -2368,11 +2368,11 @@ class TestElementsSingleRef:
 
 
 class TestO1ImageSafetyDefaults:
-    """Tests for O1 Image safety defaults (#46)."""
+    """Tests for O1 Image safety defaults (#63)."""
 
     @patch("storyboard_gen.providers.fal.fal_client")
-    def test_o1_image_gets_enable_safety_checker_false(self, mock_fal, tmp_path):
-        """O1 Image is not Kontext, so it should get enable_safety_checker: False."""
+    def test_o1_image_has_no_safety_toggle(self, mock_fal, tmp_path):
+        """O1 Image API does not accept enable_safety_checker."""
         # Arrange
         mock_fal.subscribe.return_value = {
             "images": [{"url": "https://fal.media/files/out.png"}],
@@ -2389,6 +2389,7 @@ class TestO1ImageSafetyDefaults:
                 aspect_ratio="9:16",
             )
 
-        # Assert
+        # Assert — no safety param should be sent
         arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
-        assert arguments["enable_safety_checker"] is False
+        assert "enable_safety_checker" not in arguments
+        assert "safety_tolerance" not in arguments

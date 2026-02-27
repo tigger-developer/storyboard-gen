@@ -209,7 +209,7 @@ storyboard-gen injects safety defaults before merging user options, so user `opt
 |--------------|-----------------|--------------|
 | Flux 1.x / Flux 2 | `enable_safety_checker: false` | `options.enable_safety_checker` |
 | Kontext / Kontext Multi | `safety_tolerance: "6"` | `options.safety_tolerance` |
-| Kling O1 Image | `enable_safety_checker: false` | `options.enable_safety_checker` |
+| Kling O1 Image | No toggle | — |
 | Ideogram Character | No toggle | — |
 | Kling clips | No default | — |
 

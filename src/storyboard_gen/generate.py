@@ -38,7 +38,7 @@ def check_reference_warnings(
     # Warn: style references on non-Ideogram Character models
     if project.style_reference and not is_ideogram_char:
         msg = (
-            f"Scene {scene.number}: style reference images configured but "
+            f"\u26a0\ufe0f  Scene {scene.number}: style reference images configured but "
             f"model '{provider_cfg.model}' does not support them "
             f"(only fal-ai/ideogram/character does). "
             f"Style references will be ignored."
@@ -55,7 +55,7 @@ def check_reference_warnings(
         has_scene_refs = bool(scene.reference)
         if has_char_refs or has_scene_refs:
             msg = (
-                f"Scene {scene.number}: reference images configured but "
+                f"\u26a0\ufe0f  Scene {scene.number}: reference images configured but "
                 f"Flux 2 model '{provider_cfg.model}' does not support "
                 f"reference images. References will be ignored."
             )

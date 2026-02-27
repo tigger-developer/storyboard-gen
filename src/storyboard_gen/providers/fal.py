@@ -416,8 +416,8 @@ class FalProvider(ImageProvider):
                 )
 
         # Inject safety defaults (overridable by user options)
-        # Ideogram Character has no safety toggle
-        if self._is_ideogram_character:
+        # Ideogram Character and O1 Image have no safety toggle
+        if self._is_ideogram_character or self._is_o1_image:
             pass
         elif self._is_kontext:
             arguments["safety_tolerance"] = "6"

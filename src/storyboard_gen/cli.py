@@ -376,7 +376,7 @@ def _dry_run(project, scenes) -> int:
         # Show reference/model mismatch warnings (#62)
         warns = check_reference_warnings(scene, project, provider_cfg)
         for w in warns:
-            print(f"  WARNING: {w}")
+            print(f"  {w}")
 
     return 0
 
