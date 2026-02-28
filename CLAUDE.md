@@ -194,10 +194,10 @@ GCS_OUTPUT_BUCKET=gs://your-bucket-name/
 - Replicate Flux: `black-forest-labs/flux-1.1-pro`, `black-forest-labs/flux-dev`
 
 Safety defaults are injected automatically (overridable via user `options`):
-- FAL Flux/Flux 2/O1 Image: `enable_safety_checker: false`
+- FAL Flux/Flux 2: `enable_safety_checker: false`
 - FAL Kontext/Kontext Multi: `safety_tolerance: "6"`
 - Replicate: `safety_tolerance: 6`
-- Google: no toggle available
+- Google, O1 Image, Ideogram Character: no toggle available
 
 ## project.yaml schema
 
@@ -211,12 +211,11 @@ providers:
   still:
     backend: fal                # google, fal, or replicate
     model: "fal-ai/flux-general"
-    options:                    # provider-specific options
-      safety_tolerance: 5
+    options:                    # passthrough — any model-supported API parameter
+      seed: 42
   clip:
     backend: google
     model: "veo-3.1-fast-generate-001"
-    options: {}
 
 style_prefix: >
   Detailed visual style description applied to all scene prompts.

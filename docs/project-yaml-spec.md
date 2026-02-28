@@ -1,4 +1,4 @@
-<!-- Version: 2.1 | Last updated: 2026-02-24 -->
+<!-- Version: 2.2 | Last updated: 2026-02-28 -->
 
 # project.yaml Specification
 
@@ -80,11 +80,10 @@ providers:
     backend: fal
     model: "fal-ai/flux-general"
     options:
-      safety_tolerance: 5
+      seed: 42
   clip:
     backend: google
     model: "veo-3.1-fast-generate-001"
-    options: {}
 ```
 
 ### Provider config fields
@@ -93,7 +92,7 @@ providers:
 |-------|------|----------|-------------|
 | `backend` | string | **yes** | `"google"`, `"fal"`, or `"replicate"` |
 | `model` | string | **yes** | Provider-specific model identifier |
-| `options` | object | no | Provider-specific options passed through to the API |
+| `options` | object | no | Passthrough dict — any key/value pairs are merged directly into the API request. Use this for model-specific parameters like `seed`, `guidance_scale`, `num_inference_steps`, etc. Safety defaults are injected automatically (see [docs/models.md](models.md#safety-defaults)). |
 
 ### Available backends and models
 
@@ -124,11 +123,11 @@ providers:
 | `fal-ai/kling-video/v3/standard/image-to-video` | clip | Kling v3 Standard — image-to-video |
 | `fal-ai/kling-video/o3/standard/image-to-video` | clip | Kling O3 Standard — supports character elements |
 
-**Still options (Flux 1.x):** `seed` (int), `safety_tolerance` (1-6), `num_inference_steps` (1-50), `guidance_scale` (0-20), `reference_strength` (float).
+**Still options (Flux 1.x):** `seed` (int), `num_inference_steps` (1-50), `guidance_scale` (0-20), `reference_strength` (float).
 
-**Still options (Flux 2):** `seed` (int), `enable_safety_checker` (bool), `guidance_scale` (float), `acceleration` (string), `enable_prompt_expansion` (bool). No reference image support.
+**Still options (Flux 2):** `seed` (int), `guidance_scale` (float), `acceleration` (string), `enable_prompt_expansion` (bool). No reference image support.
 
-Safety defaults are injected automatically (see [docs/models.md](models.md) for details).
+Safety defaults are injected automatically — see [docs/models.md](models.md#safety-defaults) for what's injected and how to override.
 
 **Clip options:** `cfg_scale` (float), `negative_prompt` (string), `generate_audio` (bool, default false).
 
@@ -143,7 +142,9 @@ Requires `FAL_KEY` in `.env`.
 | `black-forest-labs/flux-1.1-pro` | still | Flux Pro 1.1 — text-to-image only |
 | `black-forest-labs/flux-dev` | still | Flux Dev — supports image-to-image with references |
 
-**Options:** `seed` (int), `safety_tolerance` (0-6), `output_quality` (0-100), `prompt_upsampling` (bool).
+**Options:** `seed` (int), `output_quality` (0-100), `prompt_upsampling` (bool).
+
+Safety defaults are injected automatically — see [docs/models.md](models.md#safety-defaults-1) for details.
 
 Stills only — does not support clips. Requires `REPLICATE_API_TOKEN` in `.env`.
 
@@ -343,8 +344,6 @@ providers:
   still:
     backend: fal
     model: "fal-ai/flux-general"
-    options:
-      safety_tolerance: 5
   clip:
     backend: google
     model: "veo-3.1-fast-generate-001"

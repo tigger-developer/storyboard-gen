@@ -1,4 +1,4 @@
-<!-- Version: 1.4 | Last updated: 2026-02-24 -->
+<!-- Version: 1.5 | Last updated: 2026-02-28 -->
 
 # Model Reference
 
@@ -81,7 +81,7 @@ FAL models are accessed via `fal-client`. Requires `FAL_KEY` in `.env`.
 | `fal-ai/flux-general` | Flux General | Yes (`reference_image_url`) | Supports LoRAs, ControlNets, reference images. Most versatile Flux model. |
 | `fal-ai/flux-pro/v1.1` | Flux Pro 1.1 | Yes (`reference_image_url`) | High quality text-to-image. |
 
-**Options:** `seed` (int), `safety_tolerance` (1–6), `num_inference_steps` (1–50), `guidance_scale` (0–20), `reference_strength` (float).
+**Options:** `seed` (int), `num_inference_steps` (1–50), `guidance_scale` (0–20), `reference_strength` (float).
 
 ### Flux 2 (stills)
 
@@ -91,9 +91,7 @@ FAL models are accessed via `fal-client`. Requires `FAL_KEY` in `.env`.
 | `fal-ai/flux-2/turbo` | Flux 2 Turbo | **No** | Faster variant. Does not support references. |
 | `fal-ai/flux-2/dev` | Flux 2 Dev | **No** | Development variant. Does not support references. |
 
-Flux 2 models use a different safety parameter (`enable_safety_checker` boolean) instead of `safety_tolerance`.
-
-**Options:** `seed` (int), `enable_safety_checker` (bool), `guidance_scale` (float), `acceleration` (string), `enable_prompt_expansion` (bool), `num_inference_steps` (int).
+**Options:** `seed` (int), `guidance_scale` (float), `acceleration` (string), `enable_prompt_expansion` (bool), `num_inference_steps` (int).
 
 **Note:** If you provide reference images with a Flux 2 model, storyboard-gen logs a warning and proceeds without them. Use Flux 1.x (`flux-general`) or Kontext if you need reference support.
 
@@ -103,17 +101,15 @@ Flux 2 models use a different safety parameter (`enable_safety_checker` boolean)
 |----------|------|-------------------|-------|
 | `fal-ai/flux-pro/kontext` | Kontext | Yes (`image_url` for i2i) | Auto-routes: image-to-image with reference, text-to-image without. |
 
-Kontext uses `safety_tolerance` (string, "1"–"6") like Flux 1.x.
-
-**Options:** `seed` (int), `safety_tolerance` (string, "1"–"6"), `guidance_scale` (float).
+**Options:** `seed` (int), `guidance_scale` (float).
 
 ### Kling O1 Image (stills)
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
-| `fal-ai/kling-image/o1` | Kling O1 Image | Yes (multi-ref via `image_urls` + `elements[]`) | Multi-character stills with `@ImageN` prompt syntax. |
+| `fal-ai/kling-image/o1` | Kling O1 Image | Yes (multi-ref via `image_urls`) | Multi-character stills with `@ImageN` prompt syntax. |
 
-O1 Image uses `aspect_ratio` directly (raw ratio strings, not `image_size` presets). Supports up to 10 reference images via `image_urls` and character elements for multi-reference consistency.
+O1 Image uses `aspect_ratio` directly (raw ratio strings, not `image_size` presets). Supports up to 10 reference images via `image_urls` with `@ImageN` prompt tokens for character mapping.
 
 **Options:** `resolution` (`"1K"` or `"2K"`), `num_images` (int), `output_format` (string).
 
@@ -125,7 +121,7 @@ O1 Image uses `aspect_ratio` directly (raw ratio strings, not `image_size` prese
 
 Kontext Multi uses `aspect_ratio` directly (raw ratio strings). The model infers which reference maps to which subject from prompt context — no explicit `@ImageN` tags needed.
 
-**Options:** `seed` (int), `safety_tolerance` (string, "1"–"6"), `guidance_scale` (float), `enhance_prompt` (bool).
+**Options:** `seed` (int), `guidance_scale` (float), `enhance_prompt` (bool).
 
 ### Ideogram Character (stills)
 
@@ -201,6 +197,10 @@ scenes:
       while @collie watches from behind.
 ```
 
+### Options passthrough
+
+The `options` field in provider config is a passthrough dict — any key/value pairs are merged directly into the API request. Use it for model-specific parameters like `seed`, `guidance_scale`, `num_inference_steps`, etc. Check the model's FAL API docs for supported parameters. If you pass something the model doesn't accept, you'll get an API error.
+
 ### Safety defaults
 
 storyboard-gen injects safety defaults before merging user options, so user `options` always win:
@@ -230,7 +230,7 @@ Replicate models are accessed via the `replicate` SDK. Stills only — clips are
 | `black-forest-labs/flux-1.1-pro` | Flux Pro 1.1 | No | Text-to-image only. |
 | `black-forest-labs/flux-dev` | Flux Dev | Yes (`image` parameter) | Supports image-to-image with a single reference. |
 
-**Options:** `seed` (int), `safety_tolerance` (0–6), `output_quality` (0–100), `prompt_upsampling` (bool).
+**Options:** `seed` (int), `output_quality` (0–100), `prompt_upsampling` (bool).
 
 ### Safety defaults
 
@@ -290,8 +290,8 @@ storyboard-gen checks for reference/model mismatches and logs warnings. These wa
 | Clips | Yes (Veo) | No | No | No | No | No | No | Yes | No |
 | Reference images | Yes (up to 3) | Yes (1) | **No** | Yes (1, i2i) | Yes (multi) | Yes (multi, `@ImageN`) | Yes (dual-channel) | N/A | Yes (1) |
 | Style references | No | No | No | No | No | No | Yes (`image_urls`) | No | No |
-| Safety toggle | No | Yes | Yes | Yes | Yes | Yes | No | No | Yes |
-| Character elements | No | No | No | No | No | Yes (`elements[]`) | No | Yes (O3) | No |
+| Safety toggle | No | Yes | Yes | Yes | Yes | No | No | No | Yes |
+| Character elements | No | No | No | No | No | No | No | Yes (O3) | No |
 | Auth method | GCP / API key | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | FAL_KEY | Token |
 
 ---
