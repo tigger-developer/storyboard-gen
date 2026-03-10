@@ -97,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
             "examples:\n"
             "  storyboard-gen generate --scene 1        Generate scene 1\n"
             "  storyboard-gen generate --scene 1 5 3    Generate scenes 1, 5, 3 in that order\n"
+            "  storyboard-gen generate --scene 10-48    Generate scenes 10 through 48\n"
+            "  storyboard-gen generate --scene 1 5 10-15  Mix individual and range\n"
             "  storyboard-gen generate --all-stills     Generate all still scenes\n"
             "  storyboard-gen generate --all-clips      Generate all video clips\n"
             "  storyboard-gen generate --all            Generate all stills and clips"
@@ -110,7 +112,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     gen_group = gen_parser.add_mutually_exclusive_group(required=True)
     gen_group.add_argument(
-        "--scene", type=str, nargs="+", metavar="N", help="Generate scene(s) by number"
+        "--scene",
+        type=str,
+        nargs="+",
+        metavar="N",
+        help="Generate scene(s) by number (supports ranges, e.g. 10-48)",
     )
     gen_group.add_argument(
         "--all-stills", action="store_true", help="Generate all stills"
@@ -297,6 +303,33 @@ def _cmd_list() -> int:
     return 0
 
 
+def _expand_scene_args(args: list[str]) -> list[str]:
+    """Expand range expressions in --scene arguments.
+
+    Supports N-M range syntax (e.g. '10-48') alongside individual numbers.
+    Ranges and individual values can be mixed freely.
+
+    Raises:
+        ValueError: If start > end in a range (e.g. '48-10').
+    """
+    import re
+
+    result: list[str] = []
+    for arg in args:
+        match = re.fullmatch(r"(\d+)-(\d+)", arg)
+        if match:
+            start = int(match.group(1))
+            end = int(match.group(2))
+            if start > end:
+                raise ValueError(
+                    f"Invalid range '{arg}': start ({start}) is greater than end ({end})"
+                )
+            result.extend(str(i) for i in range(start, end + 1))
+        else:
+            result.append(arg)
+    return result
+
+
 def _cmd_generate(args: argparse.Namespace) -> int:
     """Generate stills and/or clips."""
     project = load_project()
@@ -306,7 +339,8 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     # Collect target scenes
     scenes = []
     if args.scene:
-        scenes = [project.get_scene(n) for n in args.scene]
+        expanded = _expand_scene_args(args.scene)
+        scenes = [project.get_scene(n) for n in expanded]
     elif args.all_stills:
         scenes = project.get_stills()
     elif args.all_clips:

@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 import yaml
 
+import pytest
+
 import storyboard_gen
 from storyboard_gen.cli import main
 
@@ -642,3 +644,94 @@ class TestCliVersion:
         assert exit_code == 0
         output = capsys.readouterr().out
         assert storyboard_gen.__version__ in output
+
+
+class TestExpandSceneArgs:
+    """Tests for _expand_scene_args range expansion (#65)."""
+
+    def test_expand_scene_args_single_number(self):
+        """A single number passes through unchanged."""
+        from storyboard_gen.cli import _expand_scene_args
+
+        # Act
+        result = _expand_scene_args(["5"])
+
+        # Assert
+        assert result == ["5"]
+
+    def test_expand_scene_args_range(self):
+        """A range like '10-15' expands to individual numbers."""
+        from storyboard_gen.cli import _expand_scene_args
+
+        # Act
+        result = _expand_scene_args(["10-15"])
+
+        # Assert
+        assert result == ["10", "11", "12", "13", "14", "15"]
+
+    def test_expand_scene_args_mixed(self):
+        """Ranges and individual numbers can be mixed."""
+        from storyboard_gen.cli import _expand_scene_args
+
+        # Act
+        result = _expand_scene_args(["1", "5", "10-12"])
+
+        # Assert
+        assert result == ["1", "5", "10", "11", "12"]
+
+    def test_expand_scene_args_multiple_ranges(self):
+        """Multiple ranges expand correctly."""
+        from storyboard_gen.cli import _expand_scene_args
+
+        # Act
+        result = _expand_scene_args(["1-3", "7-9"])
+
+        # Assert
+        assert result == ["1", "2", "3", "7", "8", "9"]
+
+    def test_expand_scene_args_reversed_range_raises(self):
+        """A reversed range like '48-10' raises ValueError."""
+        from storyboard_gen.cli import _expand_scene_args
+
+        # Act & Assert
+        with pytest.raises(ValueError, match="Invalid range '48-10'"):
+            _expand_scene_args(["48-10"])
+
+    def test_expand_scene_args_single_element_range(self):
+        """A range like '5-5' produces a single element."""
+        from storyboard_gen.cli import _expand_scene_args
+
+        # Act
+        result = _expand_scene_args(["5-5"])
+
+        # Assert
+        assert result == ["5"]
+
+    def test_expand_scene_args_preserves_non_numeric(self):
+        """Non-numeric scene identifiers pass through unchanged."""
+        from storyboard_gen.cli import _expand_scene_args
+
+        # Act
+        result = _expand_scene_args(["1a", "bonus"])
+
+        # Assert
+        assert result == ["1a", "bonus"]
+
+    @patch("storyboard_gen.cli.generate_still")
+    def test_generate_with_range_resolves_scenes(
+        self, mock_gen_still, sample_project_dir
+    ):
+        """Integration: --scene 1-2 should generate scenes 1 and 2."""
+        # Arrange
+        os.chdir(sample_project_dir)
+
+        # Act
+        exit_code = main(["generate", "--scene", "1-2"])
+
+        # Assert
+        assert exit_code == 0
+        assert mock_gen_still.call_count == 2
+        first_scene = mock_gen_still.call_args_list[0][0][0]
+        second_scene = mock_gen_still.call_args_list[1][0][0]
+        assert first_scene.number == "1"
+        assert second_scene.number == "2"
