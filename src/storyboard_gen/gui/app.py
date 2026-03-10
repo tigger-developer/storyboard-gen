@@ -7,6 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -16,7 +17,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QSplitter,
-    QTabWidget,
     QToolBar,
     QWidget,
 )
@@ -31,6 +31,7 @@ from storyboard_gen.gui.output_dialog import OutputDialog
 from storyboard_gen.gui.preview_panel import PreviewPanel
 from storyboard_gen.gui.scene_list import SceneListWidget, get_scene_status
 from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+from storyboard_gen.gui.settings import AppSettings
 from storyboard_gen.gui.yaml_viewer import YamlViewer
 from storyboard_gen.models import Project, Scene, format_scene_number
 
@@ -45,15 +46,17 @@ class MainWindow(QMainWindow):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle(APP_TITLE)
-        self.resize(1200, 800)
+        self.resize(1400, 800)
 
         self._project: Project | None = None
         self._project_dir: Path | None = None
         self._output_dir: Path | None = None
         self._workers: dict[str, GenerateWorker] = {}
+        self._settings = AppSettings()
 
         self._setup_widgets()
         self._setup_toolbar()
+        self._setup_shortcuts()
         self._setup_logging()
         self._update_actions_enabled()
 
@@ -65,24 +68,28 @@ class MainWindow(QMainWindow):
         self.console = ConsolePanel()
         self.yaml_viewer = YamlViewer()
 
-        # Tabbed preview/YAML panel
-        self._tab_widget = QTabWidget()
-        self._tab_widget.addTab(self.preview, "Preview")
-        self._tab_widget.addTab(self.yaml_editor, "YAML")
-
-        # Wire YAML editor scene_modified to reload project
+        # Wire YAML editor signals
         self.yaml_editor.scene_modified.connect(self._on_scene_yaml_modified)
+        self.yaml_editor.font_size_changed.connect(self._on_font_size_changed)
 
-        # Scene list + tabbed panel side by side
-        top_splitter = QSplitter(Qt.Orientation.Horizontal)
-        top_splitter.addWidget(self.scene_list)
-        top_splitter.addWidget(self._tab_widget)
-        top_splitter.setStretchFactor(0, 1)
-        top_splitter.setStretchFactor(1, 3)
+        # Apply stored font size
+        self.yaml_editor.set_font_size(self._settings.editor_font_size)
 
-        # Top panel + console stacked vertically (console hidden by default)
+        # Scene list + preview + YAML editor side by side
+        self._content_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._content_splitter.addWidget(self.scene_list)
+        self._content_splitter.addWidget(self.preview)
+        self._content_splitter.addWidget(self.yaml_editor)
+        self._content_splitter.setStretchFactor(0, 1)
+        self._content_splitter.setStretchFactor(1, 2)
+        self._content_splitter.setStretchFactor(2, 2)
+
+        # YAML editor hidden by default (toggleable like console)
+        self.yaml_editor.setVisible(False)
+
+        # Content + console stacked vertically (console hidden by default)
         self._main_splitter = QSplitter(Qt.Orientation.Vertical)
-        self._main_splitter.addWidget(top_splitter)
+        self._main_splitter.addWidget(self._content_splitter)
         self._main_splitter.addWidget(self.console)
         self._main_splitter.setStretchFactor(0, 3)
         self._main_splitter.setStretchFactor(1, 1)
@@ -129,8 +136,11 @@ class MainWindow(QMainWindow):
 
         self.toolbar.addSeparator()
 
-        self._action_yaml = self.toolbar.addAction("View YAML")
-        self._action_yaml.triggered.connect(self._on_view_yaml)
+        self._action_yaml_viewer = self.toolbar.addAction("View YAML")
+        self._action_yaml_viewer.triggered.connect(self._on_view_yaml)
+
+        self._action_yaml_editor = self.toolbar.addAction("YAML")
+        self._action_yaml_editor.triggered.connect(self._on_toggle_yaml)
 
         self._action_archive = self.toolbar.addAction("Archive")
         self._action_archive.triggered.connect(self._on_archive)
@@ -159,6 +169,14 @@ class MainWindow(QMainWindow):
         self._progress_label.setStyleSheet("color: #888; padding-left: 10px;")
         self.toolbar.addWidget(self._progress_label)
 
+    def _setup_shortcuts(self) -> None:
+        """Create global keyboard shortcuts."""
+        # Scene navigation: Cmd+[ (previous) and Cmd+] (next)
+        self._shortcut_prev = QShortcut(QKeySequence("Ctrl+["), self)
+        self._shortcut_prev.activated.connect(self.scene_list.select_previous)
+        self._shortcut_next = QShortcut(QKeySequence("Ctrl+]"), self)
+        self._shortcut_next.activated.connect(self.scene_list.select_next)
+
     def _setup_logging(self) -> None:
         """Attach a Qt log handler to route log messages to the console."""
         self._log_handler = QtLogHandler()
@@ -185,7 +203,7 @@ class MainWindow(QMainWindow):
         self._action_stop.setEnabled(is_generating)
         self._action_output.setEnabled(has_project and not is_generating)
         self._action_refresh.setEnabled(has_project)
-        self._action_yaml.setEnabled(has_project)
+        self._action_yaml_viewer.setEnabled(has_project)
         self._update_archive_enabled()
 
     def _update_progress(self) -> None:
@@ -229,12 +247,20 @@ class MainWindow(QMainWindow):
         )
         self._update_actions_enabled()
 
+        # Persist session state
+        self._settings.last_project = str(project_dir)
+        self._settings.last_directory = str(project_dir.parent)
+
     def _on_open_project(self) -> None:
         """Handle Open Project toolbar action."""
+        start_dir = self._settings.last_directory
+        if not start_dir or not Path(start_dir).exists():
+            start_dir = str(Path.home())
         directory = QFileDialog.getExistingDirectory(
-            self, "Open Project Directory", str(Path.home())
+            self, "Open Project Directory", start_dir
         )
         if directory:
+            self._settings.last_directory = str(Path(directory).parent)
             self.open_project(Path(directory))
 
     def _on_new_project(self) -> None:
@@ -451,6 +477,17 @@ class MainWindow(QMainWindow):
                 f"Restored archived version for scene {scene.number}"
             )
 
+    # ----- YAML editor toggle -----
+
+    def _on_toggle_yaml(self) -> None:
+        """Toggle the YAML editor pane visibility."""
+        currently_hidden = self.yaml_editor.isHidden()
+        self.yaml_editor.setVisible(currently_hidden)
+
+    def _on_font_size_changed(self, size: int) -> None:
+        """Persist YAML editor font size to settings."""
+        self._settings.editor_font_size = size
+
     # ----- Console toggle -----
 
     def _on_toggle_console(self) -> None:
@@ -588,6 +625,20 @@ class MainWindow(QMainWindow):
                 f"Restored archived version for scene {scene.number}"
             )
 
+    # ----- Session restore -----
+
+    def restore_session(self) -> None:
+        """Restore session state from persistent settings.
+
+        Reopens the last project if the directory still exists.
+        Called after the window is shown.
+        """
+        last_project = self._settings.last_project
+        if last_project:
+            project_path = Path(last_project)
+            if project_path.exists() and (project_path / "project.yaml").exists():
+                self.open_project(project_path)
+
     # ----- YAML editor -----
 
     def _on_scene_yaml_modified(self) -> None:
@@ -631,5 +682,7 @@ def run(project_dir: str | None = None) -> int:
 
     if project_dir:
         window.open_project(Path(project_dir))
+    else:
+        window.restore_session()
 
     return app.exec()

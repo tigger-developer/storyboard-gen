@@ -255,6 +255,18 @@ class SceneListWidget(QWidget):
             if isinstance(item_widget, SceneItemWidget):
                 item_widget.set_state("idle")
 
+    def select_next(self) -> None:
+        """Select the next scene in the list, if not already at the end."""
+        row = self.list_widget.currentRow()
+        if row < self.list_widget.count() - 1:
+            self.list_widget.setCurrentRow(row + 1)
+
+    def select_previous(self) -> None:
+        """Select the previous scene in the list, if not already at the start."""
+        row = self.list_widget.currentRow()
+        if row > 0:
+            self.list_widget.setCurrentRow(row - 1)
+
     def _on_row_changed(self, row: int) -> None:
         """Handle row selection change."""
         if 0 <= row < len(self._scenes):

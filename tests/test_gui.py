@@ -3489,17 +3489,27 @@ class TestSceneYamlEditor:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests: QTabWidget in MainWindow
+# Integration tests: Split pane layout in MainWindow
 # ---------------------------------------------------------------------------
 
 
-class TestMainWindowTabs:
-    """Test the QTabWidget integration in MainWindow."""
+class TestMainWindowSplitPane:
+    """Test the split pane (Preview + YAML) layout in MainWindow."""
 
-    def test_main_window_has_tab_widget(self, qtbot, gui_project_dir):
-        """MainWindow should have a QTabWidget for preview/YAML."""
-        from PySide6.QtWidgets import QTabWidget
+    def test_main_window_has_preview_and_yaml_editor(self, qtbot, gui_project_dir):
+        """MainWindow should have both preview and yaml_editor as separate panes."""
+        from storyboard_gen.gui.app import MainWindow
 
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Assert — both widgets exist
+        assert hasattr(window, "preview")
+        assert hasattr(window, "yaml_editor")
+
+    def test_yaml_editor_hidden_by_default(self, qtbot, gui_project_dir):
+        """YAML editor pane should be hidden by default."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
@@ -3507,24 +3517,60 @@ class TestMainWindowTabs:
         window.open_project(gui_project_dir)
 
         # Assert
-        assert hasattr(window, "_tab_widget")
-        assert isinstance(window._tab_widget, QTabWidget)
+        assert window.yaml_editor.isHidden()
 
-    def test_tab_widget_has_two_tabs(self, qtbot, gui_project_dir):
-        """QTabWidget should have Preview and YAML tabs."""
+    def test_yaml_toggle_shows_editor(self, qtbot, gui_project_dir):
+        """Toggling YAML should show the editor pane."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
         qtbot.addWidget(window)
         window.open_project(gui_project_dir)
 
-        # Assert
-        assert window._tab_widget.count() == 2
-        assert window._tab_widget.tabText(0) == "Preview"
-        assert window._tab_widget.tabText(1) == "YAML"
+        # Act
+        window._on_toggle_yaml()
 
-    def test_scene_selection_updates_yaml_tab(self, qtbot, hand_written_project_dir):
-        """Selecting a scene should update the YAML tab content."""
+        # Assert
+        assert not window.yaml_editor.isHidden()
+
+    def test_yaml_toggle_round_trip(self, qtbot, gui_project_dir):
+        """Toggling YAML twice should hide it again."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Act
+        window._on_toggle_yaml()
+        window._on_toggle_yaml()
+
+        # Assert
+        assert window.yaml_editor.isHidden()
+
+    def test_yaml_content_persists_across_toggle(self, qtbot, hand_written_project_dir):
+        """YAML editor content should persist when toggled off and on."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(hand_written_project_dir)
+
+        # Arrange — show YAML, select scene, make edits
+        window._on_toggle_yaml()
+        scene = window._project.scenes[0]
+        window._on_scene_selected(scene)
+        window.yaml_editor.text_edit.setPlainText("# custom edit")
+
+        # Act — toggle off and on
+        window._on_toggle_yaml()
+        window._on_toggle_yaml()
+
+        # Assert — content preserved
+        assert window.yaml_editor.text_edit.toPlainText() == "# custom edit"
+
+    def test_scene_selection_updates_yaml_editor(self, qtbot, hand_written_project_dir):
+        """Selecting a scene should update the YAML editor content."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
@@ -3561,6 +3607,16 @@ class TestMainWindowTabs:
         # Assert — project should have reloaded with new title
         assert window._project.scenes[0].title == "Modified title"
         assert window._project.scenes[0].title != original_title
+
+    def test_yaml_toolbar_button_exists(self, qtbot, gui_project_dir):
+        """MainWindow should have a YAML toggle button in the toolbar."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Assert
+        assert hasattr(window, "_action_yaml_editor")
 
 
 # ---------------------------------------------------------------------------
@@ -3619,3 +3675,417 @@ class TestUnsavedChangesWarning:
 
             # Assert — no message box
             mock_q.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: AppSettings (QSettings wrapper)
+# ---------------------------------------------------------------------------
+
+
+class TestAppSettings:
+    """Test the AppSettings QSettings wrapper."""
+
+    def test_settings_creates(self, qtbot):
+        """AppSettings should instantiate without error."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        assert settings is not None
+
+    def test_editor_font_size_default(self, qtbot):
+        """Default font size should be 11."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        # Clear any stored value first
+        settings._qs.remove("editor/font_size")
+
+        assert settings.editor_font_size == 11
+
+    def test_editor_font_size_set_and_get(self, qtbot):
+        """Setting font size should persist and be retrievable."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+
+        # Act
+        settings.editor_font_size = 16
+
+        # Assert
+        assert settings.editor_font_size == 16
+
+        # Cleanup
+        settings._qs.remove("editor/font_size")
+
+    def test_editor_font_size_clamped_min(self, qtbot):
+        """Font size below 8 should be clamped to 8."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings.editor_font_size = 4
+
+        assert settings.editor_font_size == 8
+
+        settings._qs.remove("editor/font_size")
+
+    def test_editor_font_size_clamped_max(self, qtbot):
+        """Font size above 32 should be clamped to 32."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings.editor_font_size = 50
+
+        assert settings.editor_font_size == 32
+
+        settings._qs.remove("editor/font_size")
+
+    def test_last_project_default_empty(self, qtbot):
+        """Default last project should be empty string."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings._qs.remove("session/last_project")
+
+        assert settings.last_project == ""
+
+    def test_last_project_set_and_get(self, qtbot):
+        """Setting last project should persist."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings.last_project = "/tmp/my-project"
+
+        assert settings.last_project == "/tmp/my-project"
+
+        settings._qs.remove("session/last_project")
+
+    def test_last_directory_default_empty(self, qtbot):
+        """Default last directory should be empty string."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings._qs.remove("session/last_directory")
+
+        assert settings.last_directory == ""
+
+    def test_last_directory_set_and_get(self, qtbot):
+        """Setting last directory should persist."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings.last_directory = "/tmp/projects"
+
+        assert settings.last_directory == "/tmp/projects"
+
+        settings._qs.remove("session/last_directory")
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: YAML editor font size controls
+# ---------------------------------------------------------------------------
+
+
+class TestYamlEditorFontSize:
+    """Test font size controls in SceneYamlEditor."""
+
+    def test_set_font_size_changes_font(self, qtbot):
+        """set_font_size should change the editor font point size."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        # Act
+        editor.set_font_size(18)
+
+        # Assert
+        assert editor.text_edit.font().pointSize() == 18
+
+    def test_set_font_size_clamped_min(self, qtbot):
+        """Font size below 8 should be clamped."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        editor.set_font_size(4)
+        assert editor.text_edit.font().pointSize() == 8
+
+    def test_set_font_size_clamped_max(self, qtbot):
+        """Font size above 32 should be clamped."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        editor.set_font_size(50)
+        assert editor.text_edit.font().pointSize() == 32
+
+    def test_increase_font_emits_signal(self, qtbot):
+        """Increasing font should emit font_size_changed signal."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+        editor.set_font_size(11)
+
+        # Act
+        with qtbot.waitSignal(editor.font_size_changed, timeout=1000):
+            editor._increase_font()
+
+        assert editor.text_edit.font().pointSize() == 12
+
+    def test_decrease_font_emits_signal(self, qtbot):
+        """Decreasing font should emit font_size_changed signal."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+        editor.set_font_size(11)
+
+        with qtbot.waitSignal(editor.font_size_changed, timeout=1000):
+            editor._decrease_font()
+
+        assert editor.text_edit.font().pointSize() == 10
+
+    def test_font_size_buttons_exist(self, qtbot):
+        """SceneYamlEditor should have font +/- buttons."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        assert hasattr(editor, "_font_plus_btn")
+        assert hasattr(editor, "_font_minus_btn")
+
+    def test_font_plus_button_increases_size(self, qtbot):
+        """Clicking the + button should increase font size."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+        editor.set_font_size(11)
+
+        # Act
+        editor._font_plus_btn.click()
+
+        # Assert
+        assert editor.text_edit.font().pointSize() == 12
+
+    def test_font_minus_button_decreases_size(self, qtbot):
+        """Clicking the - button should decrease font size."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+        editor.set_font_size(11)
+
+        # Act
+        editor._font_minus_btn.click()
+
+        # Assert
+        assert editor.text_edit.font().pointSize() == 10
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Scene navigation (prev/next)
+# ---------------------------------------------------------------------------
+
+
+class TestSceneNavigation:
+    """Test previous/next scene navigation in SceneListWidget."""
+
+    def test_select_next_advances_row(self, qtbot, gui_project_dir):
+        """select_next should move to the next scene."""
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        from storyboard_gen.config import load_project
+
+        project = load_project(gui_project_dir)
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, gui_project_dir / "output")
+
+        # Arrange — select first scene
+        widget.list_widget.setCurrentRow(0)
+
+        # Act
+        widget.select_next()
+
+        # Assert
+        assert widget.list_widget.currentRow() == 1
+
+    def test_select_previous_goes_back(self, qtbot, gui_project_dir):
+        """select_previous should move to the previous scene."""
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        from storyboard_gen.config import load_project
+
+        project = load_project(gui_project_dir)
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, gui_project_dir / "output")
+
+        # Arrange — select second scene
+        widget.list_widget.setCurrentRow(1)
+
+        # Act
+        widget.select_previous()
+
+        # Assert
+        assert widget.list_widget.currentRow() == 0
+
+    def test_select_next_at_last_scene_stays(self, qtbot, gui_project_dir):
+        """select_next at the last scene should not move."""
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        from storyboard_gen.config import load_project
+
+        project = load_project(gui_project_dir)
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, gui_project_dir / "output")
+
+        # Arrange — select last scene
+        widget.list_widget.setCurrentRow(2)
+
+        # Act
+        widget.select_next()
+
+        # Assert — stays at last
+        assert widget.list_widget.currentRow() == 2
+
+    def test_select_previous_at_first_scene_stays(self, qtbot, gui_project_dir):
+        """select_previous at the first scene should not move."""
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        from storyboard_gen.config import load_project
+
+        project = load_project(gui_project_dir)
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, gui_project_dir / "output")
+
+        # Arrange — select first scene
+        widget.list_widget.setCurrentRow(0)
+
+        # Act
+        widget.select_previous()
+
+        # Assert — stays at first
+        assert widget.list_widget.currentRow() == 0
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: Session restore (last project)
+# ---------------------------------------------------------------------------
+
+
+class TestSessionRestore:
+    """Test restoring last project on app launch."""
+
+    def test_open_project_persists_path(self, qtbot, gui_project_dir):
+        """Opening a project should save the path to settings."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Act
+        window.open_project(gui_project_dir)
+
+        # Assert
+        assert window._settings.last_project == str(gui_project_dir)
+
+        # Cleanup
+        window._settings._qs.remove("session/last_project")
+
+    def test_restore_last_project_on_launch(self, qtbot, gui_project_dir):
+        """MainWindow should restore last project if it exists."""
+        from storyboard_gen.gui.app import MainWindow
+        from storyboard_gen.gui.settings import AppSettings
+
+        # Arrange — pre-set last project
+        settings = AppSettings()
+        settings.last_project = str(gui_project_dir)
+
+        # Act
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.restore_session()
+
+        # Assert
+        assert window._project is not None
+        assert window._project_dir == gui_project_dir
+
+        # Cleanup
+        settings._qs.remove("session/last_project")
+
+    def test_restore_missing_project_silently_skipped(self, qtbot, tmp_path):
+        """If the last project directory is gone, skip silently."""
+        from storyboard_gen.gui.app import MainWindow
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings.last_project = str(tmp_path / "nonexistent")
+
+        # Act
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.restore_session()
+
+        # Assert — no project loaded, no crash
+        assert window._project is None
+
+        settings._qs.remove("session/last_project")
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: Last directory for file dialog
+# ---------------------------------------------------------------------------
+
+
+class TestLastDirectory:
+    """Test that the Open Project dialog remembers the last directory."""
+
+    def test_open_project_persists_directory(self, qtbot, gui_project_dir):
+        """Opening a project should save the parent directory to settings."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Act
+        window.open_project(gui_project_dir)
+
+        # Assert — parent dir saved
+        assert window._settings.last_directory == str(gui_project_dir.parent)
+
+        # Cleanup
+        window._settings._qs.remove("session/last_directory")
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: Font size persistence
+# ---------------------------------------------------------------------------
+
+
+class TestFontSizePersistence:
+    """Test that font size changes are persisted across sessions."""
+
+    def test_font_change_persisted(self, qtbot, gui_project_dir):
+        """Changing YAML editor font should persist to settings."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Act — change font size
+        window.yaml_editor.set_font_size(18)
+        window.yaml_editor.font_size_changed.emit(18)
+
+        # Assert
+        assert window._settings.editor_font_size == 18
+
+        # Cleanup
+        window._settings._qs.remove("editor/font_size")

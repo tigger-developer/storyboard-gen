@@ -88,6 +88,7 @@ storyboard-gen/
 │       │   ├── generate_dialog.py # Generate dialog (all/stills/clips/selected)
 │       │   ├── generate_worker.py # QThread background generation with stop
 │       │   ├── scene_yaml_editor.py # Editable per-scene YAML with extraction/replacement
+│       │   ├── settings.py        # Persistent GUI settings (QSettings wrapper)
 │       │   └── yaml_viewer.py     # YAML viewer with syntax highlighting
 │       ├── ken_burns.py   # Ken Burns effects via FFmpeg
 │       ├── assemble.py    # Final video assembly via FFmpeg
