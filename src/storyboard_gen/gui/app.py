@@ -43,7 +43,7 @@ APP_TITLE = "storyboard-gen"
 class MainWindow(QMainWindow):
     """Main application window for storyboard-gen GUI."""
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(self, parent: QWidget | None = None, verbose: bool = False):
         super().__init__(parent)
         self.setWindowTitle(APP_TITLE)
         self.resize(1400, 800)
@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         self._setup_widgets()
         self._setup_toolbar()
         self._setup_shortcuts()
-        self._setup_logging()
+        self._setup_logging(verbose=verbose)
         self._update_actions_enabled()
 
     def _setup_widgets(self) -> None:
@@ -177,13 +177,27 @@ class MainWindow(QMainWindow):
         self._shortcut_next = QShortcut(QKeySequence("Ctrl+]"), self)
         self._shortcut_next.activated.connect(self.scene_list.select_next)
 
-    def _setup_logging(self) -> None:
-        """Attach a Qt log handler to route log messages to the console."""
+    def _setup_logging(self, verbose: bool = False) -> None:
+        """Attach a Qt log handler to route log messages to the console.
+
+        Args:
+            verbose: If True, also log to stderr for debugging.
+        """
         self._log_handler = QtLogHandler()
         self._log_handler.log_signal.message.connect(self.console.append_message)
 
         root_logger = logging.getLogger()
         root_logger.addHandler(self._log_handler)
+
+        if verbose:
+            stderr_handler = logging.StreamHandler(sys.stderr)
+            stderr_handler.setLevel(logging.DEBUG)
+            stderr_handler.setFormatter(
+                logging.Formatter("%(asctime)s %(name)s %(levelname)s: %(message)s")
+            )
+            stderr_handler._verbose_marker = True  # noqa: SLF001 — marker for test cleanup
+            root_logger.addHandler(stderr_handler)
+            root_logger.setLevel(logging.DEBUG)
 
     def _show_error(self, message: str) -> None:
         """Show an error to the user via a message box and the console.
@@ -305,6 +319,9 @@ class MainWindow(QMainWindow):
         """Handle scene selection — update the preview panel and YAML editor."""
         if not self._output_dir:
             return
+
+        # Clear green fresh indicator when scene is viewed
+        self.scene_list.clear_scene_fresh(str(scene.number))
 
         # Check for unsaved YAML changes before switching
         if self.yaml_editor.is_dirty():
@@ -437,6 +454,7 @@ class MainWindow(QMainWindow):
         self.console.append_message(f"Finished scene {scene.number}: {scene.title}")
         self.scene_list.set_scene_state(scene_key, "idle")
         self.scene_list.refresh_status()
+        self.scene_list.set_scene_fresh(scene_key)
         self._refresh_preview_if_selected(scene)
         self._update_actions_enabled()
         self._update_progress()
@@ -661,11 +679,12 @@ class MainWindow(QMainWindow):
         self.yaml_viewer.raise_()
 
 
-def run(project_dir: str | None = None) -> int:
+def run(project_dir: str | None = None, verbose: bool = False) -> int:
     """Launch the storyboard-gen GUI application.
 
     Args:
         project_dir: Optional project directory to open on launch.
+        verbose: If True, log to stderr for debugging.
 
     Returns:
         Application exit code.
@@ -677,7 +696,7 @@ def run(project_dir: str | None = None) -> int:
     app.setApplicationName(APP_TITLE)
     app.setApplicationVersion(__version__)
 
-    window = MainWindow()
+    window = MainWindow(verbose=verbose)
     window.show()
 
     if project_dir:

@@ -13,7 +13,7 @@ PYTEST := $(VENV)/bin/pytest
 VERSION_FILE := src/storyboard_gen/__init__.py
 CURRENT_VERSION := $(shell grep '__version__' $(VERSION_FILE) 2>/dev/null | sed 's/.*"\(.*\)".*/\1/')
 
-.PHONY: help install install-gui test lint lint-fix clean sync release formula brew-upgrade gui
+.PHONY: help install install-gui test lint lint-fix clean sync release formula brew-upgrade gui gui-verbose
 
 help: ## Show this help
 	@echo "storyboard-gen v$(CURRENT_VERSION)"
@@ -53,6 +53,13 @@ gui: ## Launch the GUI (install-gui first if needed)
 		exit 1; \
 	fi
 	$(PYTHON) -m storyboard_gen.gui
+
+gui-verbose: ## Launch the GUI with verbose stderr logging
+	@if ! $(PYTHON) -c "import PySide6" 2>/dev/null; then \
+		echo "PySide6 not installed. Run: make install-gui"; \
+		exit 1; \
+	fi
+	$(PYTHON) -m storyboard_gen.gui --verbose
 
 clean: ## Remove build artefacts
 	rm -rf build/ dist/ *.egg-info src/*.egg-info

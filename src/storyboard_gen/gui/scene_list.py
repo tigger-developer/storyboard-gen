@@ -134,6 +134,21 @@ class SceneItemWidget(QWidget):
             self._gen_btn.setEnabled(True)
             self._archive_btn.setEnabled(False)
 
+    def set_fresh(self) -> None:
+        """Mark the scene as freshly generated (green button indicator)."""
+        self._fresh = True
+        self._gen_btn.setStyleSheet("background-color: #4CAF50; color: white;")
+
+    def clear_fresh(self) -> None:
+        """Clear the fresh indicator from the button."""
+        self._fresh = False
+        self._gen_btn.setStyleSheet("")
+
+    @property
+    def is_fresh(self) -> bool:
+        """Whether this scene has unreviewed generated content."""
+        return getattr(self, "_fresh", False)
+
     def refresh(self) -> None:
         """Update the widget state from current output and archive status."""
         status = get_scene_status(self._scene, self._output_dir)
@@ -254,6 +269,32 @@ class SceneListWidget(QWidget):
             item_widget = self.list_widget.itemWidget(self.list_widget.item(i))
             if isinstance(item_widget, SceneItemWidget):
                 item_widget.set_state("idle")
+
+    def set_scene_fresh(self, number: str) -> None:
+        """Mark a scene as freshly generated.
+
+        Args:
+            number: The scene number string.
+        """
+        for i in range(self.list_widget.count()):
+            item_widget = self.list_widget.itemWidget(self.list_widget.item(i))
+            if isinstance(item_widget, SceneItemWidget):
+                if str(self._scenes[i].number) == str(number):
+                    item_widget.set_fresh()
+                    break
+
+    def clear_scene_fresh(self, number: str) -> None:
+        """Clear the fresh indicator for a scene.
+
+        Args:
+            number: The scene number string.
+        """
+        for i in range(self.list_widget.count()):
+            item_widget = self.list_widget.itemWidget(self.list_widget.item(i))
+            if isinstance(item_widget, SceneItemWidget):
+                if str(self._scenes[i].number) == str(number):
+                    item_widget.clear_fresh()
+                    break
 
     def select_next(self) -> None:
         """Select the next scene in the list, if not already at the end."""

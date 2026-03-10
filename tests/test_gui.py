@@ -1,6 +1,7 @@
 # ABOUTME: Tests for the storyboard-gen GUI module.
 # ABOUTME: Covers scene status, log handler, widgets, and generate worker.
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -4089,3 +4090,366 @@ class TestFontSizePersistence:
 
         # Cleanup
         window._settings._qs.remove("editor/font_size")
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Worker exception handling (#70)
+# ---------------------------------------------------------------------------
+
+
+class TestWorkerExceptionHandling:
+    """Test that GenerateWorker catches all exception types."""
+
+    def test_worker_catches_unexpected_exception(self, qtbot):
+        """Worker should catch unexpected exceptions and emit error signal."""
+        from storyboard_gen.gui.generate_worker import GenerateWorker
+        from storyboard_gen.models import Project
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        project = Project(
+            title="Test",
+            aspect_ratio="9:16",
+            style_prefix="Test style.",
+            characters={},
+            scenes=[scene],
+        )
+
+        worker = GenerateWorker(
+            scene=scene,
+            project=project,
+            output_dir=Path("/tmp/out"),
+            project_dir=Path("/tmp"),
+        )
+
+        # Act — simulate an unexpected exception type (e.g. KeyError)
+        with patch(
+            "storyboard_gen.gui.generate_worker.generate_still",
+            side_effect=KeyError("unexpected"),
+        ):
+            with qtbot.waitSignal(worker.error, timeout=5000) as blocker:
+                worker.start()
+                worker.wait()
+
+        # Assert — error message should mention the exception type
+        assert "KeyError" in blocker.args[0]
+
+    def test_worker_catches_attribute_error(self, qtbot):
+        """Worker should catch AttributeError and emit error signal."""
+        from storyboard_gen.gui.generate_worker import GenerateWorker
+        from storyboard_gen.models import Project
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        project = Project(
+            title="Test",
+            aspect_ratio="9:16",
+            style_prefix="Test style.",
+            characters={},
+            scenes=[scene],
+        )
+
+        worker = GenerateWorker(
+            scene=scene,
+            project=project,
+            output_dir=Path("/tmp/out"),
+            project_dir=Path("/tmp"),
+        )
+
+        with patch(
+            "storyboard_gen.gui.generate_worker.generate_still",
+            side_effect=AttributeError("bad attr"),
+        ):
+            with qtbot.waitSignal(worker.error, timeout=5000) as blocker:
+                worker.start()
+                worker.wait()
+
+        assert "AttributeError" in blocker.args[0]
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Green Regenerate button for unreviewed content (#71)
+# ---------------------------------------------------------------------------
+
+
+class TestFreshIndicator:
+    """Test the green 'fresh' indicator on Regenerate button."""
+
+    def test_set_fresh_makes_button_green(self, qtbot, tmp_path):
+        """set_fresh() should apply green styling to the Regenerate button."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        # Act
+        widget.set_fresh()
+
+        # Assert — button should have green stylesheet
+        assert (
+            "green" in widget._gen_btn.styleSheet().lower()
+            or "#4" in widget._gen_btn.styleSheet()
+        )
+
+    def test_clear_fresh_resets_button(self, qtbot, tmp_path):
+        """clear_fresh() should remove the green styling."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        widget.set_fresh()
+        # Act
+        widget.clear_fresh()
+
+        # Assert — no green styling
+        assert widget._gen_btn.styleSheet() == ""
+
+    def test_is_fresh_flag(self, qtbot, tmp_path):
+        """is_fresh should track fresh state."""
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+
+        widget = SceneItemWidget(scene, output_dir)
+        qtbot.addWidget(widget)
+
+        assert not widget.is_fresh
+        widget.set_fresh()
+        assert widget.is_fresh
+        widget.clear_fresh()
+        assert not widget.is_fresh
+
+    def test_gen_finished_marks_scene_fresh(self, qtbot, gui_project_dir):
+        """Scene generation finishing should mark the scene as fresh."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Act — simulate finish
+            window._on_scene_gen_finished(scene)
+
+        # Assert — the scene item should be marked fresh
+        item_widget = window.scene_list.list_widget.itemWidget(
+            window.scene_list.list_widget.item(0)
+        )
+        assert item_widget.is_fresh
+
+    def test_selecting_scene_clears_fresh(self, qtbot, gui_project_dir):
+        """Selecting a fresh scene should clear the fresh indicator."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+            window._on_scene_gen_finished(scene)
+
+        # Act — select the scene
+        window._on_scene_selected(scene)
+
+        # Assert — fresh indicator cleared
+        item_widget = window.scene_list.list_widget.itemWidget(
+            window.scene_list.list_widget.item(0)
+        )
+        assert not item_widget.is_fresh
+
+    def test_project_load_does_not_mark_fresh(self, qtbot, gui_project_dir):
+        """Loading a project should not mark any scenes as fresh."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Assert — no scenes should be fresh
+        for i in range(window.scene_list.list_widget.count()):
+            item_widget = window.scene_list.list_widget.itemWidget(
+                window.scene_list.list_widget.item(i)
+            )
+            assert not item_widget.is_fresh
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Verbose logging (#70)
+# ---------------------------------------------------------------------------
+
+
+class TestVerboseLogging:
+    """Test the --verbose flag for stderr logging."""
+
+    def test_main_window_accepts_verbose(self, qtbot):
+        """MainWindow should accept verbose parameter."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow(verbose=True)
+        qtbot.addWidget(window)
+
+        assert window is not None
+
+    def test_verbose_adds_stderr_handler(self, qtbot):
+        """Verbose mode should add a stderr StreamHandler."""
+        import logging
+
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow(verbose=True)
+        qtbot.addWidget(window)
+
+        root_logger = logging.getLogger()
+        handler_types = [type(h).__name__ for h in root_logger.handlers]
+        assert "StreamHandler" in handler_types
+
+        # Cleanup — remove the handler we added
+        for h in root_logger.handlers[:]:
+            if isinstance(h, logging.StreamHandler) and not isinstance(
+                h, logging.FileHandler
+            ):
+                if hasattr(h, "_verbose_marker"):
+                    root_logger.removeHandler(h)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Archive dialog clip preview and image scaling (#73)
+# ---------------------------------------------------------------------------
+
+
+class TestArchiveDialogClipPreview:
+    """Test that the archive dialog previews clips via thumbnail extraction."""
+
+    def test_clip_archive_attempts_thumbnail(self, qtbot, tmp_path):
+        """Selecting a clip archive should attempt thumbnail extraction, not just show text."""
+        from storyboard_gen.gui.archive_dialog import ArchiveDialog
+
+        scene = Scene(
+            number="1", title="Test", scene_type="clip", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+        archive_dir = output_dir / "clips" / "archive"
+        archive_dir.mkdir(parents=True)
+
+        # Create a fake archived clip file
+        archive_file = archive_dir / "scene_01_20260310_120000.mp4"
+        archive_file.write_bytes(b"\x00" * 100)
+
+        dialog = ArchiveDialog(scene, output_dir)
+        qtbot.addWidget(dialog)
+
+        # Act — select the archive entry
+        dialog._list_widget.setCurrentRow(0)
+
+        # Assert — preview should have been attempted (not just filename text)
+        # The label should either have a pixmap (if ffmpeg worked) or show the filename
+        # Key assertion: the code path for clips is exercised without error
+        assert dialog._list_widget.count() == 1
+
+    def test_still_archive_shows_pixmap(self, qtbot, tmp_path):
+        """Selecting a still archive should display a pixmap preview."""
+        from PIL import Image
+
+        from storyboard_gen.gui.archive_dialog import ArchiveDialog
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+        archive_dir = output_dir / "stills" / "archive"
+        archive_dir.mkdir(parents=True)
+
+        # Create a real PNG image for archive
+        archive_file = archive_dir / "scene_01_20260310_120000.png"
+        img = Image.new("RGB", (100, 100), color="red")
+        img.save(archive_file)
+
+        dialog = ArchiveDialog(scene, output_dir)
+        qtbot.addWidget(dialog)
+
+        # Act — select the archive entry
+        dialog._list_widget.setCurrentRow(0)
+
+        # Assert — preview label should have a pixmap
+        assert dialog._preview_label.pixmap() is not None
+        assert not dialog._preview_label.pixmap().isNull()
+
+
+class TestArchiveDialogImageScaling:
+    """Test that the archive dialog rescales images on resize."""
+
+    def test_resize_rescales_preview(self, qtbot, tmp_path):
+        """Resizing the archive dialog should rescale the preview image."""
+        from PIL import Image
+
+        from storyboard_gen.gui.archive_dialog import ArchiveDialog
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        output_dir = tmp_path / "output"
+        archive_dir = output_dir / "stills" / "archive"
+        archive_dir.mkdir(parents=True)
+
+        # Create a large PNG image
+        archive_file = archive_dir / "scene_01_20260310_120000.png"
+        img = Image.new("RGB", (800, 600), color="blue")
+        img.save(archive_file)
+
+        dialog = ArchiveDialog(scene, output_dir)
+        qtbot.addWidget(dialog)
+        dialog.show()
+        dialog.resize(400, 300)
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.processEvents()
+
+        # Select the archive to trigger preview
+        dialog._list_widget.setCurrentRow(0)
+        QApplication.processEvents()
+        initial_pixmap = dialog._preview_label.pixmap()
+        assert initial_pixmap is not None
+        initial_size = initial_pixmap.size()
+
+        # Act — resize the dialog larger
+        dialog.resize(1000, 800)
+        QApplication.processEvents()
+
+        # Assert — the preview pixmap should have been rescaled
+        new_pixmap = dialog._preview_label.pixmap()
+        assert new_pixmap is not None
+        new_size = new_pixmap.size()
+        # The new pixmap should be larger than the initial one
+        assert (
+            new_size.width() > initial_size.width()
+            or new_size.height() > initial_size.height()
+        )

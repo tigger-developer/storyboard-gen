@@ -2,6 +2,7 @@
 # ABOUTME: Lists archived stills/clips with timestamps and supports swapping back to current.
 
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -120,6 +121,38 @@ def restore_archive(scene: Scene, archive_path: Path, output_dir: Path) -> None:
     archive_path.rename(current_path)
 
 
+def _extract_thumbnail(clip_path: Path) -> QPixmap | None:
+    """Extract a thumbnail frame from a video clip using ffmpeg.
+
+    Returns None if ffmpeg is unavailable or extraction fails.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-i",
+                str(clip_path),
+                "-vframes",
+                "1",
+                "-f",
+                "image2pipe",
+                "-vcodec",
+                "png",
+                "pipe:1",
+            ],
+            capture_output=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout:
+            pixmap = QPixmap()
+            pixmap.loadFromData(result.stdout)
+            if not pixmap.isNull():
+                return pixmap
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
 class ArchiveDialog(QDialog):
     """Dialog for browsing and restoring archived scene outputs.
 
@@ -138,6 +171,7 @@ class ArchiveDialog(QDialog):
         self._scene = scene
         self._output_dir = output_dir
         self._archives: list[Path] = []
+        self._current_pixmap: QPixmap | None = None
 
         self.setWindowTitle(f"Archive — Scene {scene.number}: {scene.title}")
         self.resize(500, 400)
@@ -169,7 +203,7 @@ class ArchiveDialog(QDialog):
         layout = QVBoxLayout()
         layout.addWidget(QLabel(f"Archived versions of scene {scene.number}:"))
         layout.addWidget(self._list_widget, stretch=1)
-        layout.addWidget(self._preview_label)
+        layout.addWidget(self._preview_label, stretch=2)
         layout.addLayout(btn_layout)
         self.setLayout(layout)
 
@@ -195,21 +229,43 @@ class ArchiveDialog(QDialog):
 
         if 0 <= row < len(self._archives):
             archive_path = self._archives[row]
-            if self._scene.scene_type == "still" and archive_path.exists():
-                pixmap = QPixmap(str(archive_path))
-                if not pixmap.isNull():
-                    scaled = pixmap.scaled(
-                        self._preview_label.size(),
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    self._preview_label.setPixmap(scaled)
-                    return
-            # Clip or failed load — show filename
+            pixmap = None
+            if archive_path.exists():
+                if self._scene.scene_type == "still":
+                    pixmap = QPixmap(str(archive_path))
+                    if pixmap.isNull():
+                        pixmap = None
+                else:
+                    pixmap = _extract_thumbnail(archive_path)
+
+            if pixmap is not None:
+                self._current_pixmap = pixmap
+                self._rescale_preview()
+                return
+
+            # Failed load — show filename
+            self._current_pixmap = None
             self._preview_label.setText(archive_path.name)
         else:
+            self._current_pixmap = None
             self._preview_label.clear()
             self._preview_label.setText("Select an archived version to preview")
+
+    def _rescale_preview(self) -> None:
+        """Scale the stored pixmap to fit the preview label's current size."""
+        if self._current_pixmap is None:
+            return
+        scaled = self._current_pixmap.scaled(
+            self._preview_label.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self._preview_label.setPixmap(scaled)
+
+    def resizeEvent(self, event) -> None:
+        """Rescale the preview image when the dialog is resized."""
+        super().resizeEvent(event)
+        self._rescale_preview()
 
     def _on_restore(self) -> None:
         """Restore the selected archive as the current output."""

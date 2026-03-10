@@ -72,3 +72,11 @@ class GenerateWorker(QThread):
         except (RuntimeError, ValueError, OSError, ImportError) as exc:
             logger.error("Generation failed for scene %s: %s", self._scene.number, exc)
             self.error.emit(f"Scene {self._scene.number}: {exc}")
+        except Exception as exc:
+            logger.error(
+                "Unexpected error generating scene %s: %s",
+                self._scene.number,
+                exc,
+                exc_info=True,
+            )
+            self.error.emit(f"Scene {self._scene.number}: {type(exc).__name__}: {exc}")
