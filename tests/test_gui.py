@@ -2596,3 +2596,30 @@ class TestMainWindowConcurrencyGuard:
             # Second call while running — should be rejected
             window._start_generation(scenes)
             assert mock_cls.call_count == 1  # still 1, not 2
+
+
+class TestGuiDotenvLoading:
+    """Tests for .env loading when opening a project in the GUI (#66)."""
+
+    def test_open_project_loads_dotenv(self, qtbot, gui_project_dir):
+        """Opening a project should load its .env file."""
+        from storyboard_gen.gui.app import MainWindow
+
+        # Arrange — write a .env with a distinctive variable
+        env_file = gui_project_dir / ".env"
+        env_file.write_text("STORYBOARD_TEST_MARKER=gui_loaded\n")
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Act
+        import os
+
+        os.environ.pop("STORYBOARD_TEST_MARKER", None)
+        window.open_project(gui_project_dir)
+
+        # Assert
+        assert os.environ.get("STORYBOARD_TEST_MARKER") == "gui_loaded"
+
+        # Cleanup
+        os.environ.pop("STORYBOARD_TEST_MARKER", None)

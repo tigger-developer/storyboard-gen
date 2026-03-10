@@ -5,6 +5,7 @@ import logging
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
@@ -185,6 +186,9 @@ class MainWindow(QMainWindow):
         self.console.clear()
         self._project_dir = project_dir
         self._output_dir = project_dir / "output"
+
+        # Load .env so provider credentials are available (same as CLI)
+        load_dotenv(project_dir / ".env", override=True)
 
         try:
             self._project = load_project(project_dir)
