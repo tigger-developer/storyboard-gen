@@ -488,7 +488,7 @@ class TestGenerateWorker:
             mock_gen.return_value = output_dir / "stills" / "scene_01.png"
 
             worker = GenerateWorker(
-                scenes=[scene],
+                scene=scene,
                 project=project,
                 output_dir=output_dir,
                 project_dir=gui_project_dir,
@@ -497,16 +497,12 @@ class TestGenerateWorker:
             finished_scenes = []
             worker.scene_finished.connect(finished_scenes.append)
 
-            all_done = []
-            worker.all_finished.connect(lambda: all_done.append(True))
-
             # Act
             worker.run()
 
             # Assert
             assert len(finished_scenes) == 1
             assert finished_scenes[0] == scene
-            assert len(all_done) == 1
 
     def test_worker_emits_error_on_failure(self, qtbot, gui_project_dir):
         """Worker should emit error signal if generation fails."""
@@ -521,7 +517,7 @@ class TestGenerateWorker:
             mock_gen.side_effect = RuntimeError("API timeout")
 
             worker = GenerateWorker(
-                scenes=[scene],
+                scene=scene,
                 project=project,
                 output_dir=output_dir,
                 project_dir=gui_project_dir,
@@ -552,7 +548,7 @@ class TestGenerateWorker:
             )
 
             worker = GenerateWorker(
-                scenes=[scene],
+                scene=scene,
                 project=project,
                 output_dir=output_dir,
                 project_dir=gui_project_dir,
@@ -568,23 +564,20 @@ class TestGenerateWorker:
             assert len(errors) == 1
             assert "fal-client" in errors[0]
 
-    def test_worker_handles_mixed_scene_types(self, qtbot, gui_project_dir):
-        """Worker should dispatch stills and clips to correct functions."""
+    def test_worker_dispatches_clip_to_generate_clip(self, qtbot, gui_project_dir):
+        """Worker should call generate_clip for clip scenes."""
         from storyboard_gen.config import load_project
         from storyboard_gen.gui.generate_worker import GenerateWorker
 
         project = load_project(gui_project_dir)
+        clip_scene = project.scenes[1]  # scene 2 is a clip
         output_dir = gui_project_dir / "output"
 
-        with (
-            patch("storyboard_gen.gui.generate_worker.generate_still") as mock_still,
-            patch("storyboard_gen.gui.generate_worker.generate_clip") as mock_clip,
-        ):
-            mock_still.return_value = output_dir / "stills" / "scene_01.png"
-            mock_clip.return_value = output_dir / "clips" / "scene_03.mp4"
+        with patch("storyboard_gen.gui.generate_worker.generate_clip") as mock_clip:
+            mock_clip.return_value = output_dir / "clips" / "scene_02.mp4"
 
             worker = GenerateWorker(
-                scenes=project.scenes,
+                scene=clip_scene,
                 project=project,
                 output_dir=output_dir,
                 project_dir=gui_project_dir,
@@ -594,8 +587,7 @@ class TestGenerateWorker:
             worker.run()
 
             # Assert
-            assert mock_still.call_count == 2  # scenes 1 and 3 are stills
-            assert mock_clip.call_count == 1  # scene 2 is a clip
+            assert mock_clip.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -701,27 +693,27 @@ class TestMainWindow:
         qtbot.addWidget(window)
         window.open_project(gui_project_dir)
 
-        scenes = list(window._project.scenes)
+        scene = window._project.scenes[0]
 
         # Patch GenerateWorker to avoid real generation
         with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
             mock_worker = mock_cls.return_value
             mock_worker.isRunning.return_value = True
-            window._start_generation(scenes)
+            window._start_scene_generation(scene)
 
         # Assert — spinner should not be hidden
         assert not window._spinner.isHidden()
 
-    def test_spinner_hidden_when_generation_complete(self, qtbot, gui_project_dir):
-        """Spinner should be hidden when all generation completes."""
+    def test_spinner_hidden_when_all_workers_done(self, qtbot, gui_project_dir):
+        """Spinner should be hidden when all workers finish."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
         qtbot.addWidget(window)
         window.open_project(gui_project_dir)
 
-        # Simulate generation complete
-        window._on_gen_all_finished()
+        # No workers active — spinner should be hidden
+        window._update_progress()
 
         assert window._spinner.isHidden()
 
@@ -804,8 +796,13 @@ class TestGuiEndToEnd:
 
         (stills_dir / "scene_03.png").write_bytes(_make_png())
 
-        # Act — fire the scene_finished signal
+        # Add a dummy worker so _on_scene_gen_finished can remove it
         scene3 = window._project.scenes[2]
+        from unittest.mock import MagicMock
+
+        window._workers[str(scene3.number)] = MagicMock()
+
+        # Act — fire the scene_finished signal
         window._on_scene_gen_finished(scene3)
 
         # Assert — preview should now show the image, not placeholder
@@ -844,10 +841,11 @@ class TestGenerateWorkerStop:
         from storyboard_gen.gui.generate_worker import GenerateWorker
 
         project = load_project(gui_project_dir)
+        scene = project.scenes[0]
         output_dir = gui_project_dir / "output"
 
         worker = GenerateWorker(
-            scenes=project.scenes,
+            scene=scene,
             project=project,
             output_dir=output_dir,
             project_dir=gui_project_dir,
@@ -855,40 +853,34 @@ class TestGenerateWorkerStop:
 
         assert not worker._stop_requested
 
-    def test_worker_stops_after_current_scene(self, qtbot, gui_project_dir):
-        """Worker should stop processing after current scene when stop is requested."""
+    def test_worker_does_not_emit_finished_when_stopped(self, qtbot, gui_project_dir):
+        """Worker should not emit scene_finished if stopped before running."""
         from storyboard_gen.config import load_project
         from storyboard_gen.gui.generate_worker import GenerateWorker
 
         project = load_project(gui_project_dir)
+        scene = project.scenes[0]
         output_dir = gui_project_dir / "output"
 
-        finished_scenes = []
-
-        def on_scene_finished(scene):
-            finished_scenes.append(scene)
-            # Request stop after first scene
-            worker.request_stop()
-
-        with (
-            patch("storyboard_gen.gui.generate_worker.generate_still") as mock_still,
-            patch("storyboard_gen.gui.generate_worker.generate_clip"),
-        ):
-            mock_still.return_value = output_dir / "stills" / "scene_01.png"
-
+        with patch("storyboard_gen.gui.generate_worker.generate_still"):
             worker = GenerateWorker(
-                scenes=project.scenes,
+                scene=scene,
                 project=project,
                 output_dir=output_dir,
                 project_dir=gui_project_dir,
             )
-            worker.scene_finished.connect(on_scene_finished)
+
+            finished_scenes = []
+            worker.scene_finished.connect(finished_scenes.append)
+
+            # Stop before running
+            worker.request_stop()
 
             # Act
             worker.run()
 
-            # Assert — only 1 scene should have been processed
-            assert len(finished_scenes) == 1
+            # Assert — should not emit finished
+            assert len(finished_scenes) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -1470,8 +1462,10 @@ class TestErrorDialog:
         qtbot.addWidget(window)
         window.open_project(gui_project_dir)
 
+        scene = window._project.scenes[0]
+
         with patch("storyboard_gen.gui.app.QMessageBox.critical") as mock_crit:
-            window._on_gen_error("Scene 1: fal-client is not installed")
+            window._on_gen_error(scene, "Scene 1: fal-client is not installed")
 
             mock_crit.assert_called_once()
 
@@ -2334,7 +2328,7 @@ class TestSceneListSignals:
 
 
 class TestSceneItemState:
-    """Test per-scene generation state (idle, queued, generating)."""
+    """Test per-scene generation state (idle and generating)."""
 
     def test_scene_item_idle_state(self, qtbot, tmp_path):
         """Idle state: generate button enabled, spinner hidden."""
@@ -2355,28 +2349,6 @@ class TestSceneItemState:
         assert widget._gen_btn.isEnabled()
         assert widget._gen_btn.text() == "Generate"
         assert widget._spinner.isHidden()
-        assert widget._archive_btn.isEnabled() or not widget._archive_btn.isEnabled()
-
-    def test_scene_item_queued_state(self, qtbot, tmp_path):
-        """Queued state: button text 'Queued', disabled, spinner hidden."""
-        from storyboard_gen.gui.scene_list import SceneItemWidget
-
-        scene = Scene(
-            number="1", title="Test", scene_type="still", prompt="test", duration=5
-        )
-        output_dir = tmp_path / "output"
-
-        widget = SceneItemWidget(scene, output_dir)
-        qtbot.addWidget(widget)
-
-        # Act
-        widget.set_state("queued")
-
-        # Assert
-        assert widget._gen_btn.text() == "Queued"
-        assert not widget._gen_btn.isEnabled()
-        assert widget._spinner.isHidden()
-        assert not widget._archive_btn.isEnabled()
 
     def test_scene_item_generating_state(self, qtbot, tmp_path):
         """Generating state: button text 'Stop', enabled, spinner visible."""
@@ -2456,10 +2428,10 @@ class TestSceneItemState:
 class TestSceneListGenerationState:
     """Test SceneListWidget generation state management methods."""
 
-    def test_set_generation_state_disables_all_buttons(
+    def test_set_scene_state_generating_shows_spinner(
         self, qtbot, gui_project_dir_with_output
     ):
-        """set_generation_state should disable generate buttons on non-queued scenes."""
+        """set_scene_state('generating') should show spinner on the scene."""
         from storyboard_gen.config import load_project
         from storyboard_gen.gui.scene_list import SceneItemWidget, SceneListWidget
 
@@ -2470,46 +2442,41 @@ class TestSceneListGenerationState:
         qtbot.addWidget(widget)
         widget.load_project(project, output_dir)
 
-        # Act — mark scene 1 as queued
-        widget.set_generation_state({"1"})
-
-        # Assert — scene 1 should be queued, scenes 2 and 3 should have disabled gen buttons
-        item0 = widget.list_widget.itemWidget(widget.list_widget.item(0))
-        item1 = widget.list_widget.itemWidget(widget.list_widget.item(1))
-        item2 = widget.list_widget.itemWidget(widget.list_widget.item(2))
-
-        assert isinstance(item0, SceneItemWidget)
-        assert item0._gen_btn.text() == "Queued"
-        assert not item0._gen_btn.isEnabled()
-
-        assert not item1._gen_btn.isEnabled()
-        assert not item2._gen_btn.isEnabled()
-
-    def test_set_scene_generating_shows_spinner(
-        self, qtbot, gui_project_dir_with_output
-    ):
-        """set_scene_generating should show spinner on the active scene."""
-        from storyboard_gen.config import load_project
-        from storyboard_gen.gui.scene_list import SceneItemWidget, SceneListWidget
-
-        project = load_project(gui_project_dir_with_output)
-        output_dir = gui_project_dir_with_output / "output"
-
-        widget = SceneListWidget()
-        qtbot.addWidget(widget)
-        widget.load_project(project, output_dir)
-
-        # Arrange — set generation state
-        widget.set_generation_state({"1", "2"})
-
-        # Act — mark scene 1 as generating
-        widget.set_scene_generating("1")
+        # Act — set scene 1 as generating
+        widget.set_scene_state("1", "generating")
 
         # Assert
         item0 = widget.list_widget.itemWidget(widget.list_widget.item(0))
         assert isinstance(item0, SceneItemWidget)
         assert not item0._spinner.isHidden()
         assert item0._gen_btn.text() == "Stop"
+
+    def test_set_scene_state_idle_restores_button(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """set_scene_state('idle') should restore button text and hide spinner."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneItemWidget, SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Arrange — set generating
+        widget.set_scene_state("1", "generating")
+
+        # Act — set back to idle
+        widget.set_scene_state("1", "idle")
+
+        # Assert
+        item0 = widget.list_widget.itemWidget(widget.list_widget.item(0))
+        assert isinstance(item0, SceneItemWidget)
+        assert item0._spinner.isHidden()
+        assert item0._gen_btn.text() in ("Generate", "Regenerate")
+        assert item0._gen_btn.isEnabled()
 
     def test_clear_generation_state_restores_all(
         self, qtbot, gui_project_dir_with_output
@@ -2525,9 +2492,9 @@ class TestSceneListGenerationState:
         qtbot.addWidget(widget)
         widget.load_project(project, output_dir)
 
-        # Arrange — set some state
-        widget.set_generation_state({"1", "2"})
-        widget.set_scene_generating("1")
+        # Arrange — set some scenes as generating
+        widget.set_scene_state("1", "generating")
+        widget.set_scene_state("2", "generating")
 
         # Act
         widget.clear_generation_state()
@@ -2540,8 +2507,10 @@ class TestSceneListGenerationState:
             assert item_widget._spinner.isHidden()
             assert item_widget._gen_btn.text() in ("Generate", "Regenerate")
 
-    def test_stop_requested_signal_relayed(self, qtbot, gui_project_dir_with_output):
-        """Clicking Stop on generating scene should relay stop_requested signal."""
+    def test_stop_requested_signal_carries_scene(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Clicking Stop on generating scene should relay stop_requested with scene."""
         from storyboard_gen.config import load_project
         from storyboard_gen.gui.scene_list import SceneListWidget
 
@@ -2553,49 +2522,18 @@ class TestSceneListGenerationState:
         widget.load_project(project, output_dir)
 
         # Arrange — set scene 1 as generating
-        widget.set_generation_state({"1"})
-        widget.set_scene_generating("1")
+        widget.set_scene_state("1", "generating")
 
         received = []
-        widget.stop_requested.connect(lambda: received.append(True))
+        widget.stop_requested.connect(received.append)
 
         # Act — click Stop on scene 1
         item0 = widget.list_widget.itemWidget(widget.list_widget.item(0))
         item0._gen_btn.click()
 
-        # Assert
+        # Assert — should receive the Scene object
         assert len(received) == 1
-
-
-# ---------------------------------------------------------------------------
-# Unit tests: MainWindow concurrency guard
-# ---------------------------------------------------------------------------
-
-
-class TestMainWindowConcurrencyGuard:
-    """Test that concurrent generation is rejected."""
-
-    def test_concurrent_generation_rejected(self, qtbot, gui_project_dir):
-        """Calling _start_generation while already generating should be rejected."""
-        from storyboard_gen.gui.app import MainWindow
-
-        window = MainWindow()
-        qtbot.addWidget(window)
-        window.open_project(gui_project_dir)
-
-        scenes = list(window._project.scenes)
-
-        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
-            mock_worker = mock_cls.return_value
-            mock_worker.isRunning.return_value = True
-
-            # First call — should create worker
-            window._start_generation(scenes)
-            assert mock_cls.call_count == 1
-
-            # Second call while running — should be rejected
-            window._start_generation(scenes)
-            assert mock_cls.call_count == 1  # still 1, not 2
+        assert received[0].number == "1"
 
 
 class TestGuiDotenvLoading:
@@ -2623,3 +2561,524 @@ class TestGuiDotenvLoading:
 
         # Cleanup
         os.environ.pop("STORYBOARD_TEST_MARKER", None)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: GenerateWorker single-scene API (#68)
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateWorkerSingleScene:
+    """Test single-scene GenerateWorker API."""
+
+    def test_worker_accepts_single_scene(self, qtbot, gui_project_dir):
+        """GenerateWorker should accept a single Scene, not a list."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_worker import GenerateWorker
+
+        project = load_project(gui_project_dir)
+        scene = project.scenes[0]
+        output_dir = gui_project_dir / "output"
+
+        # Act — construct with single scene
+        worker = GenerateWorker(
+            scene=scene,
+            project=project,
+            output_dir=output_dir,
+            project_dir=gui_project_dir,
+        )
+
+        # Assert
+        assert worker._scene == scene
+
+    def test_worker_single_scene_emits_finished(self, qtbot, gui_project_dir):
+        """Single-scene worker should emit scene_finished for its scene."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_worker import GenerateWorker
+
+        project = load_project(gui_project_dir)
+        scene = project.scenes[0]
+        output_dir = gui_project_dir / "output"
+
+        with patch("storyboard_gen.gui.generate_worker.generate_still") as mock_gen:
+            mock_gen.return_value = output_dir / "stills" / "scene_01.png"
+
+            worker = GenerateWorker(
+                scene=scene,
+                project=project,
+                output_dir=output_dir,
+                project_dir=gui_project_dir,
+            )
+
+            finished_scenes = []
+            worker.scene_finished.connect(finished_scenes.append)
+
+            # Act
+            worker.run()
+
+            # Assert
+            assert len(finished_scenes) == 1
+            assert finished_scenes[0] == scene
+
+    def test_worker_no_all_finished_signal(self, qtbot, gui_project_dir):
+        """Single-scene worker should NOT have an all_finished signal."""
+        from storyboard_gen.gui.generate_worker import GenerateWorker
+
+        # Assert — GenerateWorker should not have all_finished attribute
+        assert not hasattr(GenerateWorker, "all_finished")
+
+    def test_worker_single_scene_error(self, qtbot, gui_project_dir):
+        """Single-scene worker should emit error with scene number on failure."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_worker import GenerateWorker
+
+        project = load_project(gui_project_dir)
+        scene = project.scenes[0]
+        output_dir = gui_project_dir / "output"
+
+        with patch("storyboard_gen.gui.generate_worker.generate_still") as mock_gen:
+            mock_gen.side_effect = RuntimeError("API error")
+
+            worker = GenerateWorker(
+                scene=scene,
+                project=project,
+                output_dir=output_dir,
+                project_dir=gui_project_dir,
+            )
+
+            errors = []
+            worker.error.connect(errors.append)
+
+            # Act
+            worker.run()
+
+            # Assert
+            assert len(errors) == 1
+            assert "Scene 1" in errors[0]
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: concurrent per-scene generation (#68)
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentGeneration:
+    """Test concurrent per-scene worker management in MainWindow."""
+
+    def test_start_single_scene_creates_worker(self, qtbot, gui_project_dir):
+        """Starting generation for one scene should create one worker in _workers."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            # Act
+            window._start_scene_generation(scene)
+
+            # Assert
+            assert str(scene.number) in window._workers
+            assert mock_cls.call_count == 1
+
+    def test_start_multiple_scenes_creates_multiple_workers(
+        self, qtbot, gui_project_dir
+    ):
+        """Starting generation for multiple scenes should create a worker per scene."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scenes = list(window._project.scenes)
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            # Act
+            window._start_generation(scenes)
+
+            # Assert — one worker per scene
+            assert mock_cls.call_count == len(scenes)
+            assert len(window._workers) == len(scenes)
+
+    def test_stop_single_scene_only_stops_that_worker(self, qtbot, gui_project_dir):
+        """Stopping one scene should only stop its worker, leaving others running."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scenes = list(window._project.scenes)
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            # Create distinct mock workers for each scene
+            mock_workers = {}
+            call_count = [0]
+
+            def make_worker(**kwargs):
+                w = type(mock_cls.return_value)()
+                w.isRunning.return_value = True
+                w.request_stop = lambda: None
+                scene = kwargs.get("scene")
+                if scene:
+                    mock_workers[str(scene.number)] = w
+                call_count[0] += 1
+                return w
+
+            mock_cls.side_effect = make_worker
+
+            # Start all scenes
+            for s in scenes:
+                window._start_scene_generation(s)
+
+            # Act — stop only scene 1
+            window._stop_scene_generation(scenes[0])
+
+            # Assert — only scene 1's worker should have been stopped
+            assert str(scenes[0].number) in window._workers
+
+    def test_stop_all_stops_all_workers(self, qtbot, gui_project_dir):
+        """Toolbar Stop should stop all running workers."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scenes = list(window._project.scenes)
+        stop_counts = {}
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+
+            def make_worker(**kwargs):
+                from unittest.mock import MagicMock
+
+                w = MagicMock()
+                w.isRunning.return_value = True
+                scene = kwargs.get("scene")
+                if scene:
+                    stop_counts[str(scene.number)] = 0
+
+                    def track_stop(num=str(scene.number)):
+                        stop_counts[num] += 1
+
+                    w.request_stop = track_stop
+                return w
+
+            mock_cls.side_effect = make_worker
+
+            for s in scenes:
+                window._start_scene_generation(s)
+
+            # Act
+            window._stop_all_generation()
+
+            # Assert — all workers should have been stopped
+            for num in stop_counts:
+                assert stop_counts[num] == 1
+
+    def test_scene_finished_removes_worker(self, qtbot, gui_project_dir):
+        """When a scene finishes, its worker should be removed from _workers."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+            assert str(scene.number) in window._workers
+
+            # Act — simulate scene finished
+            window._on_scene_gen_finished(scene)
+
+            # Assert
+            assert str(scene.number) not in window._workers
+
+    def test_scene_error_removes_worker(self, qtbot, gui_project_dir):
+        """When a scene errors, its worker should be removed from _workers."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+            assert str(scene.number) in window._workers
+
+            # Act — simulate error
+            window._on_gen_error(scene, "API timeout")
+
+            # Assert
+            assert str(scene.number) not in window._workers
+
+    def test_regenerate_running_scene_ignored(self, qtbot, gui_project_dir):
+        """Starting generation for an already-generating scene should be ignored."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+            assert mock_cls.call_count == 1
+
+            # Act — try to start same scene again
+            window._start_scene_generation(scene)
+
+            # Assert — should not create a second worker
+            assert mock_cls.call_count == 1
+
+    def test_generate_all_starts_all_concurrently(self, qtbot, gui_project_dir):
+        """_start_generation with multiple scenes should start all concurrently."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scenes = list(window._project.scenes)
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            # Act
+            window._start_generation(scenes)
+
+            # Assert — a worker should be started for each scene
+            assert mock_cls.call_count == len(scenes)
+            for s in scenes:
+                assert str(s.number) in window._workers
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: per-scene stop signal with scene identity (#68)
+# ---------------------------------------------------------------------------
+
+
+class TestPerSceneStopSignal:
+    """Test that stop_requested carries the Scene object."""
+
+    def test_stop_requested_carries_scene(self, qtbot, gui_project_dir_with_output):
+        """stop_requested should emit the Scene that was stopped."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Set scene 1 as generating
+        widget.set_scene_state("1", "generating")
+
+        received = []
+        widget.stop_requested.connect(received.append)
+
+        # Act — click Stop on scene 1
+        item0 = widget.list_widget.itemWidget(widget.list_widget.item(0))
+        item0._gen_btn.click()
+
+        # Assert — should receive the Scene object
+        assert len(received) == 1
+        assert received[0].number == "1"
+
+    def test_set_scene_state_generating(self, qtbot, gui_project_dir_with_output):
+        """set_scene_state('generating') should show spinner and Stop button."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneItemWidget, SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Act
+        widget.set_scene_state("1", "generating")
+
+        # Assert
+        item0 = widget.list_widget.itemWidget(widget.list_widget.item(0))
+        assert isinstance(item0, SceneItemWidget)
+        assert not item0._spinner.isHidden()
+        assert item0._gen_btn.text() == "Stop"
+
+    def test_set_scene_state_idle(self, qtbot, gui_project_dir_with_output):
+        """set_scene_state('idle') should hide spinner and restore button text."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneItemWidget, SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Set to generating first
+        widget.set_scene_state("1", "generating")
+
+        # Act — back to idle
+        widget.set_scene_state("1", "idle")
+
+        # Assert
+        item0 = widget.list_widget.itemWidget(widget.list_widget.item(0))
+        assert isinstance(item0, SceneItemWidget)
+        assert item0._spinner.isHidden()
+        assert item0._gen_btn.text() in ("Generate", "Regenerate")
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: console panel slide-out (#68)
+# ---------------------------------------------------------------------------
+
+
+class TestConsolePanelToggle:
+    """Test that the console panel can be toggled as a slide-out panel."""
+
+    def test_main_window_has_console_toggle(self, qtbot):
+        """MainWindow should have a toolbar action to toggle the console."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_action_console")
+
+    def test_console_hidden_by_default(self, qtbot):
+        """Console panel should be hidden by default."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Console should be hidden by default
+        assert window.console.isHidden()
+
+    def test_console_toggle_shows_panel(self, qtbot):
+        """Clicking console toggle when hidden should show the panel."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Act — toggle to show
+        window._action_console.trigger()
+
+        # Assert — widget should no longer be explicitly hidden
+        assert not window.console.isHidden()
+
+    def test_console_toggle_round_trip(self, qtbot):
+        """Toggle show → hide should work."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Show
+        window._action_console.trigger()
+        assert not window.console.isHidden()
+
+        # Hide
+        window._action_console.trigger()
+        assert window.console.isHidden()
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: progress display with concurrent workers (#68)
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentProgressDisplay:
+    """Test progress display for concurrent generation."""
+
+    def test_progress_shows_active_count(self, qtbot, gui_project_dir):
+        """Progress label should show count of active workers."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scenes = list(window._project.scenes)
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_generation(scenes)
+
+            # Assert — progress label should show count
+            label_text = window._progress_label.text()
+            assert "3" in label_text
+
+    def test_spinner_visible_when_workers_active(self, qtbot, gui_project_dir):
+        """Toolbar spinner should be visible when any workers are active."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Assert
+            assert not window._spinner.isHidden()
+
+    def test_spinner_hidden_when_all_workers_done(self, qtbot, gui_project_dir):
+        """Toolbar spinner should hide when all workers finish."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Act — simulate finish
+            window._on_scene_gen_finished(scene)
+
+            # Assert
+            assert window._spinner.isHidden()

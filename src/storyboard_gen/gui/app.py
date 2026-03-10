@@ -48,9 +48,7 @@ class MainWindow(QMainWindow):
         self._project: Project | None = None
         self._project_dir: Path | None = None
         self._output_dir: Path | None = None
-        self._worker: GenerateWorker | None = None
-        self._gen_total: int = 0
-        self._gen_done: int = 0
+        self._workers: dict[str, GenerateWorker] = {}
 
         self._setup_widgets()
         self._setup_toolbar()
@@ -71,14 +69,15 @@ class MainWindow(QMainWindow):
         top_splitter.setStretchFactor(0, 1)
         top_splitter.setStretchFactor(1, 3)
 
-        # Top panel + console stacked vertically
-        main_splitter = QSplitter(Qt.Orientation.Vertical)
-        main_splitter.addWidget(top_splitter)
-        main_splitter.addWidget(self.console)
-        main_splitter.setStretchFactor(0, 3)
-        main_splitter.setStretchFactor(1, 1)
+        # Top panel + console stacked vertically (console hidden by default)
+        self._main_splitter = QSplitter(Qt.Orientation.Vertical)
+        self._main_splitter.addWidget(top_splitter)
+        self._main_splitter.addWidget(self.console)
+        self._main_splitter.setStretchFactor(0, 3)
+        self._main_splitter.setStretchFactor(1, 1)
+        self.console.setVisible(False)
 
-        self.setCentralWidget(main_splitter)
+        self.setCentralWidget(self._main_splitter)
 
         # Connect scene selection to preview and archive button
         self.scene_list.scene_selected.connect(self._on_scene_selected)
@@ -87,7 +86,7 @@ class MainWindow(QMainWindow):
         # Connect per-scene action buttons
         self.scene_list.generate_requested.connect(self._on_generate_scene)
         self.scene_list.archive_requested.connect(self._on_archive_scene)
-        self.scene_list.stop_requested.connect(self._on_stop)
+        self.scene_list.stop_requested.connect(self._on_stop_scene)
 
     def _setup_toolbar(self) -> None:
         """Create the toolbar with generation, output, and refresh actions."""
@@ -110,7 +109,7 @@ class MainWindow(QMainWindow):
         self._action_generate.triggered.connect(self._on_generate)
 
         self._action_stop = self.toolbar.addAction("Stop")
-        self._action_stop.triggered.connect(self._on_stop)
+        self._action_stop.triggered.connect(self._on_stop_all)
 
         self.toolbar.addSeparator()
 
@@ -124,6 +123,9 @@ class MainWindow(QMainWindow):
 
         self._action_archive = self.toolbar.addAction("Archive")
         self._action_archive.triggered.connect(self._on_archive)
+
+        self._action_console = self.toolbar.addAction("Console")
+        self._action_console.triggered.connect(self._on_toggle_console)
 
         # Progress spinner and label in the toolbar
         spacer = QWidget()
@@ -166,14 +168,24 @@ class MainWindow(QMainWindow):
     def _update_actions_enabled(self) -> None:
         """Enable/disable toolbar actions based on current state."""
         has_project = self._project is not None
-        is_generating = self._worker is not None and self._worker.isRunning()
+        is_generating = len(self._workers) > 0
 
-        self._action_generate.setEnabled(has_project and not is_generating)
+        self._action_generate.setEnabled(has_project)
         self._action_stop.setEnabled(is_generating)
         self._action_output.setEnabled(has_project and not is_generating)
         self._action_refresh.setEnabled(has_project)
         self._action_yaml.setEnabled(has_project)
         self._update_archive_enabled()
+
+    def _update_progress(self) -> None:
+        """Update toolbar spinner and progress label based on active workers."""
+        count = len(self._workers)
+        if count > 0:
+            self._spinner.setVisible(True)
+            self._progress_label.setText(f"Generating {count} scene(s)...")
+        else:
+            self._spinner.setVisible(False)
+            self._progress_label.setText("")
 
     # ----- Project loading -----
 
@@ -290,59 +302,89 @@ class MainWindow(QMainWindow):
             scenes = dialog.get_selected_scenes()
             self._start_generation(scenes)
 
-    def _on_stop(self) -> None:
-        """Request the current generation to stop."""
-        if self._worker:
-            self._worker.request_stop()
-            self.console.append_message("Stop requested — finishing current scene...")
+    def _on_stop_scene(self, scene: Scene) -> None:
+        """Stop generation for a specific scene."""
+        self._stop_scene_generation(scene)
+
+    def _on_stop_all(self) -> None:
+        """Stop all running generation workers."""
+        self._stop_all_generation()
 
     def _start_generation(self, scenes: list[Scene]) -> None:
-        """Start background generation for the given scenes."""
+        """Start concurrent background generation for the given scenes."""
         if not scenes or not self._project:
             return
 
-        # Concurrency guard — reject if already generating
-        if self._worker and self._worker.isRunning():
+        for scene in scenes:
+            self._start_scene_generation(scene)
+
+    def _start_scene_generation(self, scene: Scene) -> None:
+        """Start background generation for a single scene.
+
+        Creates a per-scene worker thread. If the scene is already
+        generating, the request is ignored.
+        """
+        if not self._project:
             return
 
-        self._gen_total = len(scenes)
-        self._gen_done = 0
-        self._progress_label.setText(f"0 / {self._gen_total}")
-        self._spinner.setVisible(True)
+        scene_key = str(scene.number)
 
-        self.console.append_message(f"Generating {self._gen_total} scene(s)...")
-        self._worker = GenerateWorker(
-            scenes=scenes,
+        # Skip if this scene is already generating
+        if scene_key in self._workers:
+            return
+
+        self.console.append_message(
+            f"Generating scene {scene.number}: {scene.title}..."
+        )
+
+        worker = GenerateWorker(
+            scene=scene,
             project=self._project,
             output_dir=self._output_dir,
             project_dir=self._project_dir,
         )
-        self._worker.scene_started.connect(self._on_scene_gen_started)
-        self._worker.scene_finished.connect(self._on_scene_gen_finished)
-        self._worker.error.connect(self._on_gen_error)
-        self._worker.all_finished.connect(self._on_gen_all_finished)
+        worker.scene_started.connect(self._on_scene_gen_started)
+        worker.scene_finished.connect(self._on_scene_gen_finished)
+        worker.error.connect(lambda msg, s=scene: self._on_gen_error(s, msg))
+        self._workers[scene_key] = worker
+        self.scene_list.set_scene_state(scene_key, "generating")
         self._update_actions_enabled()
-        self.scene_list.set_generation_state({str(s.number) for s in scenes})
-        self._worker.start()
+        self._update_progress()
+        worker.start()
+
+    def _stop_scene_generation(self, scene: Scene) -> None:
+        """Stop generation for a specific scene.
+
+        Args:
+            scene: The scene to stop generating.
+        """
+        scene_key = str(scene.number)
+        worker = self._workers.get(scene_key)
+        if worker:
+            worker.request_stop()
+            self.console.append_message(f"Stop requested for scene {scene.number}...")
+
+    def _stop_all_generation(self) -> None:
+        """Stop all running generation workers."""
+        for scene_key, worker in self._workers.items():
+            worker.request_stop()
+        if self._workers:
+            self.console.append_message("Stop all requested...")
 
     def _on_scene_gen_started(self, scene: Scene) -> None:
-        """Handle scene generation started."""
-        self.console.append_message(
-            f"Generating scene {scene.number}: {scene.title}..."
-        )
-        self._progress_label.setText(
-            f"{self._gen_done} / {self._gen_total} — scene {scene.number}"
-        )
-        self.scene_list.set_scene_generating(str(scene.number))
+        """Handle scene generation started signal from worker."""
+        self.scene_list.set_scene_state(str(scene.number), "generating")
 
     def _on_scene_gen_finished(self, scene: Scene) -> None:
         """Handle scene generation finished."""
-        self._gen_done += 1
+        scene_key = str(scene.number)
+        self._workers.pop(scene_key, None)
         self.console.append_message(f"Finished scene {scene.number}: {scene.title}")
-        self._progress_label.setText(f"{self._gen_done} / {self._gen_total}")
-        self.scene_list.set_scene_finished(str(scene.number))
+        self.scene_list.set_scene_state(scene_key, "idle")
         self.scene_list.refresh_status()
         self._refresh_preview_if_selected(scene)
+        self._update_actions_enabled()
+        self._update_progress()
 
     def _refresh_preview_if_selected(self, scene: Scene) -> None:
         """Refresh the preview panel if the given scene is currently selected."""
@@ -350,27 +392,20 @@ class MainWindow(QMainWindow):
         if selected and selected.number == scene.number:
             self._on_scene_selected(scene)
 
-    def _on_gen_error(self, message: str) -> None:
-        """Handle generation error."""
-        self._gen_done += 1
+    def _on_gen_error(self, scene: Scene, message: str) -> None:
+        """Handle generation error for a specific scene."""
+        scene_key = str(scene.number)
+        self._workers.pop(scene_key, None)
         self._show_error(message)
-        self._progress_label.setText(f"{self._gen_done} / {self._gen_total}")
-
-    def _on_gen_all_finished(self) -> None:
-        """Handle all generation complete."""
-        self.console.append_message("Generation complete.")
-        self._progress_label.setText("")
-        self._spinner.setVisible(False)
-        self._worker = None
+        self.scene_list.set_scene_state(scene_key, "idle")
         self._update_actions_enabled()
-        self.scene_list.clear_generation_state()
-        self.scene_list.refresh_status()
+        self._update_progress()
 
     def _on_generate_scene(self, scene: Scene) -> None:
         """Handle per-scene Generate/Regenerate button click."""
         if not self._project:
             return
-        self._start_generation([scene])
+        self._start_scene_generation(scene)
 
     def _on_archive_scene(self, scene: Scene) -> None:
         """Handle per-scene Archive button click."""
@@ -386,6 +421,13 @@ class MainWindow(QMainWindow):
             self.console.append_message(
                 f"Restored archived version for scene {scene.number}"
             )
+
+    # ----- Console toggle -----
+
+    def _on_toggle_console(self) -> None:
+        """Toggle the console panel visibility."""
+        currently_hidden = self.console.isHidden()
+        self.console.setVisible(currently_hidden)
 
     # ----- Output (Assemble / Kdenlive) -----
 

@@ -117,7 +117,7 @@ class SceneItemWidget(QWidget):
         """Set the widget's generation state.
 
         Args:
-            state: One of "idle", "queued", or "generating".
+            state: "idle" or "generating".
         """
         self._state = state
         if state == "idle":
@@ -128,11 +128,6 @@ class SceneItemWidget(QWidget):
             self._gen_btn.setEnabled(True)
             has_archives = len(list_scene_archives(self._scene, self._output_dir)) > 0
             self._archive_btn.setEnabled(has_archives)
-        elif state == "queued":
-            self._spinner.setVisible(False)
-            self._gen_btn.setText("Queued")
-            self._gen_btn.setEnabled(False)
-            self._archive_btn.setEnabled(False)
         elif state == "generating":
             self._spinner.setVisible(True)
             self._gen_btn.setText("Stop")
@@ -168,12 +163,13 @@ class SceneListWidget(QWidget):
     Emits ``scene_selected(Scene)`` when the user clicks a scene.
     Emits ``generate_requested(Scene)`` when a scene's Generate button is clicked.
     Emits ``archive_requested(Scene)`` when a scene's Archive button is clicked.
+    Emits ``stop_requested(Scene)`` when a scene's Stop button is clicked.
     """
 
     scene_selected = Signal(object)
     generate_requested = Signal(object)
     archive_requested = Signal(object)
-    stop_requested = Signal()
+    stop_requested = Signal(object)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -211,7 +207,7 @@ class SceneListWidget(QWidget):
             item_widget = SceneItemWidget(scene, output_dir)
             item_widget.generate_clicked.connect(self.generate_requested.emit)
             item_widget.archive_clicked.connect(self.archive_requested.emit)
-            item_widget.stop_clicked.connect(lambda _: self.stop_requested.emit())
+            item_widget.stop_clicked.connect(self.stop_requested.emit)
             self.list_widget.setItemWidget(item, item_widget)
 
     def refresh_status(self) -> None:
@@ -238,50 +234,18 @@ class SceneListWidget(QWidget):
         )
         return [self._scenes[row] for row in rows if 0 <= row < len(self._scenes)]
 
-    def set_generation_state(self, queued_numbers: set[str]) -> None:
-        """Set generation state for all scene items.
-
-        Queued scenes are set to "queued" state; all others have their
-        generate buttons disabled (but remain visually idle).
+    def set_scene_state(self, number: str, state: str) -> None:
+        """Set generation state for a single scene.
 
         Args:
-            queued_numbers: Set of scene number strings to mark as queued.
-        """
-        for i in range(self.list_widget.count()):
-            item_widget = self.list_widget.itemWidget(self.list_widget.item(i))
-            if isinstance(item_widget, SceneItemWidget):
-                scene_num = str(self._scenes[i].number)
-                if scene_num in queued_numbers:
-                    item_widget.set_state("queued")
-                else:
-                    item_widget.set_state("idle")
-                    item_widget._gen_btn.setEnabled(False)
-
-    def set_scene_generating(self, number: str) -> None:
-        """Transition one scene from queued to generating state.
-
-        Args:
-            number: The scene number string to mark as generating.
+            number: The scene number string.
+            state: "idle" or "generating".
         """
         for i in range(self.list_widget.count()):
             item_widget = self.list_widget.itemWidget(self.list_widget.item(i))
             if isinstance(item_widget, SceneItemWidget):
                 if str(self._scenes[i].number) == str(number):
-                    item_widget.set_state("generating")
-                    break
-
-    def set_scene_finished(self, number: str) -> None:
-        """Transition one scene back to idle state.
-
-        Args:
-            number: The scene number string to mark as finished.
-        """
-        for i in range(self.list_widget.count()):
-            item_widget = self.list_widget.itemWidget(self.list_widget.item(i))
-            if isinstance(item_widget, SceneItemWidget):
-                if str(self._scenes[i].number) == str(number):
-                    item_widget.set_state("idle")
-                    item_widget._gen_btn.setEnabled(False)
+                    item_widget.set_state(state)
                     break
 
     def clear_generation_state(self) -> None:
