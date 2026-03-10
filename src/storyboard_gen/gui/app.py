@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QSplitter,
+    QTabWidget,
     QToolBar,
     QWidget,
 )
@@ -29,6 +30,7 @@ from storyboard_gen.gui.archive_dialog import ArchiveDialog
 from storyboard_gen.gui.output_dialog import OutputDialog
 from storyboard_gen.gui.preview_panel import PreviewPanel
 from storyboard_gen.gui.scene_list import SceneListWidget, get_scene_status
+from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
 from storyboard_gen.gui.yaml_viewer import YamlViewer
 from storyboard_gen.models import Project, Scene, format_scene_number
 
@@ -59,13 +61,22 @@ class MainWindow(QMainWindow):
         """Create and layout the main widgets."""
         self.scene_list = SceneListWidget()
         self.preview = PreviewPanel()
+        self.yaml_editor = SceneYamlEditor()
         self.console = ConsolePanel()
         self.yaml_viewer = YamlViewer()
 
-        # Scene list + preview side by side
+        # Tabbed preview/YAML panel
+        self._tab_widget = QTabWidget()
+        self._tab_widget.addTab(self.preview, "Preview")
+        self._tab_widget.addTab(self.yaml_editor, "YAML")
+
+        # Wire YAML editor scene_modified to reload project
+        self.yaml_editor.scene_modified.connect(self._on_scene_yaml_modified)
+
+        # Scene list + tabbed panel side by side
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
         top_splitter.addWidget(self.scene_list)
-        top_splitter.addWidget(self.preview)
+        top_splitter.addWidget(self._tab_widget)
         top_splitter.setStretchFactor(0, 1)
         top_splitter.setStretchFactor(1, 3)
 
@@ -265,10 +276,23 @@ class MainWindow(QMainWindow):
     # ----- Scene selection -----
 
     def _on_scene_selected(self, scene: Scene) -> None:
-        """Handle scene selection — update the preview panel."""
+        """Handle scene selection — update the preview panel and YAML editor."""
         if not self._output_dir:
             return
 
+        # Check for unsaved YAML changes before switching
+        if self.yaml_editor.is_dirty():
+            reply = QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                "You have unsaved YAML changes. Discard them?",
+                QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if reply == QMessageBox.StandardButton.Cancel:
+                return
+
+        # Update preview panel
         status = get_scene_status(scene, self._output_dir)
         if status == "generated":
             scene_num = format_scene_number(scene.number)
@@ -286,6 +310,11 @@ class MainWindow(QMainWindow):
                     self.preview.clear_image()
         else:
             self.preview.clear_image()
+
+        # Update YAML editor
+        if self._project_dir:
+            yaml_path = self._project_dir / "project.yaml"
+            self.yaml_editor.load_scene(str(scene.number), yaml_path)
 
     # ----- Generation -----
 
@@ -558,6 +587,13 @@ class MainWindow(QMainWindow):
             self.console.append_message(
                 f"Restored archived version for scene {scene.number}"
             )
+
+    # ----- YAML editor -----
+
+    def _on_scene_yaml_modified(self) -> None:
+        """Reload the project after a scene YAML edit is saved."""
+        if self._project_dir:
+            self.open_project(self._project_dir)
 
     # ----- YAML viewer -----
 

@@ -3082,3 +3082,540 @@ class TestConcurrentProgressDisplay:
 
             # Assert
             assert window._spinner.isHidden()
+
+
+# ---------------------------------------------------------------------------
+# Fixtures: hand-written YAML for extraction tests
+# ---------------------------------------------------------------------------
+
+HAND_WRITTEN_YAML = """\
+title: "GUI Test Project"
+aspect_ratio: "9:16"
+style_prefix: >
+  Watercolour illustration.
+
+characters:
+  hero:
+    description: "A young boy with red hair"
+    reference:
+      - "references/hero.png"
+
+scenes:
+  # === ACT 1 ===
+
+  - number: 1
+    title: "Opening shot"
+    type: still
+    duration: 5
+    camera: WIDE
+    ken_burns: zoom_in
+    characters: [hero]
+    prompt: >
+      A boy stands on a hill.
+
+  - number: 2
+    title: "Action"
+    type: clip
+    duration: 6
+    prompt: >
+      The boy runs.
+
+  - number: 3
+    title: "Closing"
+    type: still
+    duration: 4
+    camera: CLOSE
+    ken_burns: static
+    prompt: >
+      Close-up of the boy smiling.
+"""
+
+
+@pytest.fixture
+def hand_written_project_dir(tmp_path):
+    """Create a project directory with hand-written YAML (preserves formatting)."""
+    yaml_path = tmp_path / "project.yaml"
+    yaml_path.write_text(HAND_WRITTEN_YAML)
+
+    refs_dir = tmp_path / "references"
+    refs_dir.mkdir()
+    (refs_dir / "hero.png").write_bytes(b"fake-png")
+
+    return tmp_path
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Scene YAML extraction and replacement
+# ---------------------------------------------------------------------------
+
+
+class TestSceneYamlExtraction:
+    """Test extracting a scene's YAML block from project.yaml."""
+
+    def test_extract_scene_returns_block_for_existing_scene(
+        self, hand_written_project_dir
+    ):
+        """Extracting scene 1 should return its YAML block."""
+        from storyboard_gen.gui.scene_yaml_editor import extract_scene_yaml
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        # Act
+        block = extract_scene_yaml(yaml_path, "1")
+
+        # Assert
+        assert "number: 1" in block
+        assert "Opening shot" in block
+        assert "A boy stands on a hill." in block
+
+    def test_extract_scene_does_not_include_other_scenes(
+        self, hand_written_project_dir
+    ):
+        """Extracting scene 1 should not include scene 2 content."""
+        from storyboard_gen.gui.scene_yaml_editor import extract_scene_yaml
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        # Act
+        block = extract_scene_yaml(yaml_path, "1")
+
+        # Assert
+        assert "number: 2" not in block
+        assert "Action" not in block
+
+    def test_extract_scene_preserves_indentation(self, hand_written_project_dir):
+        """Extracted YAML block should preserve original indentation."""
+        from storyboard_gen.gui.scene_yaml_editor import extract_scene_yaml
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        # Act
+        block = extract_scene_yaml(yaml_path, "1")
+
+        # Assert — should start with list marker
+        assert block.lstrip().startswith("- number:")
+
+    def test_extract_last_scene(self, hand_written_project_dir):
+        """Extracting the last scene should work correctly."""
+        from storyboard_gen.gui.scene_yaml_editor import extract_scene_yaml
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        # Act
+        block = extract_scene_yaml(yaml_path, "3")
+
+        # Assert
+        assert "number: 3" in block
+        assert "Closing" in block
+
+    def test_extract_nonexistent_scene_returns_none(self, hand_written_project_dir):
+        """Extracting a scene that doesn't exist should return None."""
+        from storyboard_gen.gui.scene_yaml_editor import extract_scene_yaml
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        # Act
+        result = extract_scene_yaml(yaml_path, "99")
+
+        # Assert
+        assert result is None
+
+    def test_extract_middle_scene(self, hand_written_project_dir):
+        """Extracting a middle scene should include only that scene."""
+        from storyboard_gen.gui.scene_yaml_editor import extract_scene_yaml
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        # Act
+        block = extract_scene_yaml(yaml_path, "2")
+
+        # Assert
+        assert "number: 2" in block
+        assert "The boy runs." in block
+        assert "number: 1" not in block
+        assert "number: 3" not in block
+
+
+class TestSceneYamlReplacement:
+    """Test replacing a scene's YAML block in project.yaml."""
+
+    def test_replace_scene_updates_file(self, hand_written_project_dir):
+        """Replacing scene 1 should update the file content."""
+        from storyboard_gen.gui.scene_yaml_editor import (
+            extract_scene_yaml,
+            replace_scene_yaml,
+        )
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        # Arrange — get original block and modify it
+        original = extract_scene_yaml(yaml_path, "1")
+        modified = original.replace("Opening shot", "New opening")
+
+        # Act
+        result = replace_scene_yaml(yaml_path, "1", modified)
+
+        # Assert
+        assert result is True
+        content = yaml_path.read_text()
+        assert "New opening" in content
+        assert "Opening shot" not in content
+
+    def test_replace_scene_preserves_other_scenes(self, hand_written_project_dir):
+        """Replacing scene 1 should not affect scene 2 or 3."""
+        from storyboard_gen.gui.scene_yaml_editor import (
+            extract_scene_yaml,
+            replace_scene_yaml,
+        )
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        original = extract_scene_yaml(yaml_path, "1")
+        modified = original.replace("Opening shot", "New opening")
+
+        # Act
+        replace_scene_yaml(yaml_path, "1", modified)
+
+        # Assert — other scenes untouched
+        content = yaml_path.read_text()
+        assert "Action" in content
+        assert "Closing" in content
+
+    def test_replace_scene_produces_valid_yaml(self, hand_written_project_dir):
+        """After replacement, the full file should still parse as valid YAML."""
+        from storyboard_gen.gui.scene_yaml_editor import (
+            extract_scene_yaml,
+            replace_scene_yaml,
+        )
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        original = extract_scene_yaml(yaml_path, "1")
+        modified = original.replace("Opening shot", "New opening")
+
+        # Act
+        replace_scene_yaml(yaml_path, "1", modified)
+
+        # Assert — YAML still parses
+        content = yaml_path.read_text()
+        parsed = yaml.safe_load(content)
+        assert parsed["scenes"][0]["title"] == "New opening"
+
+    def test_replace_nonexistent_scene_returns_false(self, hand_written_project_dir):
+        """Replacing a nonexistent scene should return False."""
+        from storyboard_gen.gui.scene_yaml_editor import replace_scene_yaml
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        # Act
+        result = replace_scene_yaml(yaml_path, "99", "  - number: 99\n")
+
+        # Assert
+        assert result is False
+
+    def test_replace_last_scene(self, hand_written_project_dir):
+        """Replacing the last scene should work correctly."""
+        from storyboard_gen.gui.scene_yaml_editor import (
+            extract_scene_yaml,
+            replace_scene_yaml,
+        )
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        original = extract_scene_yaml(yaml_path, "3")
+        modified = original.replace("Closing", "Final shot")
+
+        # Act
+        result = replace_scene_yaml(yaml_path, "3", modified)
+
+        # Assert
+        assert result is True
+        content = yaml_path.read_text()
+        assert "Final shot" in content
+        assert "Closing" not in content
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: SceneYamlEditor widget
+# ---------------------------------------------------------------------------
+
+
+class TestSceneYamlEditor:
+    """Test the SceneYamlEditor widget."""
+
+    def test_editor_creates(self, qtbot):
+        """SceneYamlEditor should instantiate without error."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        assert editor is not None
+
+    def test_editor_is_editable(self, qtbot):
+        """The text area in SceneYamlEditor should be editable."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        assert not editor.text_edit.isReadOnly()
+
+    def test_editor_has_syntax_highlighting(self, qtbot):
+        """SceneYamlEditor should apply YAML syntax highlighting."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        assert editor._highlighter is not None
+
+    def test_load_scene_shows_yaml_block(self, qtbot, hand_written_project_dir):
+        """Loading a scene should display its YAML block."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        # Act
+        editor.load_scene("1", yaml_path)
+
+        # Assert
+        text = editor.text_edit.toPlainText()
+        assert "number: 1" in text
+        assert "Opening shot" in text
+
+    def test_load_nonexistent_scene_shows_placeholder(
+        self, qtbot, hand_written_project_dir
+    ):
+        """Loading a nonexistent scene should show a placeholder message."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+
+        # Act
+        editor.load_scene("99", yaml_path)
+
+        # Assert
+        text = editor.text_edit.toPlainText()
+        assert "not found" in text.lower()
+
+    def test_save_emits_scene_modified(self, qtbot, hand_written_project_dir):
+        """Saving a valid edit should emit scene_modified signal."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Act — modify text and save
+        with qtbot.waitSignal(editor.scene_modified, timeout=1000):
+            editor._save()
+
+    def test_save_invalid_yaml_shows_error(self, qtbot, hand_written_project_dir):
+        """Saving invalid YAML should show an error and not emit scene_modified."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Arrange — insert invalid YAML
+        editor.text_edit.setPlainText("  - number: 1\n    : invalid: yaml: [")
+
+        # Act
+        editor._save()
+
+        # Assert — status label should show error
+        assert "error" in editor._status_label.text().lower()
+
+    def test_is_dirty_false_initially(self, qtbot, hand_written_project_dir):
+        """Editor should not be dirty after initial load."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Assert
+        assert not editor.is_dirty()
+
+    def test_is_dirty_after_edit(self, qtbot, hand_written_project_dir):
+        """Editor should be dirty after user edits."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Act — modify text
+        editor.text_edit.setPlainText(editor.text_edit.toPlainText() + "\n# edited")
+
+        # Assert
+        assert editor.is_dirty()
+
+    def test_save_clears_dirty(self, qtbot, hand_written_project_dir):
+        """Successful save should clear the dirty flag."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = hand_written_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Arrange — make a valid edit
+        text = editor.text_edit.toPlainText()
+        editor.text_edit.setPlainText(text.replace("Opening shot", "New title"))
+
+        # Act
+        editor._save()
+
+        # Assert
+        assert not editor.is_dirty()
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: QTabWidget in MainWindow
+# ---------------------------------------------------------------------------
+
+
+class TestMainWindowTabs:
+    """Test the QTabWidget integration in MainWindow."""
+
+    def test_main_window_has_tab_widget(self, qtbot, gui_project_dir):
+        """MainWindow should have a QTabWidget for preview/YAML."""
+        from PySide6.QtWidgets import QTabWidget
+
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Assert
+        assert hasattr(window, "_tab_widget")
+        assert isinstance(window._tab_widget, QTabWidget)
+
+    def test_tab_widget_has_two_tabs(self, qtbot, gui_project_dir):
+        """QTabWidget should have Preview and YAML tabs."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Assert
+        assert window._tab_widget.count() == 2
+        assert window._tab_widget.tabText(0) == "Preview"
+        assert window._tab_widget.tabText(1) == "YAML"
+
+    def test_scene_selection_updates_yaml_tab(self, qtbot, hand_written_project_dir):
+        """Selecting a scene should update the YAML tab content."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(hand_written_project_dir)
+
+        # Act — select scene 1
+        scene = window._project.scenes[0]
+        window._on_scene_selected(scene)
+
+        # Assert
+        text = window.yaml_editor.text_edit.toPlainText()
+        assert "number: 1" in text
+
+    def test_scene_modified_reloads_project(self, qtbot, hand_written_project_dir):
+        """scene_modified signal from YAML editor should reload the project."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(hand_written_project_dir)
+
+        original_title = window._project.scenes[0].title
+
+        # Act — modify scene YAML through the editor and save
+        scene = window._project.scenes[0]
+        window._on_scene_selected(scene)
+        text = window.yaml_editor.text_edit.toPlainText()
+        window.yaml_editor.text_edit.setPlainText(
+            text.replace("Opening shot", "Modified title")
+        )
+        window.yaml_editor._save()
+
+        # Assert — project should have reloaded with new title
+        assert window._project.scenes[0].title == "Modified title"
+        assert window._project.scenes[0].title != original_title
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Unsaved changes warning
+# ---------------------------------------------------------------------------
+
+
+class TestUnsavedChangesWarning:
+    """Test the unsaved changes prompt when switching scenes."""
+
+    def test_switching_scene_with_dirty_editor_prompts(
+        self, qtbot, hand_written_project_dir
+    ):
+        """Switching scenes with unsaved changes should prompt user."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(hand_written_project_dir)
+
+        # Arrange — select scene 1 and make it dirty
+        scene1 = window._project.scenes[0]
+        window._on_scene_selected(scene1)
+        text = window.yaml_editor.text_edit.toPlainText()
+        window.yaml_editor.text_edit.setPlainText(text + "\n# edit")
+
+        # Act — switch to scene 2 with auto-discard for test
+        with patch("storyboard_gen.gui.app.QMessageBox.question") as mock_q:
+            from PySide6.QtWidgets import QMessageBox
+
+            mock_q.return_value = QMessageBox.StandardButton.Discard
+            scene2 = window._project.scenes[1]
+            window._on_scene_selected(scene2)
+
+            # Assert — message box was shown
+            mock_q.assert_called_once()
+
+    def test_switching_scene_without_changes_no_prompt(
+        self, qtbot, hand_written_project_dir
+    ):
+        """Switching scenes without unsaved changes should not prompt."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(hand_written_project_dir)
+
+        # Arrange — select scene 1 (no edits)
+        scene1 = window._project.scenes[0]
+        window._on_scene_selected(scene1)
+
+        # Act — switch to scene 2
+        with patch("storyboard_gen.gui.app.QMessageBox.question") as mock_q:
+            scene2 = window._project.scenes[1]
+            window._on_scene_selected(scene2)
+
+            # Assert — no message box
+            mock_q.assert_not_called()
