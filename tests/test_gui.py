@@ -855,7 +855,7 @@ class TestGenerateWorkerStop:
         assert not worker._stop_requested
 
     def test_worker_does_not_emit_finished_when_stopped(self, qtbot, gui_project_dir):
-        """Worker should not emit scene_finished if stopped before running."""
+        """Worker should emit stopped (not scene_finished) if stopped before running."""
         from storyboard_gen.config import load_project
         from storyboard_gen.gui.generate_worker import GenerateWorker
 
@@ -874,14 +874,18 @@ class TestGenerateWorkerStop:
             finished_scenes = []
             worker.scene_finished.connect(finished_scenes.append)
 
+            stopped_scenes = []
+            worker.stopped.connect(stopped_scenes.append)
+
             # Stop before running
             worker.request_stop()
 
             # Act
             worker.run()
 
-            # Assert — should not emit finished
+            # Assert — should emit stopped, not finished
             assert len(finished_scenes) == 0
+            assert len(stopped_scenes) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -4812,3 +4816,180 @@ class TestSceneListCostDisplay:
         item_widget = widget.list_widget.itemWidget(item)
         assert hasattr(item_widget, "_cost_label")
         assert item_widget._cost_label.text() == ""
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Stop button cleanup (#78)
+# ---------------------------------------------------------------------------
+
+
+class TestStopButtonCleanup:
+    """Test that stopping a worker properly cleans up state (#78).
+
+    The bug: when request_stop() is called, the API call runs to completion.
+    After completion, the worker skips emitting scene_finished. This means
+    the worker is never removed from _workers and the scene stays in
+    "generating" state forever.
+    """
+
+    def test_worker_emits_stopped_when_stop_requested_during_generation(self, qtbot):
+        """Worker should emit stopped signal when generation completes after stop."""
+        from storyboard_gen.gui.generate_worker import GenerateWorker
+        from storyboard_gen.models import Project
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        project = Project(
+            title="Test",
+            aspect_ratio="9:16",
+            style_prefix="Test style.",
+            characters={},
+            scenes=[scene],
+        )
+
+        worker = GenerateWorker(
+            scene=scene,
+            project=project,
+            output_dir=Path("/tmp/out"),
+            project_dir=Path("/tmp"),
+        )
+
+        with patch("storyboard_gen.gui.generate_worker.generate_still"):
+            # Request stop — simulates user clicking Stop while API runs
+            worker.request_stop()
+
+            stopped_scenes = []
+            worker.stopped.connect(stopped_scenes.append)
+
+            finished_scenes = []
+            worker.scene_finished.connect(finished_scenes.append)
+
+            # Act — run the worker (API completes, but stop was requested)
+            worker.run()
+
+            # Assert — should emit stopped, NOT scene_finished
+            assert len(stopped_scenes) == 1
+            assert stopped_scenes[0].number == "1"
+            assert len(finished_scenes) == 0
+
+    def test_worker_emits_stopped_when_stop_requested_mid_generation(self, qtbot):
+        """Worker should emit stopped when stop is requested during the API call."""
+        from storyboard_gen.gui.generate_worker import GenerateWorker
+        from storyboard_gen.models import Project
+
+        scene = Scene(
+            number="1", title="Test", scene_type="still", prompt="test", duration=5
+        )
+        project = Project(
+            title="Test",
+            aspect_ratio="9:16",
+            style_prefix="Test style.",
+            characters={},
+            scenes=[scene],
+        )
+
+        worker = GenerateWorker(
+            scene=scene,
+            project=project,
+            output_dir=Path("/tmp/out"),
+            project_dir=Path("/tmp"),
+        )
+
+        def simulate_slow_generation(*args, **kwargs):
+            # Simulate stop being requested during the API call
+            worker.request_stop()
+
+        with patch(
+            "storyboard_gen.gui.generate_worker.generate_still",
+            side_effect=simulate_slow_generation,
+        ):
+            stopped_scenes = []
+            worker.stopped.connect(stopped_scenes.append)
+
+            finished_scenes = []
+            worker.scene_finished.connect(finished_scenes.append)
+
+            # Act
+            worker.run()
+
+            # Assert
+            assert len(stopped_scenes) == 1
+            assert len(finished_scenes) == 0
+
+    def test_app_cleans_up_worker_on_stopped(self, qtbot, gui_project_dir):
+        """MainWindow should remove worker and reset scene state when stopped."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+            assert str(scene.number) in window._workers
+
+            # Act — simulate stopped signal
+            window._on_scene_stopped(scene)
+
+            # Assert — worker removed, scene back to idle
+            assert str(scene.number) not in window._workers
+
+    def test_app_scene_state_idle_after_stopped(self, qtbot, gui_project_dir):
+        """Scene should be in idle state after stop completes."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Verify generating state
+            item = window.scene_list.list_widget.itemWidget(
+                window.scene_list.list_widget.item(0)
+            )
+            assert item._gen_btn.text() == "Stop"
+
+            # Act — simulate stopped signal
+            window._on_scene_stopped(scene)
+
+            # Assert — button restored
+            assert item._gen_btn.text() in ("Generate", "Regenerate")
+            assert item._spinner.isHidden()
+
+    def test_app_progress_updates_after_stopped(self, qtbot, gui_project_dir):
+        """Toolbar progress and actions should update when a scene is stopped."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+            assert len(window._workers) == 1
+            assert window._action_stop.isEnabled()
+
+            # Act
+            window._on_scene_stopped(scene)
+
+            # Assert — no workers left, stop disabled
+            assert len(window._workers) == 0
+            assert not window._action_stop.isEnabled()

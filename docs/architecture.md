@@ -1,4 +1,4 @@
-<!-- Version: 2.2 | Last updated: 2026-03-11 -->
+<!-- Version: 2.3 | Last updated: 2026-03-11 -->
 
 # Architecture: storyboard-gen
 
@@ -68,7 +68,7 @@ A PySide6 (Qt6) graphical interface that wraps the operational commands. Install
 - `gui/preview_panel.py` — `PreviewPanel` with `QStackedLayout` switching between placeholder, still image, clip info (thumbnail + file details), and inline video playback views. Video playback uses `QMediaPlayer` + `QVideoWidget` (QtMultimedia) with play/pause controls. Falls back to clip info view on playback error. Extracts thumbnails from video clips via ffmpeg for the fallback view.
 - `gui/console_panel.py` — `ConsolePanel` read-only text display. `QtLogHandler` bridges Python `logging` to Qt signals.
 - `gui/generate_dialog.py` — `GenerateDialog(QDialog)` with radio buttons: all scenes, all stills, all clips, or selected scene(s). Accepts a list of selected scenes for multi-scene generation; shows count or single scene title. Displays estimated cost summary when a `pricing_map` is provided, updating dynamically as the user changes the selection.
-- `gui/generate_worker.py` — `GenerateWorker(QThread)` runs generation in the background, emitting progress signals. Supports cooperative stop via `request_stop()`.
+- `gui/generate_worker.py` — `GenerateWorker(QThread)` runs generation in the background, emitting progress signals. Supports cooperative stop via `request_stop()`: emits `stopped(Scene)` on completion when stop was requested, enabling proper state cleanup. Emits `scene_started(Scene)`, `scene_finished(Scene)`, `stopped(Scene)`, and `error(str)`.
 - `gui/output_dialog.py` — `OutputDialog(QDialog)` with radio group (Assemble MP4 / Kdenlive export), preview mode checkbox, audio file picker, and output filename field. Returns options via `get_options()`.
 - `gui/archive_dialog.py` — `ArchiveDialog(QDialog)` for browsing and restoring previously generated scene outputs. Lists archived versions (from `output/{stills,clips}/archive/`) with timestamps, shows preview thumbnails for stills, and supports restore (swap selected archive ↔ current output). Utility functions: `list_scene_archives()`, `restore_archive()`, `get_scene_archive_dir()`, `get_scene_output_path()`, `parse_archive_timestamp()`.
 - `gui/yaml_viewer.py` — `YamlViewer` read-only YAML display with `YamlHighlighter(QSyntaxHighlighter)` for syntax colouring (keys, strings, comments, numbers, booleans).

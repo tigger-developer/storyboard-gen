@@ -26,6 +26,7 @@ class GenerateWorker(QThread):
 
     scene_started = Signal(object)
     scene_finished = Signal(object)
+    stopped = Signal(object)
     error = Signal(str)
 
     def __init__(
@@ -50,6 +51,7 @@ class GenerateWorker(QThread):
     def run(self) -> None:
         """Execute generation for the single scene."""
         if self._stop_requested:
+            self.stopped.emit(self._scene)
             return
         self.scene_started.emit(self._scene)
         try:
@@ -67,7 +69,9 @@ class GenerateWorker(QThread):
                     self.output_dir,
                     project_dir=self.project_dir,
                 )
-            if not self._stop_requested:
+            if self._stop_requested:
+                self.stopped.emit(self._scene)
+            else:
                 self.scene_finished.emit(self._scene)
         except (RuntimeError, ValueError, OSError, ImportError) as exc:
             logger.error("Generation failed for scene %s: %s", self._scene.number, exc)

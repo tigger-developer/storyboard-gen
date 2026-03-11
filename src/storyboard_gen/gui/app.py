@@ -480,6 +480,7 @@ class MainWindow(QMainWindow):
         )
         worker.scene_started.connect(self._on_scene_gen_started)
         worker.scene_finished.connect(self._on_scene_gen_finished)
+        worker.stopped.connect(self._on_scene_stopped)
         worker.error.connect(lambda msg, s=scene: self._on_gen_error(s, msg))
         self._workers[scene_key] = worker
         self.scene_list.set_scene_state(scene_key, "generating")
@@ -527,6 +528,16 @@ class MainWindow(QMainWindow):
         selected = self.scene_list.get_selected_scene()
         if selected and selected.number == scene.number:
             self._on_scene_selected(scene)
+
+    def _on_scene_stopped(self, scene: Scene) -> None:
+        """Handle worker stopped signal — clean up state after cooperative stop."""
+        scene_key = str(scene.number)
+        self._workers.pop(scene_key, None)
+        self.console.append_message(f"Stopped scene {scene.number}: {scene.title}")
+        self.scene_list.set_scene_state(scene_key, "idle")
+        self.scene_list.refresh_status()
+        self._update_actions_enabled()
+        self._update_progress()
 
     def _on_gen_error(self, scene: Scene, message: str) -> None:
         """Handle generation error for a specific scene."""
