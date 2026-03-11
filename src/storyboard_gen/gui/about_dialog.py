@@ -11,7 +11,9 @@ from PySide6.QtWidgets import (
 
 from storyboard_gen import __version__
 
-GITHUB_URL = "https://github.com/tigoss/storyboard-gen"
+GITHUB_URL = "https://github.com/tigger04/storyboard-gen"
+MODELS_URL = f"{GITHUB_URL}/blob/master/docs/models.md"
+AUTHOR_URL = "https://tigger.dev"
 
 
 class AboutDialog(QDialog):
@@ -20,7 +22,7 @@ class AboutDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("About storyboard-gen")
-        self.setFixedWidth(360)
+        self.setFixedWidth(400)
 
         layout = QVBoxLayout(self)
 
@@ -33,11 +35,17 @@ class AboutDialog(QDialog):
 
         self._description_label = QLabel(
             "Generate video storyboards from YAML using AI image and video APIs."
+            " Supports multiple providers including Google Gemini, FAL.ai,"
+            " and Replicate."
         )
         self._description_label.setWordWrap(True)
         layout.addWidget(self._description_label)
 
-        self._link_label = QLabel(f'<a href="{GITHUB_URL}">{GITHUB_URL}</a>')
+        self._link_label = QLabel(
+            f'<a href="{GITHUB_URL}">GitHub</a>'
+            f' · <a href="{MODELS_URL}">Supported Models</a>'
+            f' · <a href="{AUTHOR_URL}">tigger.dev</a>'
+        )
         self._link_label.setOpenExternalLinks(True)
         layout.addWidget(self._link_label)
 

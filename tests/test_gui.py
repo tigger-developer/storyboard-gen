@@ -4999,13 +4999,21 @@ class TestAboutDialog:
         qtbot.addWidget(dialog)
         assert __version__ in dialog._version_label.text()
 
-    def test_about_dialog_shows_github_url(self, qtbot):
-        """AboutDialog should contain a clickable GitHub URL."""
-        from storyboard_gen.gui.about_dialog import AboutDialog, GITHUB_URL
+    def test_about_dialog_shows_links(self, qtbot):
+        """AboutDialog should contain clickable GitHub, models, and author links."""
+        from storyboard_gen.gui.about_dialog import (
+            AUTHOR_URL,
+            AboutDialog,
+            GITHUB_URL,
+            MODELS_URL,
+        )
 
         dialog = AboutDialog()
         qtbot.addWidget(dialog)
-        assert GITHUB_URL in dialog._link_label.text()
+        link_text = dialog._link_label.text()
+        assert GITHUB_URL in link_text
+        assert MODELS_URL in link_text
+        assert AUTHOR_URL in link_text
         assert dialog._link_label.openExternalLinks()
 
     def test_about_dialog_has_close_button(self, qtbot):
