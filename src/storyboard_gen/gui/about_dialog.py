@@ -35,8 +35,7 @@ class AboutDialog(QDialog):
 
         self._description_label = QLabel(
             "Generate video storyboards from YAML using AI image and video APIs."
-            " Supports multiple providers including Google Gemini, FAL.ai,"
-            " and Replicate."
+            " Supports Google Imagen and Veo, FAL.ai, and Replicate providers."
         )
         self._description_label.setWordWrap(True)
         layout.addWidget(self._description_label)
