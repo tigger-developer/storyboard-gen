@@ -4453,3 +4453,190 @@ class TestArchiveDialogImageScaling:
             new_size.width() > initial_size.width()
             or new_size.height() > initial_size.height()
         )
+
+
+# ---------------------------------------------------------------------------
+# Unit/integration tests: reload project before generation (#75, #76)
+# ---------------------------------------------------------------------------
+
+
+class TestProjectReloadBeforeGeneration:
+    """Test that generation always uses the latest project.yaml and .env (#75, #76)."""
+
+    def test_generation_reloads_yaml_from_disk(self, qtbot, gui_project_dir):
+        """Editing project.yaml externally should be picked up on generation."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Verify initial title
+        assert window._project.title == "GUI Test Project"
+
+        # Act — modify project.yaml externally (change style_prefix)
+        yaml_path = gui_project_dir / "project.yaml"
+        data = yaml.safe_load(yaml_path.read_text())
+        data["style_prefix"] = "Changed externally."
+        yaml_path.write_text(yaml.dump(data))
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Assert — worker should receive the fresh project with updated style_prefix
+            call_kwargs = mock_cls.call_args[1]
+            assert call_kwargs["project"].style_prefix == "Changed externally."
+
+    def test_generation_reloads_dotenv_from_disk(self, qtbot, gui_project_dir):
+        """Editing .env externally should be picked up on generation."""
+        import os
+
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Write initial .env
+        env_file = gui_project_dir / ".env"
+        env_file.write_text("SBG_TEST_RELOAD_VAR=initial\n")
+
+        window.open_project(gui_project_dir)
+        assert os.environ.get("SBG_TEST_RELOAD_VAR") == "initial"
+
+        # Act — modify .env externally
+        env_file.write_text("SBG_TEST_RELOAD_VAR=updated\n")
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Assert — env var should be updated
+            assert os.environ.get("SBG_TEST_RELOAD_VAR") == "updated"
+
+        # Cleanup
+        os.environ.pop("SBG_TEST_RELOAD_VAR", None)
+
+    def test_generation_uses_fresh_scene_data(self, qtbot, gui_project_dir):
+        """If scene prompt is changed externally, generation should use the new prompt."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Original prompt
+        original_prompt = window._project.scenes[0].prompt
+        assert original_prompt == "A boy stands on a hill."
+
+        # Act — modify scene prompt externally
+        yaml_path = gui_project_dir / "project.yaml"
+        data = yaml.safe_load(yaml_path.read_text())
+        data["scenes"][0]["prompt"] = "A girl stands on a mountain."
+        yaml_path.write_text(yaml.dump(data))
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Assert — worker should receive the scene with updated prompt
+            call_kwargs = mock_cls.call_args[1]
+            assert call_kwargs["scene"].prompt == "A girl stands on a mountain."
+
+    def test_generation_reload_error_shows_error(self, qtbot, gui_project_dir):
+        """If project.yaml becomes invalid, generation should show an error."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Act — break project.yaml (valid YAML but missing required 'title')
+        yaml_path = gui_project_dir / "project.yaml"
+        yaml_path.write_text(yaml.dump({"aspect_ratio": "9:16", "scenes": []}))
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            with patch.object(window, "_show_error") as mock_error:
+                window._start_scene_generation(scene)
+
+                # Assert — no worker created, error shown
+                assert mock_cls.call_count == 0
+                assert mock_error.call_count == 1
+
+    def test_generation_missing_scene_shows_error(self, qtbot, gui_project_dir):
+        """If a scene is removed from YAML, generation should show an error."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Remember scene 3 exists
+        scene3 = window._project.scenes[2]
+        assert str(scene3.number) == "3"
+
+        # Act — remove scene 3 from YAML
+        yaml_path = gui_project_dir / "project.yaml"
+        data = yaml.safe_load(yaml_path.read_text())
+        data["scenes"] = [s for s in data["scenes"] if s.get("number") != 3]
+        yaml_path.write_text(yaml.dump(data))
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            with patch.object(window, "_show_error") as mock_error:
+                window._start_scene_generation(scene3)
+
+                # Assert — no worker created, error shown
+                assert mock_cls.call_count == 0
+                assert mock_error.call_count == 1
+
+    def test_generation_provider_change_picked_up(self, qtbot, gui_project_dir):
+        """Changing provider in YAML should be reflected in generation (#76 scenario)."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Set up with FAL provider initially
+        yaml_path = gui_project_dir / "project.yaml"
+        data = yaml.safe_load(yaml_path.read_text())
+        data["providers"] = {
+            "still": {
+                "backend": "fal",
+                "model": "fal-ai/flux-general",
+            }
+        }
+        yaml_path.write_text(yaml.dump(data))
+        window.open_project(gui_project_dir)
+
+        assert window._project.still_provider is not None
+        assert window._project.still_provider.backend == "fal"
+
+        # Act — remove FAL provider from YAML (revert to Google default)
+        data.pop("providers")
+        yaml_path.write_text(yaml.dump(data))
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Assert — worker should receive project with no FAL provider
+            call_kwargs = mock_cls.call_args[1]
+            assert call_kwargs["project"].still_provider is None

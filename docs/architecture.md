@@ -1,4 +1,4 @@
-<!-- Version: 1.9 | Last updated: 2026-02-21 -->
+<!-- Version: 2.0 | Last updated: 2026-03-11 -->
 
 # Architecture: storyboard-gen
 
@@ -55,7 +55,7 @@ Generates a Kdenlive project file (MLT XML format) for timeline editing. Referen
 
 A PySide6 (Qt6) graphical interface that wraps the operational commands. Installed via `pip install storyboard-gen[gui]`. The GUI does not edit `project.yaml` — it only reads.
 
-- `gui/app.py` — `MainWindow` with toolbar (Open Project, New Project, Refresh, Generate, Stop, Output, View YAML, Archive), splitter layout, progress label, and signal wiring. New Project prompts for a location and name, scaffolds via `init_project()`, and opens the new project. Refresh reloads `project.yaml` from disk. Output opens an `OutputDialog` to choose between MP4 assembly and Kdenlive export. Archive opens an `ArchiveDialog` for the selected scene. Entry point: `run()`.
+- `gui/app.py` — `MainWindow` with toolbar (Open Project, New Project, Refresh, Generate, Stop, Output, View YAML, Archive), splitter layout, progress label, and signal wiring. New Project prompts for a location and name, scaffolds via `init_project()`, and opens the new project. Refresh reloads `project.yaml` from disk. Generation always reloads `project.yaml` and `.env` from disk before creating a worker, ensuring external edits are picked up without requiring a manual Refresh. Output opens an `OutputDialog` to choose between MP4 assembly and Kdenlive export. Archive opens an `ArchiveDialog` for the selected scene. Entry point: `run()`.
 - `gui/scene_list.py` — `SceneListWidget` shows scenes with `SceneItemWidget` custom widgets: status indicator, scene info label, inline Generate/Regenerate button, and Archive button. Uses `ExtendedSelection` mode for Cmd+click / Shift+click multi-select. `get_selected_scenes()` returns all selected scenes in order; `get_selected_scene()` returns the current row. `get_scene_status()` checks output file existence. Emits `scene_selected(Scene)`, `generate_requested(Scene)`, and `archive_requested(Scene)`.
 - `gui/preview_panel.py` — `PreviewPanel` with `QStackedLayout` switching between placeholder, still image, clip info (thumbnail + file details), and inline video playback views. Video playback uses `QMediaPlayer` + `QVideoWidget` (QtMultimedia) with play/pause controls. Falls back to clip info view on playback error. Extracts thumbnails from video clips via ffmpeg for the fallback view.
 - `gui/console_panel.py` — `ConsolePanel` read-only text display. `QtLogHandler` bridges Python `logging` to Qt signals.

@@ -390,13 +390,30 @@ class MainWindow(QMainWindow):
         for scene in scenes:
             self._start_scene_generation(scene)
 
+    def _reload_project_for_generation(self) -> Project | None:
+        """Reload project.yaml and .env from disk before generation.
+
+        Ensures the worker always uses the latest YAML and credentials,
+        even when edited externally (#75, #76).
+
+        Returns:
+            Fresh Project, or None on error.
+        """
+        load_dotenv(self._project_dir / ".env", override=True)
+        try:
+            return load_project(self._project_dir)
+        except ConfigError as exc:
+            self._show_error(f"Failed to reload project: {exc}")
+            return None
+
     def _start_scene_generation(self, scene: Scene) -> None:
         """Start background generation for a single scene.
 
         Creates a per-scene worker thread. If the scene is already
-        generating, the request is ignored.
+        generating, the request is ignored. Reloads project.yaml and
+        .env from disk before creating the worker (#75, #76).
         """
-        if not self._project:
+        if not self._project or not self._project_dir:
             return
 
         scene_key = str(scene.number)
@@ -405,13 +422,27 @@ class MainWindow(QMainWindow):
         if scene_key in self._workers:
             return
 
+        # Reload project and .env from disk to pick up external changes (#75, #76)
+        fresh_project = self._reload_project_for_generation()
+        if fresh_project is None:
+            return
+
+        # Find the matching scene in the fresh project
+        fresh_scene = next(
+            (s for s in fresh_project.scenes if str(s.number) == scene_key),
+            None,
+        )
+        if fresh_scene is None:
+            self._show_error(f"Scene {scene_key} not found in current project.yaml")
+            return
+
         self.console.append_message(
-            f"Generating scene {scene.number}: {scene.title}..."
+            f"Generating scene {fresh_scene.number}: {fresh_scene.title}..."
         )
 
         worker = GenerateWorker(
-            scene=scene,
-            project=self._project,
+            scene=fresh_scene,
+            project=fresh_project,
             output_dir=self._output_dir,
             project_dir=self._project_dir,
         )
