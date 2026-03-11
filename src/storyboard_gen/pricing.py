@@ -13,6 +13,30 @@ logger = logging.getLogger(__name__)
 # Session cache: endpoint_id -> pricing dict (or None for failed lookups)
 _price_cache: dict[str, dict | None] = {}
 
+# FAL-billed model prefixes (models routed through FAL's billing)
+_FAL_PREFIXES = ("fal-ai/", "xai/", "wan/")
+
+
+def _normalise_unit(unit: str) -> str:
+    """Normalise FAL API unit strings to canonical forms.
+
+    The FAL pricing API returns varying unit names across models.
+    We normalise to "image" (flat per-generation) or "second"
+    (duration-based) for consistent downstream handling.
+
+    Args:
+        unit: Raw unit string from the API.
+
+    Returns:
+        Normalised unit: "image", "second", or the original string.
+    """
+    lower = unit.lower()
+    if lower in ("image", "images", "megapixels"):
+        return "image"
+    if lower in ("second", "seconds", "compute seconds"):
+        return "second"
+    return unit
+
 
 def fetch_fal_price(model: str) -> dict | None:
     """Fetch pricing for a FAL model endpoint.
@@ -20,15 +44,16 @@ def fetch_fal_price(model: str) -> dict | None:
     Calls the FAL pricing API and caches the result for the session.
 
     Args:
-        model: The model endpoint ID (e.g. "fal-ai/flux-general").
+        model: The model endpoint ID (e.g. "fal-ai/flux-general",
+            "xai/grok-imagine-image", "wan/v2.6/text-to-video").
 
     Returns:
         Dict with keys ``unit_price`` (float), ``unit`` (str), ``currency``
         (str), or None if pricing is unavailable (non-FAL model, no key,
         API error).
     """
-    # Only FAL models have pricing via this API
-    if not model.startswith("fal-ai/"):
+    # Only FAL-billed models have pricing via this API
+    if not any(model.startswith(prefix) for prefix in _FAL_PREFIXES):
         return None
 
     fal_key = os.environ.get("FAL_KEY")
@@ -39,19 +64,25 @@ def fetch_fal_price(model: str) -> dict | None:
     if model in _price_cache:
         return _price_cache[model]
 
-    url = f"https://rest.fal.ai/v1/models/pricing?endpoint_id={model}"
+    url = f"https://api.fal.ai/v1/models/pricing?endpoint_id={model}"
     req = urllib.request.Request(url)
     req.add_header("Authorization", f"Key {fal_key}")
 
     try:
         with urllib.request.urlopen(req) as resp:  # noqa: S310 — trusted FAL API
             data = json.loads(resp.read())
-        result = {
-            "unit_price": data["unit_price"],
-            "unit": data["unit"],
-            "currency": data["currency"],
-        }
-    except (OSError, KeyError, json.JSONDecodeError) as exc:
+
+        prices = data.get("prices", [])
+        if not prices:
+            result = None
+        else:
+            entry = prices[0]
+            result = {
+                "unit_price": entry["unit_price"],
+                "unit": _normalise_unit(entry["unit"]),
+                "currency": entry["currency"],
+            }
+    except (OSError, KeyError, json.JSONDecodeError, IndexError) as exc:
         logger.debug("Failed to fetch pricing for %s: %s", model, exc)
         result = None
 

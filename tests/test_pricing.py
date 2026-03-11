@@ -8,10 +8,41 @@ import pytest
 
 from storyboard_gen.models import Scene
 from storyboard_gen.pricing import (
+    _normalise_unit,
     estimate_scene_cost,
     fetch_fal_price,
     format_cost_line,
 )
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _normalise_unit
+# ---------------------------------------------------------------------------
+
+
+class TestNormaliseUnit:
+    """Tests for unit string normalisation."""
+
+    def test_normalise_images_to_image(self):
+        assert _normalise_unit("images") == "image"
+
+    def test_normalise_image_unchanged(self):
+        assert _normalise_unit("image") == "image"
+
+    def test_normalise_megapixels_to_image(self):
+        assert _normalise_unit("megapixels") == "image"
+
+    def test_normalise_seconds_to_second(self):
+        assert _normalise_unit("seconds") == "second"
+
+    def test_normalise_second_unchanged(self):
+        assert _normalise_unit("second") == "second"
+
+    def test_normalise_compute_seconds_to_second(self):
+        assert _normalise_unit("compute seconds") == "second"
+
+    def test_normalise_unknown_returns_as_is(self):
+        assert _normalise_unit("tokens") == "tokens"
 
 
 # ---------------------------------------------------------------------------
@@ -41,10 +72,16 @@ class TestFetchFalPrice:
 
         _price_cache.clear()
         response_data = {
-            "endpoint_id": "fal-ai/flux-general",
-            "unit_price": 0.04,
-            "unit": "image",
-            "currency": "USD",
+            "prices": [
+                {
+                    "endpoint_id": "fal-ai/flux-general",
+                    "unit_price": 0.04,
+                    "unit": "images",
+                    "currency": "USD",
+                }
+            ],
+            "next_cursor": None,
+            "has_more": False,
         }
 
         with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
@@ -53,11 +90,93 @@ class TestFetchFalPrice:
             # Act
             result = fetch_fal_price("fal-ai/flux-general")
 
-        # Assert
+        # Assert — unit normalised from "images" to "image"
         assert result is not None
         assert result["unit_price"] == 0.04
         assert result["unit"] == "image"
         assert result["currency"] == "USD"
+
+    def test_fetch_fal_price_normalises_megapixels_to_image(self, monkeypatch):
+        """Megapixels unit is normalised to image (flat per-image cost)."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        from storyboard_gen.pricing import _price_cache
+
+        _price_cache.clear()
+        response_data = {
+            "prices": [
+                {
+                    "endpoint_id": "fal-ai/flux-pro/v1.1",
+                    "unit_price": 0.04,
+                    "unit": "megapixels",
+                    "currency": "USD",
+                }
+            ],
+        }
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+
+            # Act
+            result = fetch_fal_price("fal-ai/flux-pro/v1.1")
+
+        # Assert
+        assert result["unit"] == "image"
+
+    def test_fetch_fal_price_normalises_seconds(self, monkeypatch):
+        """Seconds unit is normalised to second."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        from storyboard_gen.pricing import _price_cache
+
+        _price_cache.clear()
+        response_data = {
+            "prices": [
+                {
+                    "endpoint_id": "wan/v2.6/text-to-video",
+                    "unit_price": 0.10,
+                    "unit": "seconds",
+                    "currency": "USD",
+                }
+            ],
+        }
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+
+            # Act
+            result = fetch_fal_price("wan/v2.6/text-to-video")
+
+        # Assert
+        assert result["unit"] == "second"
+        assert result["unit_price"] == 0.10
+
+    def test_fetch_fal_price_normalises_compute_seconds(self, monkeypatch):
+        """Compute seconds unit is normalised to second."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        from storyboard_gen.pricing import _price_cache
+
+        _price_cache.clear()
+        response_data = {
+            "prices": [
+                {
+                    "endpoint_id": "fal-ai/kling-video/v2.1/pro/text-to-video",
+                    "unit_price": 0.00017,
+                    "unit": "compute seconds",
+                    "currency": "USD",
+                }
+            ],
+        }
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+
+            # Act
+            result = fetch_fal_price("fal-ai/kling-video/v2.1/pro/text-to-video")
+
+        # Assert
+        assert result["unit"] == "second"
 
     def test_fetch_fal_price_returns_none_without_fal_key(self, monkeypatch):
         """Returns None when FAL_KEY is not set."""
@@ -70,16 +189,83 @@ class TestFetchFalPrice:
         # Assert
         assert result is None
 
-    def test_fetch_fal_price_returns_none_for_non_fal_model(self, monkeypatch):
-        """Returns None for non-FAL models (Google, Replicate)."""
+    def test_fetch_fal_price_returns_none_for_google_model(self, monkeypatch):
+        """Returns None for Google models (no slash in ID)."""
         # Arrange
         monkeypatch.setenv("FAL_KEY", "test-key")
 
-        # Act — Google model
+        # Act
         result = fetch_fal_price("imagen-4.0-generate-001")
 
         # Assert
         assert result is None
+
+    def test_fetch_fal_price_returns_none_for_replicate_model(self, monkeypatch):
+        """Returns None for Replicate models (different namespace)."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+
+        # Act
+        result = fetch_fal_price("black-forest-labs/flux-1.1-pro")
+
+        # Assert
+        assert result is None
+
+    def test_fetch_fal_price_accepts_xai_model(self, monkeypatch):
+        """xAI models (xai/*) are accepted and return pricing."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        from storyboard_gen.pricing import _price_cache
+
+        _price_cache.clear()
+        response_data = {
+            "prices": [
+                {
+                    "endpoint_id": "xai/grok-imagine-image",
+                    "unit_price": 0.02,
+                    "unit": "images",
+                    "currency": "USD",
+                }
+            ],
+        }
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+
+            # Act
+            result = fetch_fal_price("xai/grok-imagine-image")
+
+        # Assert
+        assert result is not None
+        assert result["unit_price"] == 0.02
+
+    def test_fetch_fal_price_accepts_wan_model(self, monkeypatch):
+        """Wan 2.6 models (wan/*) are accepted and return pricing."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        from storyboard_gen.pricing import _price_cache
+
+        _price_cache.clear()
+        response_data = {
+            "prices": [
+                {
+                    "endpoint_id": "wan/v2.6/text-to-video",
+                    "unit_price": 0.10,
+                    "unit": "seconds",
+                    "currency": "USD",
+                }
+            ],
+        }
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+
+            # Act
+            result = fetch_fal_price("wan/v2.6/text-to-video")
+
+        # Assert
+        assert result is not None
+        assert result["unit_price"] == 0.10
 
     def test_fetch_fal_price_returns_none_on_network_error(self, monkeypatch):
         """Returns None gracefully on network errors."""
@@ -98,15 +284,37 @@ class TestFetchFalPrice:
         # Assert
         assert result is None
 
+    def test_fetch_fal_price_returns_none_on_empty_prices(self, monkeypatch):
+        """Returns None when the API returns an empty prices array."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        from storyboard_gen.pricing import _price_cache
+
+        _price_cache.clear()
+        response_data = {"prices": [], "next_cursor": None, "has_more": False}
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+
+            # Act
+            result = fetch_fal_price("fal-ai/some-unknown-model")
+
+        # Assert
+        assert result is None
+
     def test_fetch_fal_price_caches_results(self, monkeypatch):
         """Second call for same model uses cached result, no HTTP call."""
         # Arrange
         monkeypatch.setenv("FAL_KEY", "test-key")
         response_data = {
-            "endpoint_id": "fal-ai/flux-general",
-            "unit_price": 0.04,
-            "unit": "image",
-            "currency": "USD",
+            "prices": [
+                {
+                    "endpoint_id": "fal-ai/flux-general",
+                    "unit_price": 0.04,
+                    "unit": "images",
+                    "currency": "USD",
+                }
+            ],
         }
 
         with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
@@ -128,10 +336,14 @@ class TestFetchFalPrice:
         # Arrange
         monkeypatch.setenv("FAL_KEY", "my-secret-key")
         response_data = {
-            "endpoint_id": "fal-ai/flux-general",
-            "unit_price": 0.04,
-            "unit": "image",
-            "currency": "USD",
+            "prices": [
+                {
+                    "endpoint_id": "fal-ai/flux-general",
+                    "unit_price": 0.04,
+                    "unit": "images",
+                    "currency": "USD",
+                }
+            ],
         }
 
         with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
@@ -148,15 +360,19 @@ class TestFetchFalPrice:
         request = call_args[0][0]
         assert request.get_header("Authorization") == "Key my-secret-key"
 
-    def test_fetch_fal_price_video_model_returns_per_second(self, monkeypatch):
-        """Video model pricing returns unit='second'."""
+    def test_fetch_fal_price_uses_api_fal_ai_url(self, monkeypatch):
+        """URL uses api.fal.ai (not rest.fal.ai)."""
         # Arrange
         monkeypatch.setenv("FAL_KEY", "test-key")
         response_data = {
-            "endpoint_id": "fal-ai/wan-i2v",
-            "unit_price": 0.05,
-            "unit": "second",
-            "currency": "USD",
+            "prices": [
+                {
+                    "endpoint_id": "fal-ai/flux-general",
+                    "unit_price": 0.04,
+                    "unit": "images",
+                    "currency": "USD",
+                }
+            ],
         }
 
         with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
@@ -166,11 +382,13 @@ class TestFetchFalPrice:
             _price_cache.clear()
 
             # Act
-            result = fetch_fal_price("fal-ai/wan-i2v")
+            fetch_fal_price("fal-ai/flux-general")
 
         # Assert
-        assert result["unit"] == "second"
-        assert result["unit_price"] == 0.05
+        call_args = mock_urlopen.call_args
+        request = call_args[0][0]
+        assert "api.fal.ai" in request.full_url
+        assert "rest.fal.ai" not in request.full_url
 
 
 # ---------------------------------------------------------------------------
