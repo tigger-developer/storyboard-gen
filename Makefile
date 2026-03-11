@@ -9,6 +9,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 RUFF := $(VENV)/bin/ruff
 PYTEST := $(VENV)/bin/pytest
+LOCAL_BIN := $(HOME)/.local/bin
 
 VERSION_FILE := src/storyboard_gen/__init__.py
 CURRENT_VERSION := $(shell grep '__version__' $(VERSION_FILE) 2>/dev/null | sed 's/.*"\(.*\)".*/\1/')
@@ -25,16 +26,22 @@ $(VENV)/bin/activate:
 	python3.12 -m venv $(VENV)
 	$(PIP) install --upgrade pip -q
 
-install: $(VENV)/bin/activate ## Create venv, install deps, install tool in dev mode
+install: $(VENV)/bin/activate ## Create venv, install deps, symlink to ~/.local/bin
 	$(PIP) install -r requirements.txt -q
 	$(PIP) install ruff pytest -q
 	$(PIP) install -e . -q
-	@echo "Setup complete. Run: source $(VENV)/bin/activate"
+	@mkdir -p "$(LOCAL_BIN)"
+	@ln -sf "$(CURDIR)/$(VENV)/bin/storyboard-gen" "$(LOCAL_BIN)/storyboard-gen"
+	@echo "Installed: $(LOCAL_BIN)/storyboard-gen"
+	@if ! echo "$$PATH" | grep -q "$(LOCAL_BIN)"; then \
+		echo "Warning: $(LOCAL_BIN) is not on your PATH"; \
+	fi
 
 install-gui: install ## Install with GUI dependencies (PySide6)
 	$(PIP) install PySide6 pytest-qt -q
 	$(PIP) install -e ".[gui]" -q
-	@echo "GUI dependencies installed. Run: make gui"
+	@ln -sf "$(CURDIR)/$(VENV)/bin/storyboard-gen-gui" "$(LOCAL_BIN)/storyboard-gen-gui"
+	@echo "Installed: $(LOCAL_BIN)/storyboard-gen-gui"
 
 test: ## Run all tests
 	$(PYTEST) tests/ -v
