@@ -192,9 +192,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Audio file to include (overrides project.yaml)",
     )
     kdenlive_parser.add_argument(
+        "--subtitles",
+        type=str,
+        default=None,
+        help="SRT subtitle file to include (overrides project.yaml)",
+    )
+    kdenlive_parser.add_argument(
         "--preview",
         action="store_true",
-        help="Export without audio",
+        help="Export without audio or subtitles",
     )
 
     # validate subcommand
@@ -414,9 +420,7 @@ def _dry_run(project, scenes) -> int:
                 print(f"    [{status}] {ref}")
 
         # Cost estimate (#80)
-        pricing = fetch_price(
-            provider_cfg.model, pricing_override=provider_cfg.pricing
-        )
+        pricing = fetch_price(provider_cfg.model, pricing_override=provider_cfg.pricing)
         print(f"  {format_cost_line(scene, pricing)}")
         scene_cost = estimate_scene_cost(scene, pricing)
         if scene_cost is not None:
@@ -491,11 +495,27 @@ def _cmd_kdenlive(args: argparse.Namespace) -> int:
             )
             audio_path = None
 
+    # Resolve subtitles: --preview → None; --subtitles → override; project.yaml → default
+    subtitles_path = None
+    if not args.preview:
+        if args.subtitles:
+            subtitles_path = Path(args.subtitles).resolve()
+        elif project.subtitles:
+            subtitles_path = project.subtitles
+
+        if subtitles_path and not subtitles_path.exists():
+            logging.warning(
+                "Subtitles file not found: %s — exporting without subtitles",
+                subtitles_path,
+            )
+            subtitles_path = None
+
     output_path = generate_kdenlive(
         project,
         output_dir,
         output_filename=args.output,
         audio_path=audio_path,
+        subtitles_path=subtitles_path,
     )
     print(f"Kdenlive project: {output_path}")
     return 0
@@ -532,6 +552,8 @@ TOP-LEVEL FIELDS
                                       Values: 9:16, 16:9, 4:3, 1:1
   audio           (string)            Audio file path, relative to project dir.
                                       Muxed into assembled video.
+  subtitles       (string)            SRT subtitle file path, relative to project dir.
+                                      Included in Kdenlive export.
   style_prefix    (string)            Visual style prepended to every prompt.
   style_reference (list)              Style reference image paths for Ideogram Character.
                                       Only used by fal-ai/ideogram/character.

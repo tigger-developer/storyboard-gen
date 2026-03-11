@@ -964,6 +964,119 @@ class TestZeroDurationScene:
         assert seq.get("out") == "149"
 
 
+class TestSubtitleFilter:
+    """Tests for subtitle support in Kdenlive export (#84)."""
+
+    def _build(self, tmp_path, subtitles_path=None, **kwargs):
+        """Build an MLT document from a test project, optionally with subtitles."""
+        project_dir = _make_project_dir(tmp_path, **kwargs)
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+        return _build_mlt(project, output_dir, 30, None, subtitles_path=subtitles_path)
+
+    def test_subtitle_filter_present_when_subtitles_configured(self, tmp_path):
+        # Arrange
+        srt_file = tmp_path / "test.srt"
+        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+
+        # Act
+        mlt = self._build(tmp_path, subtitles_path=srt_file)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filters = seq.findall("filter")
+        sub_filters = [
+            f for f in filters if _get_prop(f, "mlt_service") == "avfilter.subtitles"
+        ]
+        assert len(sub_filters) == 1
+
+    def test_subtitle_filter_absent_when_no_subtitles(self, tmp_path):
+        # Arrange & Act
+        mlt = self._build(tmp_path, subtitles_path=None)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filters = seq.findall("filter")
+        sub_filters = [
+            f for f in filters if _get_prop(f, "mlt_service") == "avfilter.subtitles"
+        ]
+        assert len(sub_filters) == 0
+
+    def test_subtitle_filter_has_correct_mlt_service(self, tmp_path):
+        # Arrange
+        srt_file = tmp_path / "test.srt"
+        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+
+        # Act
+        mlt = self._build(tmp_path, subtitles_path=srt_file)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filt = seq.find("filter[@id='subtitle_filter']")
+        assert _get_prop(filt, "mlt_service") == "avfilter.subtitles"
+
+    def test_subtitle_filter_has_correct_filename(self, tmp_path):
+        # Arrange
+        srt_file = tmp_path / "test.srt"
+        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+
+        # Act
+        mlt = self._build(tmp_path, subtitles_path=srt_file)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filt = seq.find("filter[@id='subtitle_filter']")
+        assert _get_prop(filt, "av.filename") == str(srt_file.resolve())
+
+    def test_subtitle_filter_is_child_of_sequence_tractor(self, tmp_path):
+        # Arrange
+        srt_file = tmp_path / "test.srt"
+        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+
+        # Act
+        mlt = self._build(tmp_path, subtitles_path=srt_file)
+
+        # Assert — filter should be directly on the sequence tractor, not elsewhere
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filt = seq.find("filter[@id='subtitle_filter']")
+        assert filt is not None
+
+        # No subtitle filter on video_tractor or other tractors
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+        assert video_tractor.find("filter[@id='subtitle_filter']") is None
+
+    def test_srt_file_copied_alongside_kdenlive_project(self, tmp_path):
+        """generate_kdenlive() copies the SRT file to {output}.srt."""
+        # Arrange
+        project_dir = _make_project_dir(tmp_path)
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+
+        srt_file = tmp_path / "subs.srt"
+        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+
+        # Act
+        result = generate_kdenlive(project, output_dir, subtitles_path=srt_file)
+
+        # Assert — SRT copied alongside the .kdenlive file
+        expected_srt = Path(str(result) + ".srt")
+        assert expected_srt.exists()
+        assert expected_srt.read_text() == srt_file.read_text()
+
+    def test_subtitle_filter_has_internal_added(self, tmp_path):
+        # Arrange
+        srt_file = tmp_path / "test.srt"
+        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+
+        # Act
+        mlt = self._build(tmp_path, subtitles_path=srt_file)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filt = seq.find("filter[@id='subtitle_filter']")
+        assert _get_prop(filt, "internal_added") == "237"
+
+
 class TestProbeAudio:
     """Tests for ffprobe audio metadata probing."""
 

@@ -96,6 +96,7 @@ class Project:
     still_provider: ProviderConfig | None = None
     clip_provider: ProviderConfig | None = None
     audio: Path | None = None
+    subtitles: Path | None = None
 
     def get_scene(self, number: str) -> Scene:
         """Return a scene by number. Raises ValueError if not found."""

@@ -1,4 +1,4 @@
-<!-- Version: 2.5 | Last updated: 2026-03-11 -->
+<!-- Version: 2.6 | Last updated: 2026-03-11 -->
 
 # Architecture: storyboard-gen
 
@@ -48,6 +48,10 @@ Unified pricing lookup with priority chain: **project.yaml override > FAL live A
 - `estimate_scene_cost(scene, pricing)` — calculates per-scene cost: flat `unit_price` for stills, `unit_price * duration` for clips.
 - `format_cost_line(scene, pricing)` — human-readable cost string for CLI dry-run output.
 
+### SRT parser (`srt.py`)
+
+Parses `.srt` subtitle files into `Subtitle` dataclasses (index, start/end milliseconds, text). Used by the Kdenlive export to include subtitles in the project.
+
 ### Ken Burns (`ken_burns.py`)
 
 Applies zoom/pan effects to still images using FFmpeg, producing short video clips at the scene's specified duration.
@@ -58,7 +62,7 @@ Concatenates all scene outputs (Ken Burns stills + video clips) in order using F
 
 ### Kdenlive export (`kdenlive.py`)
 
-Generates a Kdenlive project file (MLT XML format) for timeline editing. References still PNGs directly (not pre-rendered intermediate MP4s), with Ken Burns pan/zoom effects applied via Kdenlive's native `qtblend` transform filter. Audio producers are tagged with `video_index=-1`, `audio_index=0`, and `kdenlive:clip_type=1` so MLT handles them as audio-only clips. When ffprobe is available, audio metadata (sample rate, channels, codec) is probed at export time. The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adjusting Ken Burns keyframes, and adding transitions before final render.
+Generates a Kdenlive project file (MLT XML format) for timeline editing. References still PNGs directly (not pre-rendered intermediate MP4s), with Ken Burns pan/zoom effects applied via Kdenlive's native `qtblend` transform filter. Audio producers are tagged with `video_index=-1`, `audio_index=0`, and `kdenlive:clip_type=1` so MLT handles them as audio-only clips. When ffprobe is available, audio metadata (sample rate, channels, codec) is probed at export time. When a subtitle file (SRT) is configured, it is copied alongside the `.kdenlive` project as `{project}.kdenlive.srt` and an `avfilter.subtitles` filter is added to the sequence tractor. The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adjusting Ken Burns keyframes, and adding transitions before final render.
 
 ### GUI layer (`gui/`) — optional
 

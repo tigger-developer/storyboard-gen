@@ -20,6 +20,7 @@ def generate_kdenlive(
     output_dir: Path,
     output_filename: str | None = None,
     audio_path: Path | None = None,
+    subtitles_path: Path | None = None,
     fps: int = 30,
 ) -> Path:
     """Generate a Kdenlive project file (.kdenlive) from a storyboard project.
@@ -29,6 +30,7 @@ def generate_kdenlive(
         output_dir: Base output directory (contains stills/, clips/).
         output_filename: Custom output filename. Defaults to "{title}.kdenlive".
         audio_path: Optional path to an audio file to include.
+        subtitles_path: Optional path to an SRT subtitle file to include.
         fps: Frames per second.
 
     Returns:
@@ -45,14 +47,23 @@ def generate_kdenlive(
                 f"Missing clip for scene {scene.number} ({scene.title}): {clip_path}"
             )
 
-    mlt = _build_mlt(project, output_dir, fps, audio_path)
-
     if output_filename is None:
         output_filename = f"{project.title}.kdenlive"
 
     final_dir = output_dir / "final"
     final_dir.mkdir(parents=True, exist_ok=True)
     output_path = final_dir / output_filename
+
+    # Copy SRT alongside the .kdenlive file before building MLT
+    srt_dest = None
+    if subtitles_path is not None:
+        import shutil
+
+        srt_dest = Path(str(output_path) + ".srt")
+        shutil.copy2(subtitles_path, srt_dest)
+        logger.info("Copied subtitles to %s", srt_dest)
+
+    mlt = _build_mlt(project, output_dir, fps, audio_path, subtitles_path=srt_dest)
 
     # Pretty-print the XML
     rough_string = ET.tostring(mlt, encoding="unicode")
@@ -88,6 +99,7 @@ def _build_mlt(
     output_dir: Path,
     fps: int,
     audio_path: Path | None,
+    subtitles_path: Path | None = None,
 ) -> ET.Element:
     """Build the Kdenlive-compatible MLT XML document.
 
@@ -154,7 +166,9 @@ def _build_mlt(
 
     # Sequence tractor (combines all tracks)
     seq_uuid = str(uuid.uuid4())
-    _build_sequence_tractor(mlt, total_frames, seq_uuid, has_audio)
+    _build_sequence_tractor(
+        mlt, total_frames, seq_uuid, has_audio, subtitles_path=subtitles_path
+    )
 
     # Main bin (clip library — required by Kdenlive)
     _build_main_bin(mlt, producers, audio_info, seq_uuid, total_frames)
@@ -271,11 +285,14 @@ def _build_sequence_tractor(
     total_frames: int,
     seq_uuid: str,
     has_audio: bool,
+    subtitles_path: Path | None = None,
 ) -> None:
     """Build the sequence tractor that combines all tracks.
 
     This is the Kdenlive timeline. It includes the black track as
     background and internal mix/qtblend transitions between tracks.
+    When subtitles_path is provided, an avfilter.subtitles filter is
+    appended to the tractor.
     """
     tractor = ET.SubElement(
         mlt,
@@ -307,6 +324,13 @@ def _build_sequence_tractor(
     ET.SubElement(tractor, "track", producer="video_tractor")
     # qtblend transition for video compositing over black
     _add_internal_qtblend(tractor, "seq_blend_video", a_track=0, b_track=track_index)
+
+    # Subtitle filter (if configured)
+    if subtitles_path is not None:
+        filt = ET.SubElement(tractor, "filter", id="subtitle_filter")
+        _set_prop(filt, "mlt_service", "avfilter.subtitles")
+        _set_prop(filt, "internal_added", "237")
+        _set_prop(filt, "av.filename", str(subtitles_path.resolve()))
 
 
 def _build_main_bin(

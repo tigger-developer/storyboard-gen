@@ -1051,6 +1051,41 @@ class TestProjectAudio:
         assert project.audio is None
 
 
+class TestProjectSubtitles:
+    def test_load_project_with_subtitles_resolves_path(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "Subtitles Test",
+            "subtitles": "subs/voiceover.srt",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.subtitles == tmp_path / "subs" / "voiceover.srt"
+
+    def test_load_project_without_subtitles_defaults_to_none(self, tmp_path):
+        # Arrange
+        data = {
+            "title": "No Subtitles",
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.subtitles is None
+
+
 class TestStyleReference:
     def test_load_project_with_style_reference(self, tmp_path):
         # Arrange

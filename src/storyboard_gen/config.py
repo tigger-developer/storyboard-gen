@@ -72,6 +72,11 @@ def _parse_project(data: dict, project_dir: Path) -> Project:
     if audio_str:
         audio_path = project_dir / audio_str
 
+    subtitles_path = None
+    subtitles_str = data.get("subtitles")
+    if subtitles_str:
+        subtitles_path = project_dir / subtitles_str
+
     style_reference = _parse_style_reference(data.get("style_reference"), project_dir)
     still_provider, clip_provider = _parse_providers(data.get("providers", {}))
 
@@ -88,6 +93,7 @@ def _parse_project(data: dict, project_dir: Path) -> Project:
         still_provider=still_provider,
         clip_provider=clip_provider,
         audio=audio_path,
+        subtitles=subtitles_path,
     )
 
 

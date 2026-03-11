@@ -537,6 +537,7 @@ class TestCliSchema:
         assert "aspect_ratio" in output
         assert "style_prefix" in output
         assert "audio" in output
+        assert "subtitles" in output
 
     def test_schema_includes_scene_fields(self, capsys):
         # Arrange & Act
@@ -837,3 +838,119 @@ class TestExpandSceneArgs:
         second_scene = mock_gen_still.call_args_list[1][0][0]
         assert first_scene.number == "1"
         assert second_scene.number == "2"
+
+
+class TestCliKdenliveSubtitles:
+    """Tests for --subtitles flag on kdenlive subcommand (#84)."""
+
+    def _make_kdenlive_project(self, project_dir, subtitles=None, audio=None):
+        """Create a project dir with assets ready for Kdenlive export."""
+        data = {
+            "title": "Subtitle Test",
+            "aspect_ratio": "9:16",
+            "scenes": [
+                {
+                    "number": 1,
+                    "type": "still",
+                    "duration": 5,
+                    "prompt": "A scene.",
+                    "ken_burns": "zoom_in",
+                },
+            ],
+        }
+        if subtitles:
+            data["subtitles"] = subtitles
+        if audio:
+            data["audio"] = audio
+        (project_dir / "project.yaml").write_text(yaml.dump(data))
+
+        # Create required output files
+        output = project_dir / "output"
+        stills = output / "stills"
+        stills.mkdir(parents=True)
+        (stills / "scene_01.png").write_bytes(b"fake-png")
+
+    @patch("storyboard_gen.cli.generate_kdenlive")
+    def test_subtitles_from_project_yaml(self, mock_gen, tmp_path):
+        # Arrange
+        self._make_kdenlive_project(tmp_path, subtitles="subs.srt")
+        srt_file = tmp_path / "subs.srt"
+        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+        os.chdir(tmp_path)
+        mock_gen.return_value = Path("output/final/test.kdenlive")
+
+        # Act
+        exit_code = main(["kdenlive"])
+
+        # Assert
+        assert exit_code == 0
+        _, kwargs = mock_gen.call_args
+        assert kwargs["subtitles_path"] == srt_file
+
+    @patch("storyboard_gen.cli.generate_kdenlive")
+    def test_cli_subtitles_overrides_project_yaml(self, mock_gen, tmp_path):
+        # Arrange
+        self._make_kdenlive_project(tmp_path, subtitles="subs.srt")
+        (tmp_path / "subs.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nOld\n")
+        override_srt = tmp_path / "override.srt"
+        override_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nNew\n")
+        os.chdir(tmp_path)
+        mock_gen.return_value = Path("output/final/test.kdenlive")
+
+        # Act
+        exit_code = main(["kdenlive", "--subtitles", str(override_srt)])
+
+        # Assert
+        assert exit_code == 0
+        _, kwargs = mock_gen.call_args
+        assert kwargs["subtitles_path"] == override_srt
+
+    @patch("storyboard_gen.cli.generate_kdenlive")
+    def test_preview_skips_subtitles(self, mock_gen, tmp_path):
+        # Arrange
+        self._make_kdenlive_project(tmp_path, subtitles="subs.srt")
+        (tmp_path / "subs.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+        os.chdir(tmp_path)
+        mock_gen.return_value = Path("output/final/test.kdenlive")
+
+        # Act
+        exit_code = main(["kdenlive", "--preview"])
+
+        # Assert
+        assert exit_code == 0
+        _, kwargs = mock_gen.call_args
+        assert kwargs.get("subtitles_path") is None
+
+    @patch("storyboard_gen.cli.generate_kdenlive")
+    def test_missing_subtitles_file_warns_and_proceeds(
+        self, mock_gen, tmp_path, caplog
+    ):
+        # Arrange — subtitles configured but file doesn't exist
+        self._make_kdenlive_project(tmp_path, subtitles="missing.srt")
+        os.chdir(tmp_path)
+        mock_gen.return_value = Path("output/final/test.kdenlive")
+
+        # Act
+        with caplog.at_level(logging.WARNING):
+            exit_code = main(["kdenlive"])
+
+        # Assert — proceeds without subtitles, logs warning
+        assert exit_code == 0
+        _, kwargs = mock_gen.call_args
+        assert kwargs.get("subtitles_path") is None
+        assert "missing.srt" in caplog.text
+
+    @patch("storyboard_gen.cli.generate_kdenlive")
+    def test_no_subtitles_configured(self, mock_gen, tmp_path):
+        # Arrange — no subtitles in project.yaml
+        self._make_kdenlive_project(tmp_path)
+        os.chdir(tmp_path)
+        mock_gen.return_value = Path("output/final/test.kdenlive")
+
+        # Act
+        exit_code = main(["kdenlive"])
+
+        # Assert
+        assert exit_code == 0
+        _, kwargs = mock_gen.call_args
+        assert kwargs.get("subtitles_path") is None

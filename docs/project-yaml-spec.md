@@ -1,4 +1,4 @@
-<!-- Version: 2.2 | Last updated: 2026-02-28 -->
+<!-- Version: 2.3 | Last updated: 2026-03-11 -->
 
 # project.yaml Specification
 
@@ -32,6 +32,7 @@ my-project/
 | `title` | string | **yes** | — | Project title |
 | `aspect_ratio` | string | no | `"16:9"` | Output aspect ratio |
 | `audio` | string | no | `null` | Path to audio file for assembly (relative to project dir) |
+| `subtitles` | string | no | `null` | Path to SRT subtitle file for Kdenlive export (relative to project dir) |
 | `style_prefix` | string | no | `""` | Visual style description prepended to every scene prompt |
 | `style_reference` | list | no | `[]` | Style reference image paths for Ideogram Character (`image_urls`) |
 | `providers` | object | no | — | AI provider configuration (defaults to Google) |
@@ -48,6 +49,16 @@ Optional path to an audio file (voice-over, soundtrack) to mux into the assemble
 
 ```yaml
 audio: "audio.m4a"
+```
+
+### `subtitles`
+
+Optional path to an SRT subtitle file to include in the Kdenlive export. Relative to the project directory. The CLI `--subtitles` flag overrides this value; `--preview` skips subtitles entirely. If the file doesn't exist at export time, a warning is logged and the export proceeds without subtitles.
+
+The SRT file is copied alongside the `.kdenlive` project as `{project}.kdenlive.srt`, and an `avfilter.subtitles` filter is added to the sequence tractor in the MLT XML.
+
+```yaml
+subtitles: "subs/voiceover.srt"
 ```
 
 ### `style_prefix`
@@ -339,6 +350,7 @@ The camera phrasing is inserted between the `style_prefix` and character descrip
 title: "The Bridge at Dawn"
 aspect_ratio: "9:16"
 audio: "narration.m4a"
+subtitles: "subs/narration.srt"
 
 providers:
   still:
@@ -443,9 +455,10 @@ storyboard-gen generate --all              # Generate everything
 storyboard-gen assemble                     # Assemble final video (with audio if configured)
 storyboard-gen assemble --preview           # Assemble without audio
 storyboard-gen assemble --audio voice.m4a   # Override audio track
-storyboard-gen kdenlive                     # Export Kdenlive project with Ken Burns effects
-storyboard-gen kdenlive --output my.kdenlive # Custom output filename
-storyboard-gen --version                    # Show version
+storyboard-gen kdenlive                              # Export Kdenlive project with Ken Burns effects
+storyboard-gen kdenlive --output my.kdenlive         # Custom output filename
+storyboard-gen kdenlive --subtitles subs.srt         # Include SRT subtitles
+storyboard-gen --version                             # Show version
 ```
 
 ---
