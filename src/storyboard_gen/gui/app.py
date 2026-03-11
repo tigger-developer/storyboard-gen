@@ -701,6 +701,7 @@ class MainWindow(QMainWindow):
 
         try:
             audio_path = None
+            subtitles_path = None
             if not options.get("preview"):
                 if options.get("audio"):
                     audio_path = options["audio"]
@@ -712,6 +713,14 @@ class MainWindow(QMainWindow):
                         )
                         audio_path = None
 
+                if self._project.subtitles:
+                    subtitles_path = self._project.subtitles
+                    if not subtitles_path.exists():
+                        self.console.append_message(
+                            f"Warning: Subtitles not found: {subtitles_path}"
+                        )
+                        subtitles_path = None
+
             output_filename = options.get("output", f"{self._project.title}.kdenlive")
 
             output_path = generate_kdenlive(
@@ -719,6 +728,7 @@ class MainWindow(QMainWindow):
                 self._output_dir,
                 output_filename=output_filename,
                 audio_path=audio_path,
+                subtitles_path=subtitles_path,
             )
             self.console.append_message(f"Kdenlive export complete: {output_path}")
         except (RuntimeError, OSError) as exc:

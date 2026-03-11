@@ -1,4 +1,4 @@
-<!-- Version: 2.7 | Last updated: 2026-03-11 -->
+<!-- Version: 2.8 | Last updated: 2026-03-11 -->
 
 # Architecture: storyboard-gen
 
@@ -62,7 +62,7 @@ Concatenates all scene outputs (Ken Burns stills + video clips) in order using F
 
 ### Kdenlive export (`kdenlive.py`)
 
-Generates a Kdenlive project file (MLT XML format) for timeline editing. References still PNGs directly (not pre-rendered intermediate MP4s), with Ken Burns pan/zoom effects applied via Kdenlive's native `qtblend` transform filter. Audio producers are tagged with `video_index=-1`, `audio_index=0`, and `kdenlive:clip_type=1` so MLT handles them as audio-only clips. When ffprobe is available, audio metadata (sample rate, channels, codec) is probed at export time. When a subtitle file (SRT) is configured, it is copied alongside the `.kdenlive` project as `{project}.kdenlive.srt` and an `avfilter.subtitles` filter is added to the sequence tractor. The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adjusting Ken Burns keyframes, and adding transitions before final render.
+Generates a Kdenlive project file (MLT XML format) for timeline editing. References still PNGs directly (not pre-rendered intermediate MP4s), with Ken Burns pan/zoom effects applied via Kdenlive's native `qtblend` transform filter. Audio producers are tagged with `video_index=-1`, `audio_index=0`, and `kdenlive:clip_type=1` so MLT handles them as audio-only clips. When ffprobe is available, audio metadata (sample rate, channels, codec) is probed at export time. When a subtitle file (SRT) is configured, it is copied alongside the `.kdenlive` project as `{project}.kdenlive.srt` and an `avfilter.subtitles` filter (with `kdenlive_id` for Kdenlive effect recognition) is added to the sequence tractor. Both CLI and GUI pass `subtitles_path` from `project.subtitles` (skipped in preview mode, with existence check). The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adjusting Ken Burns keyframes, and adding transitions before final render.
 
 ### GUI layer (`gui/`) — optional
 

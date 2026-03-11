@@ -1063,7 +1063,22 @@ class TestSubtitleFilter:
         assert expected_srt.exists()
         assert expected_srt.read_text() == srt_file.read_text()
 
-    def test_subtitle_filter_has_internal_added(self, tmp_path):
+    def test_subtitle_filter_has_no_internal_added(self, tmp_path):
+        """Subtitle filter must NOT be marked internal — Kdenlive hides internal filters (#89)."""
+        # Arrange
+        srt_file = tmp_path / "test.srt"
+        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+
+        # Act
+        mlt = self._build(tmp_path, subtitles_path=srt_file)
+
+        # Assert — internal_added must NOT be set on subtitle filter
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filt = seq.find("filter[@id='subtitle_filter']")
+        assert _get_prop(filt, "internal_added") is None
+
+    def test_subtitle_filter_has_kdenlive_id(self, tmp_path):
+        """Subtitle filter must have kdenlive_id so Kdenlive recognises the effect (#89)."""
         # Arrange
         srt_file = tmp_path / "test.srt"
         srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
@@ -1074,7 +1089,7 @@ class TestSubtitleFilter:
         # Assert
         seq = mlt.find("tractor[@id='sequence_tractor']")
         filt = seq.find("filter[@id='subtitle_filter']")
-        assert _get_prop(filt, "internal_added") == "237"
+        assert _get_prop(filt, "kdenlive_id") == "avfilter.subtitles"
 
 
 class TestProbeAudio:

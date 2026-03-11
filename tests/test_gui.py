@@ -1420,6 +1420,96 @@ class TestMainWindowOutputAndRefresh:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests: GUI Kdenlive subtitle pass-through (#89)
+# ---------------------------------------------------------------------------
+
+
+class TestGuiKdenliveSubtitles:
+    """Test that GUI Kdenlive export passes subtitle path from project (#89)."""
+
+    def test_gui_kdenlive_export_passes_subtitles_path(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """GUI Kdenlive export should pass project.subtitles to generate_kdenlive."""
+        from storyboard_gen.gui.app import MainWindow
+
+        # Arrange — add subtitles to the project
+        yaml_path = gui_project_dir_with_output / "project.yaml"
+        data = yaml.safe_load(yaml_path.read_text())
+        data["subtitles"] = "subs.srt"
+        yaml_path.write_text(yaml.dump(data))
+
+        srt_file = gui_project_dir_with_output / "subs.srt"
+        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir_with_output)
+
+        # Act — mock generate_kdenlive and call the export method
+        with patch("storyboard_gen.kdenlive.generate_kdenlive") as mock_gen:
+            mock_gen.return_value = gui_project_dir_with_output / "output" / "final" / "test.kdenlive"
+            window._run_kdenlive({"mode": "kdenlive"})
+
+        # Assert — subtitles_path should be passed
+        _, kwargs = mock_gen.call_args
+        assert kwargs.get("subtitles_path") == srt_file
+
+    def test_gui_kdenlive_export_skips_subtitles_in_preview(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """GUI Kdenlive export in preview mode should skip subtitles."""
+        from storyboard_gen.gui.app import MainWindow
+
+        # Arrange
+        yaml_path = gui_project_dir_with_output / "project.yaml"
+        data = yaml.safe_load(yaml_path.read_text())
+        data["subtitles"] = "subs.srt"
+        yaml_path.write_text(yaml.dump(data))
+
+        srt_file = gui_project_dir_with_output / "subs.srt"
+        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir_with_output)
+
+        # Act
+        with patch("storyboard_gen.kdenlive.generate_kdenlive") as mock_gen:
+            mock_gen.return_value = gui_project_dir_with_output / "output" / "final" / "test.kdenlive"
+            window._run_kdenlive({"mode": "kdenlive", "preview": True})
+
+        # Assert — no subtitles in preview mode
+        _, kwargs = mock_gen.call_args
+        assert kwargs.get("subtitles_path") is None
+
+    def test_gui_kdenlive_export_skips_missing_subtitles(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """GUI Kdenlive export should skip subtitles if file doesn't exist."""
+        from storyboard_gen.gui.app import MainWindow
+
+        # Arrange — subtitles configured but file doesn't exist
+        yaml_path = gui_project_dir_with_output / "project.yaml"
+        data = yaml.safe_load(yaml_path.read_text())
+        data["subtitles"] = "nonexistent.srt"
+        yaml_path.write_text(yaml.dump(data))
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir_with_output)
+
+        # Act
+        with patch("storyboard_gen.kdenlive.generate_kdenlive") as mock_gen:
+            mock_gen.return_value = gui_project_dir_with_output / "output" / "final" / "test.kdenlive"
+            window._run_kdenlive({"mode": "kdenlive"})
+
+        # Assert — subtitles_path should be None (file missing)
+        _, kwargs = mock_gen.call_args
+        assert kwargs.get("subtitles_path") is None
+
+
+# ---------------------------------------------------------------------------
 # Unit tests: error dialog surfacing
 # ---------------------------------------------------------------------------
 

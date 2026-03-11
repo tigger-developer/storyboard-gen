@@ -68,7 +68,7 @@ See [docs/quickstart.md](docs/quickstart.md) for full installation instructions 
 |----------|---------|
 | `src/storyboard_gen/` | Tool source code (CLI + optional GUI) |
 | `src/storyboard_gen/gui/` | Optional PySide6 graphical interface |
-| `tests/` | Test suite (873 tests) |
+| `tests/` | Test suite (877 tests) |
 | `scripts/release.sh` | Release automation |
 | `Makefile` | Build, test, lint, release targets |
 

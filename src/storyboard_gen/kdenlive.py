@@ -329,7 +329,7 @@ def _build_sequence_tractor(
     if subtitles_path is not None:
         filt = ET.SubElement(tractor, "filter", id="subtitle_filter")
         _set_prop(filt, "mlt_service", "avfilter.subtitles")
-        _set_prop(filt, "internal_added", "237")
+        _set_prop(filt, "kdenlive_id", "avfilter.subtitles")
         _set_prop(filt, "av.filename", str(subtitles_path.resolve()))
 
 
