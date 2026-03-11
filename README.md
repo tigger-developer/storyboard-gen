@@ -6,8 +6,8 @@ The idea is simple: separate the creative decisions (what your video looks like)
 
 ## What it does
 
-1. **Generate stills** — AI-rendered images from your scene prompts (Google Imagen, FAL Flux/Kontext, Replicate Flux)
-2. **Generate clips** — AI-rendered video from your scene prompts (Google Veo, FAL Kling)
+1. **Generate stills** — AI-rendered images from your scene prompts (Google Imagen, FAL Flux/Kontext/Ideogram, Replicate Flux)
+2. **Generate clips** — AI-rendered video from your scene prompts (Google Veo, FAL Kling/Wan/MiniMax)
 3. **Apply Ken Burns effects** — zoom, pan, and static effects on stills via FFmpeg
 4. **Assemble** — concatenate everything in scene order with optional audio
 5. **Export to Kdenlive** — full editing project (see below)

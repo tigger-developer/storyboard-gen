@@ -11,8 +11,11 @@ from storyboard_gen.models import Character
 from storyboard_gen.providers.fal import (
     FalProvider,
     Flux2Handler,
+    Flux2ProHandler,
     FluxHandler,
     IdeogramCharacterHandler,
+    IdeogramV3Handler,
+    InstantCharacterHandler,
     KontextHandler,
     KontextMultiHandler,
     O1ImageHandler,
@@ -2547,3 +2550,393 @@ class TestStillHandlerIsABC:
 
     def test_ideogram_character_handler_is_still_handler(self):
         assert isinstance(IdeogramCharacterHandler(), StillHandler)
+
+    def test_flux2_pro_handler_is_still_handler(self):
+        assert isinstance(Flux2ProHandler(), StillHandler)
+
+    def test_instant_character_handler_is_still_handler(self):
+        assert isinstance(InstantCharacterHandler(), StillHandler)
+
+    def test_ideogram_v3_handler_is_still_handler(self):
+        assert isinstance(IdeogramV3Handler(), StillHandler)
+
+
+class TestFlux2ProHandler:
+    """Tests for Flux 2 Pro handler (#72)."""
+
+    def test_match_flux2_pro(self):
+        assert Flux2ProHandler().match("fal-ai/flux-2-pro")
+
+    def test_match_flux2_pro_edit(self):
+        assert Flux2ProHandler().match("fal-ai/flux-2-pro/edit")
+
+    def test_match_flux2_max(self):
+        assert Flux2ProHandler().match("fal-ai/flux-2-max")
+
+    def test_match_flux2_max_edit(self):
+        assert Flux2ProHandler().match("fal-ai/flux-2-max/edit")
+
+    def test_no_match_flux2_base(self):
+        assert not Flux2ProHandler().match("fal-ai/flux-2")
+
+    def test_no_match_flux2_turbo(self):
+        assert not Flux2ProHandler().match("fal-ai/flux-2/turbo")
+
+    def test_no_match_flux_general(self):
+        assert not Flux2ProHandler().match("fal-ai/flux-general")
+
+    def test_safety_defaults(self):
+        assert Flux2ProHandler().safety_defaults() == {"enable_safety_checker": False}
+
+    def test_resolve_handler_flux2_pro(self):
+        handler = _resolve_still_handler("fal-ai/flux-2-pro")
+        assert isinstance(handler, Flux2ProHandler)
+
+    def test_resolve_handler_flux2_max(self):
+        handler = _resolve_still_handler("fal-ai/flux-2-max")
+        assert isinstance(handler, Flux2ProHandler)
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux2_pro_with_refs_routes_to_edit_endpoint(self, mock_fal, tmp_path):
+        """Flux 2 Pro routes to /edit when scene_characters have references."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "boy.jpg"
+        ref_img.write_bytes(b"img-data")
+        chars = [Character(id="boy", description="A boy", reference=[ref_img])]
+        provider = FalProvider(model="fal-ai/flux-2-pro")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="@boy stands in a field",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert — endpoint should be /edit
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/flux-2-pro/edit"
+        arguments = call_args.kwargs["arguments"]
+        assert "image_urls" in arguments
+        # Prompt should be rewritten with @image1
+        assert "@image1" in arguments["prompt"]
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux2_pro_without_refs_uses_base_endpoint(self, mock_fal, tmp_path):
+        """Flux 2 Pro uses base endpoint when no references."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/flux-2-pro")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+            )
+
+        # Assert — endpoint should be base model
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/flux-2-pro"
+        arguments = call_args.kwargs["arguments"]
+        assert "image_urls" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux2_pro_edit_model_does_not_double_edit(self, mock_fal, tmp_path):
+        """When user specifies /edit model, don't append /edit again."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "boy.jpg"
+        ref_img.write_bytes(b"img-data")
+        chars = [Character(id="boy", description="A boy", reference=[ref_img])]
+        provider = FalProvider(model="fal-ai/flux-2-pro/edit")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="@boy in a park",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert — should be /edit, NOT /edit/edit
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/flux-2-pro/edit"
+
+
+class TestInstantCharacterHandler:
+    """Tests for Instant Character handler (#72)."""
+
+    def test_match_positive(self):
+        assert InstantCharacterHandler().match("fal-ai/instant-character")
+
+    def test_match_negative_flux(self):
+        assert not InstantCharacterHandler().match("fal-ai/flux-general")
+
+    def test_safety_defaults(self):
+        assert InstantCharacterHandler().safety_defaults() == {
+            "enable_safety_checker": False
+        }
+
+    def test_resolve_handler(self):
+        handler = _resolve_still_handler("fal-ai/instant-character")
+        assert isinstance(handler, InstantCharacterHandler)
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_passes_image_url_from_reference(self, mock_fal, tmp_path):
+        """Instant Character passes single ref as image_url."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "boy.jpg"
+        ref_img.write_bytes(b"img-data")
+        provider = FalProvider(model="fal-ai/instant-character")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy smiling",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref_img],
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_url"] == "https://fal.media/files/ref.png"
+        assert arguments["image_size"] == "portrait_16_9"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_works_without_reference(self, mock_fal, tmp_path):
+        """Instant Character works without reference (no image_url)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/instant-character")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy smiling",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert — no image_url
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "image_url" not in arguments
+
+
+class TestIdeogramV3Handler:
+    """Tests for Ideogram V3 handler (#72)."""
+
+    def test_match_positive(self):
+        assert IdeogramV3Handler().match("fal-ai/ideogram/v3")
+
+    def test_match_negative_character(self):
+        assert not IdeogramV3Handler().match("fal-ai/ideogram/character")
+
+    def test_match_negative_flux(self):
+        assert not IdeogramV3Handler().match("fal-ai/flux-general")
+
+    def test_safety_defaults(self):
+        assert IdeogramV3Handler().safety_defaults() == {}
+
+    def test_resolve_handler(self):
+        handler = _resolve_still_handler("fal-ai/ideogram/v3")
+        assert isinstance(handler, IdeogramV3Handler)
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_uses_image_size_preset(self, mock_fal, tmp_path):
+        """Ideogram V3 uses image_size presets."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/ideogram/v3")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A sign saying HELLO",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_size"] == "portrait_16_9"
+        assert arguments["style"] == "AUTO"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_passes_style_refs_as_image_urls(self, mock_fal, tmp_path):
+        """Ideogram V3 passes style references via image_urls."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/style.png"
+        style_ref = tmp_path / "style.png"
+        style_ref.write_bytes(b"style-data")
+        provider = FalProvider(model="fal-ai/ideogram/v3")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A poster",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+                style_reference_images=[style_ref],
+                project_dir=tmp_path,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "image_urls" in arguments
+
+
+class TestWanVideoModel:
+    """Tests for Wan video model support (#72)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_wan_i2v_is_video_model(self, mock_fal):
+        provider = FalProvider(model="fal-ai/wan-i2v")
+        assert provider._is_video_model
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_wan_pro_is_video_model(self, mock_fal):
+        provider = FalProvider(model="fal-ai/wan-pro/image-to-video")
+        assert provider._is_video_model
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_wan_clip_passes_image_url(self, mock_fal, tmp_path):
+        """Wan i2v passes source_frame as image_url."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"frame-data")
+        provider = FalProvider(model="fal-ai/wan-i2v")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A boy running",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_url"] == "https://fal.media/files/frame.png"
+        assert "generate_audio" not in arguments
+
+
+class TestMinimaxVideoModel:
+    """Tests for MiniMax video model support (#72)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_minimax_is_video_model(self, mock_fal):
+        provider = FalProvider(model="fal-ai/minimax/video-01-subject-reference")
+        assert provider._is_video_model
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_minimax_passes_subject_ref(self, mock_fal, tmp_path):
+        """MiniMax passes first ref as subject_reference_image_url."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/face.png"
+        ref = tmp_path / "face.png"
+        ref.write_bytes(b"face-data")
+        provider = FalProvider(model="fal-ai/minimax/video-01-subject-reference")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A person dancing",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                reference_images=[ref],
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert (
+            arguments["subject_reference_image_url"]
+            == "https://fal.media/files/face.png"
+        )
+
+
+class TestGoogleClipAudioDisabled:
+    """Tests that Google Veo clips disable audio generation (#72)."""
+
+    @patch("storyboard_gen.providers.google.GoogleProvider._get_client")
+    def test_veo_config_disables_audio(self, mock_get_client, tmp_path):
+        """Veo GenerateVideosConfig sets generate_audio=False."""
+        from storyboard_gen.providers.google import GoogleProvider
+
+        # Arrange — mock the client and its generate_videos
+        mock_client = mock_get_client.return_value
+        mock_op = type("Op", (), {"done": True, "response": None, "result": None})()
+        mock_client.models.generate_videos.return_value = mock_op
+
+        provider = GoogleProvider(model="veo-3.1-fast-generate-001")
+
+        # Act — expect RuntimeError because response is None
+        try:
+            provider.generate_clip(
+                prompt="Motion",
+                output_path=tmp_path / "clip.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                client=mock_client,
+            )
+        except RuntimeError:
+            pass
+
+        # Assert — check the config passed to generate_videos
+        call_kwargs = mock_client.models.generate_videos.call_args.kwargs
+        config = call_kwargs["config"]
+        assert config.generate_audio is False

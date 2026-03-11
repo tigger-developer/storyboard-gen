@@ -209,6 +209,137 @@ class KontextHandler(StillHandler):
         return provider._build_kontext_args(prompt, aspect_ratio, ref_url)
 
 
+class Flux2ProHandler(StillHandler):
+    """Handler for Flux 2 Pro/Max models (multi-ref via image_urls + @imageN prompt)."""
+
+    def match(self, model: str) -> bool:
+        lower = model.lower()
+        return "flux-2-pro" in lower or "flux-2-max" in lower
+
+    def safety_defaults(self) -> dict:
+        return {"enable_safety_checker": False}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        # Strip /edit suffix to get clean base model
+        base_model = re.sub(r"/edit$", "", provider.model, flags=re.IGNORECASE)
+
+        if scene_characters:
+            cdn_cache = provider._load_cdn_cache(project_dir)
+
+            # Upload all character refs
+            all_refs: list[Path] = []
+            for char in scene_characters:
+                all_refs.extend(r for r in char.reference if r.exists())
+            image_urls = provider._upload_all_references(all_refs, cdn_cache)
+
+            # Rewrite @character_id → @imageN (lowercase per Flux 2 Pro API)
+            prompt = provider._rewrite_prompt(
+                prompt, scene_characters, tag_prefix="image"
+            )
+
+            provider._save_cdn_cache(project_dir, cdn_cache)
+
+            endpoint = base_model.rstrip("/") + "/edit"
+            image_size = _map_aspect_ratio(aspect_ratio)
+            arguments: dict = {
+                "prompt": prompt,
+                "image_size": image_size,
+                "image_urls": image_urls,
+                "num_images": 1,
+                "output_format": "png",
+            }
+        else:
+            endpoint = base_model
+            image_size = _map_aspect_ratio(aspect_ratio)
+            arguments = {
+                "prompt": prompt,
+                "image_size": image_size,
+                "num_images": 1,
+                "output_format": "png",
+            }
+        return endpoint, arguments
+
+
+class InstantCharacterHandler(StillHandler):
+    """Handler for Instant Character models (single ref via image_url)."""
+
+    def match(self, model: str) -> bool:
+        return "instant-character" in model.lower()
+
+    def safety_defaults(self) -> dict:
+        return {"enable_safety_checker": False}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        image_size = _map_aspect_ratio(aspect_ratio)
+        arguments: dict = {
+            "prompt": prompt,
+            "image_size": image_size,
+            "num_images": 1,
+            "output_format": "png",
+        }
+        ref_url = provider._upload_reference(reference_images)
+        if ref_url:
+            arguments["image_url"] = ref_url
+        return provider.model, arguments
+
+
+class IdeogramV3Handler(StillHandler):
+    """Handler for Ideogram V3 models (typography, style refs only)."""
+
+    def match(self, model: str) -> bool:
+        lower = model.lower()
+        return "ideogram" in lower and "/v3" in lower
+
+    def safety_defaults(self) -> dict:
+        return {}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        image_size = _map_aspect_ratio(aspect_ratio)
+        arguments: dict = {
+            "prompt": prompt,
+            "image_size": image_size,
+            "num_images": 1,
+            "output_format": "png",
+            "style": "AUTO",
+        }
+        # Style refs → image_urls (same channel as ideogram/character)
+        if style_reference_images:
+            cdn_cache = provider._load_cdn_cache(project_dir)
+            existing_style = [r for r in style_reference_images if r.exists()]
+            if existing_style:
+                style_urls = provider._upload_all_references(existing_style, cdn_cache)
+                arguments["image_urls"] = style_urls
+            provider._save_cdn_cache(project_dir, cdn_cache)
+        return provider.model, arguments
+
+
 class Flux2Handler(StillHandler):
     """Handler for Flux 2 models (no reference support)."""
 
@@ -258,9 +389,12 @@ class FluxHandler(StillHandler):
 # Registry: order matters — more specific handlers first, FluxHandler (fallback) last.
 _STILL_HANDLERS: list[StillHandler] = [
     IdeogramCharacterHandler(),
+    IdeogramV3Handler(),
     O1ImageHandler(),
     KontextMultiHandler(),
     KontextHandler(),
+    InstantCharacterHandler(),
+    Flux2ProHandler(),
     Flux2Handler(),
     FluxHandler(),
 ]
@@ -623,7 +757,18 @@ class FalProvider(ImageProvider):
     @property
     def _is_video_model(self) -> bool:
         """Detect whether this provider is configured for a video model."""
-        return "kling-video" in self.model.lower()
+        lower = self.model.lower()
+        return "kling-video" in lower or "/wan" in lower or "minimax" in lower
+
+    @property
+    def _is_wan(self) -> bool:
+        """Detect whether this is a Wan video model."""
+        return "/wan" in self.model.lower()
+
+    @property
+    def _is_minimax(self) -> bool:
+        """Detect whether this is a MiniMax video model."""
+        return "minimax" in self.model.lower()
 
     @property
     def _is_v3(self) -> bool:
@@ -635,31 +780,39 @@ class FalProvider(ImageProvider):
         """Detect whether this is a Kling O3 model (supports character elements)."""
         return "/o3/" in self.model.lower()
 
-    def _rewrite_prompt(self, prompt: str, scene_characters: list) -> str:
+    def _rewrite_prompt(
+        self,
+        prompt: str,
+        scene_characters: list,
+        tag_prefix: str | None = None,
+    ) -> str:
         """Rewrite @character_id tokens in a prompt.
 
         For O3 clip models: replaces @char_id with @ElementN (1-indexed).
         For O1 Image still models: replaces @char_id with @ImageN (1-indexed).
+        For Flux 2 Pro: replaces @char_id with @imageN (1-indexed, lowercase).
         For all other models: strips the @ prefix from @char_id tokens.
 
-        When O3/O1 and no @char_id tokens are found, auto-prepends
-        @ElementN/@ImageN descriptions using each character's description field.
+        When a tag_prefix is active and no @char_id tokens are found,
+        auto-prepends @TagN descriptions using each character's description field.
 
         Args:
             prompt: Original prompt with possible @character_id tokens.
             scene_characters: Ordered list of Character objects.
+            tag_prefix: Explicit tag prefix (e.g. "image" for Flux 2 Pro).
+                If None, auto-detects from model type.
 
         Returns:
             Rewritten prompt.
         """
         char_ids = [c.id for c in scene_characters]
 
-        # Determine the tag prefix based on model type
-        tag_prefix = None
-        if self._is_o3:
-            tag_prefix = "Element"
-        elif self._is_o1_image:
-            tag_prefix = "Image"
+        # Determine the tag prefix based on model type (if not explicit)
+        if tag_prefix is None:
+            if self._is_o3:
+                tag_prefix = "Element"
+            elif self._is_o1_image:
+                tag_prefix = "Image"
 
         if tag_prefix:
             # Check if any @character_id tokens are present
@@ -858,11 +1011,11 @@ class FalProvider(ImageProvider):
         project_dir: Path | None = None,
         scene_number: str | None = None,
     ) -> list[bytes]:
-        """Generate a video clip via FAL Kling models.
+        """Generate a video clip via FAL video models.
 
         Uses fal_client.subscribe() for synchronous generation.
-        Supports image-to-video via source_frame and last_frame.
-        O3 models build character elements from scene_characters.
+        Supports Kling (with O3 elements), Wan (image-to-video),
+        and MiniMax (subject reference) models.
 
         Raises:
             NotImplementedError: If model is not a video model (e.g. Flux/Kontext).
@@ -872,7 +1025,7 @@ class FalProvider(ImageProvider):
         if not self._is_video_model:
             raise NotImplementedError(
                 f"FAL provider ({self.model}) does not support video generation. "
-                f"Use a Kling model or Google (Veo) for clips."
+                f"Use a Kling, Wan, or MiniMax model, or Google (Veo) for clips."
             )
 
         if fal_client is None:
@@ -895,17 +1048,28 @@ class FalProvider(ImageProvider):
             last_frame_url = fal_client.upload_file(str(last_frame))
             logger.info("Uploaded last frame -> %s", last_frame_url)
 
-        arguments = self._build_video_args(
-            prompt, aspect_ratio, duration, source_frame_url, last_frame_url
-        )
-
-        # Build O3 character elements (#37)
-        if self._is_o3 and scene_characters:
-            cdn_cache = self._load_cdn_cache(project_dir)
-            elements = self._build_elements(scene_characters, cdn_cache)
-            if elements:
-                arguments["elements"] = elements
-            self._save_cdn_cache(project_dir, cdn_cache)
+        # Build model-specific arguments
+        if self._is_wan:
+            arguments: dict = {"prompt": prompt}
+            if source_frame_url:
+                arguments["image_url"] = source_frame_url
+        elif self._is_minimax:
+            arguments = {"prompt": prompt}
+            ref_url = self._upload_reference(reference_images)
+            if ref_url:
+                arguments["subject_reference_image_url"] = ref_url
+        else:
+            # Kling models
+            arguments = self._build_video_args(
+                prompt, aspect_ratio, duration, source_frame_url, last_frame_url
+            )
+            # Build O3 character elements (#37)
+            if self._is_o3 and scene_characters:
+                cdn_cache = self._load_cdn_cache(project_dir)
+                elements = self._build_elements(scene_characters, cdn_cache)
+                if elements:
+                    arguments["elements"] = elements
+                self._save_cdn_cache(project_dir, cdn_cache)
 
         # Merge provider options (cfg_scale, negative_prompt, etc.)
         merged_options = self.options.copy()
@@ -913,15 +1077,16 @@ class FalProvider(ImageProvider):
             merged_options.update(options)
         arguments.update(merged_options)
 
-        # Auto-route endpoint based on whether source_frame is set (#36)
+        # Auto-route endpoint (Kling only — t2v ↔ i2v based on source_frame)
         endpoint = self.model
-        has_source = source_frame_url is not None
-        if has_source and "text-to-video" in endpoint:
-            endpoint = endpoint.replace("text-to-video", "image-to-video")
-            logger.info("Auto-routed endpoint to image-to-video (source_frame set)")
-        elif not has_source and "image-to-video" in endpoint:
-            endpoint = endpoint.replace("image-to-video", "text-to-video")
-            logger.info("Auto-routed endpoint to text-to-video (no source_frame)")
+        if not self._is_wan and not self._is_minimax:
+            has_source = source_frame_url is not None
+            if has_source and "text-to-video" in endpoint:
+                endpoint = endpoint.replace("text-to-video", "image-to-video")
+                logger.info("Auto-routed endpoint to image-to-video (source_frame set)")
+            elif not has_source and "image-to-video" in endpoint:
+                endpoint = endpoint.replace("image-to-video", "text-to-video")
+                logger.info("Auto-routed endpoint to text-to-video (no source_frame)")
 
         logger.info(
             "Generating clip via FAL model=%s endpoint=%s", self.model, endpoint

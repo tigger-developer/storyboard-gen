@@ -189,21 +189,28 @@ GCS_OUTPUT_BUCKET=gs://your-bucket-name/
 
 ## Models
 
-- Google Imagen: `imagen-4.0-generate-001`
-- Google Veo: `veo-3.1-fast-generate-001`
+- Google Imagen: `imagen-4.0-generate-001`, `imagen-4.0-ultra-generate-001`, `imagen-4.0-fast-generate-001`
+- Google Veo: `veo-3.1-fast-generate-001`, `veo-3.1-generate-001` (audio disabled)
 - FAL Flux: `fal-ai/flux-general`, `fal-ai/flux-pro/v1.1`
 - FAL Flux 2: `fal-ai/flux-2`, `fal-ai/flux-2/turbo`, `fal-ai/flux-2/dev` (no reference support)
-- FAL Kontext: `fal-ai/flux-pro/kontext` (image-to-image with ref, text-to-image without)
+- FAL Flux 2 Pro: `fal-ai/flux-2-pro`, `fal-ai/flux-2-max` (multi-ref via `@imageN` + `/edit`)
+- FAL Instant Character: `fal-ai/instant-character` (single ref via `image_url`)
+- FAL Kontext: `fal-ai/flux-pro/kontext`, `fal-ai/flux-pro/kontext/max`, `fal-ai/flux-pro/kontext/dev`
 - FAL Kontext Multi: `fal-ai/flux-pro/kontext/max/multi` (multi-ref stills, model infers associations)
 - FAL O1 Image: `fal-ai/kling-image/o1` (multi-ref stills with `@ImageN` mapping)
 - FAL Ideogram Character: `fal-ai/ideogram/character` (dual-channel: character + style refs)
+- FAL Ideogram V3: `fal-ai/ideogram/v3` (typography, style refs only)
+- FAL Wan: `fal-ai/wan-i2v`, `fal-ai/wan-pro/image-to-video` (image-to-video clips)
+- FAL MiniMax: `fal-ai/minimax/video-01-subject-reference` (subject-consistent clips)
 - Replicate Flux: `black-forest-labs/flux-1.1-pro`, `black-forest-labs/flux-dev`
 
 Safety defaults are injected automatically (overridable via user `options`):
-- FAL Flux/Flux 2: `enable_safety_checker: false`
+- FAL Flux/Flux 2/Flux 2 Pro/Instant Character: `enable_safety_checker: false`
 - FAL Kontext/Kontext Multi: `safety_tolerance: "6"`
 - Replicate: `safety_tolerance: 6`
-- Google, O1 Image, Ideogram Character: no toggle available
+- Google, O1 Image, Ideogram Character/V3: no toggle available
+
+Audio on clips: All clip providers disable audio generation by default.
 
 ## project.yaml schema
 

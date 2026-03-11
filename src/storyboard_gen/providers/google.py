@@ -225,6 +225,7 @@ class GoogleProvider(ImageProvider):
             reference_images=ref_images or None,
             number_of_videos=number_of_videos,
             duration_seconds=int(duration),
+            generate_audio=False,
         )
         if self._gcs_bucket:
             config.output_gcs_uri = self._gcs_bucket
