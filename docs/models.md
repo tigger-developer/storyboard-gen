@@ -1,4 +1,4 @@
-<!-- Version: 3.0 | Last updated: 2026-03-11 -->
+<!-- Version: 3.1 | Last updated: 2026-03-11 -->
 
 # Model Reference
 
@@ -6,9 +6,20 @@ Comprehensive guide to all AI models supported by storyboard-gen, organised by p
 
 **Audio on clips:** All clip providers disable audio generation by default where a toggle is available. Google Veo sets `generate_audio=False`; FAL Kling and Seedance set `generate_audio: false`. Grok video and Hunyuan video have no audio toggle (Grok generates audio inherently; Hunyuan has no audio support). This prevents unwanted AI-generated audio from interfering with your project's audio track.
 
-**Cost estimates:** FAL model pricing is available via `--dry-run` (CLI) and in the GUI scene list and generate dialog. Pricing is fetched from the FAL API and cached for the session. Google and Replicate pricing is not available via their APIs.
+**Cost estimates:** Pricing is available via `--dry-run` (CLI) and in the GUI scene list and generate dialog. Pricing lookup follows a priority chain: project.yaml override > FAL live API > static defaults. FAL models use the FAL pricing API (session-cached). Google models (Imagen, Veo) use built-in static defaults. You can override pricing for any provider in `project.yaml`:
 
-**Pricing note:** FAL pricing below was sourced from [fal.ai/pricing](https://fal.ai/pricing) as of 2026-03-11 and may change. Use `--dry-run` for current pricing.
+```yaml
+providers:
+  still:
+    backend: fal
+    model: fal-ai/flux-pro/v1.1
+    pricing:
+      unit_price: 0.05
+      unit: image
+      # currency defaults to USD
+```
+
+**Pricing note:** FAL pricing below was sourced from [fal.ai/pricing](https://fal.ai/pricing) as of 2026-03-11 and may change. Google pricing is from the [Gemini API pricing page](https://ai.google.dev/gemini-api/docs/pricing). Use `--dry-run` for current pricing.
 
 ---
 

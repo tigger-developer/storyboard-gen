@@ -440,7 +440,7 @@ class TestCliDryRunPricing:
         monkeypatch.setenv("FAL_KEY", "test-key")
 
         pricing_data = {"unit_price": 0.04, "unit": "image", "currency": "USD"}
-        with patch("storyboard_gen.cli.fetch_fal_price", return_value=pricing_data):
+        with patch("storyboard_gen.cli.fetch_price", return_value=pricing_data):
             # Act
             exit_code = main(["generate", "--dry-run", "--all"])
             output = capsys.readouterr().out
@@ -469,7 +469,7 @@ class TestCliDryRunPricing:
         monkeypatch.setenv("FAL_KEY", "test-key")
 
         pricing_data = {"unit_price": 0.05, "unit": "second", "currency": "USD"}
-        with patch("storyboard_gen.cli.fetch_fal_price", return_value=pricing_data):
+        with patch("storyboard_gen.cli.fetch_price", return_value=pricing_data):
             # Act
             exit_code = main(["generate", "--dry-run", "--all"])
             output = capsys.readouterr().out
@@ -483,7 +483,7 @@ class TestCliDryRunPricing:
         # Arrange
         os.chdir(sample_project_dir)
 
-        with patch("storyboard_gen.cli.fetch_fal_price", return_value=None):
+        with patch("storyboard_gen.cli.fetch_price", return_value=None):
             # Act
             main(["generate", "--dry-run", "--scene", "1"])
             output = capsys.readouterr().out
@@ -509,7 +509,7 @@ class TestCliDryRunPricing:
         monkeypatch.setenv("FAL_KEY", "test-key")
 
         pricing_data = {"unit_price": 0.04, "unit": "image", "currency": "USD"}
-        with patch("storyboard_gen.cli.fetch_fal_price", return_value=pricing_data):
+        with patch("storyboard_gen.cli.fetch_price", return_value=pricing_data):
             # Act
             main(["generate", "--dry-run", "--all"])
             output = capsys.readouterr().out

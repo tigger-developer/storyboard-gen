@@ -1,4 +1,4 @@
-<!-- Version: 2.4 | Last updated: 2026-03-11 -->
+<!-- Version: 2.5 | Last updated: 2026-03-11 -->
 
 # Architecture: storyboard-gen
 
@@ -41,9 +41,10 @@ Thin orchestrator that resolves the provider, delegates generation, and handles 
 
 ### Pricing (`pricing.py`)
 
-Session-cached FAL pricing API integration. Provides cost estimates for `--dry-run` and GUI display:
+Unified pricing lookup with priority chain: **project.yaml override > FAL live API > static defaults > None**. Provides cost estimates for `--dry-run` and GUI display:
 
-- `fetch_fal_price(model)` — calls `GET https://rest.fal.ai/v1/models/pricing?endpoint_id=<model>` with the `FAL_KEY`. Returns `{unit_price, unit, currency}` or `None` for non-FAL models, missing keys, or errors. Results are cached in-memory for the session.
+- `fetch_price(model, pricing_override=None)` — resolves pricing using the priority chain. FAL models use `GET https://api.fal.ai/v1/models/pricing?endpoint_id=<model>` with `FAL_KEY` (session-cached). Google models (Imagen, Veo) use built-in `_STATIC_PRICES` defaults. Project-level `pricing` overrides in `project.yaml` take highest priority.
+- `_STATIC_PRICES` — dict of hardcoded pricing for Google Gemini API models (Imagen 4 Fast/Standard/Ultra, Veo 2/3/3.1).
 - `estimate_scene_cost(scene, pricing)` — calculates per-scene cost: flat `unit_price` for stills, `unit_price * duration` for clips.
 - `format_cost_line(scene, pricing)` — human-readable cost string for CLI dry-run output.
 

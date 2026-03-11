@@ -21,7 +21,7 @@ from storyboard_gen.kdenlive import generate_kdenlive
 from storyboard_gen.models import CAMERA_PROMPTS, format_scene_number
 from storyboard_gen.pricing import (
     estimate_scene_cost,
-    fetch_fal_price,
+    fetch_price,
     format_cost_line,
 )
 
@@ -414,7 +414,9 @@ def _dry_run(project, scenes) -> int:
                 print(f"    [{status}] {ref}")
 
         # Cost estimate (#80)
-        pricing = fetch_fal_price(provider_cfg.model)
+        pricing = fetch_price(
+            provider_cfg.model, pricing_override=provider_cfg.pricing
+        )
         print(f"  {format_cost_line(scene, pricing)}")
         scene_cost = estimate_scene_cost(scene, pricing)
         if scene_cost is not None:

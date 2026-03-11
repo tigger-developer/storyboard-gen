@@ -15,6 +15,7 @@ class ProviderConfig:
     backend: str  # "google", "fal", or "replicate"
     model: str  # provider-specific model identifier
     options: dict = field(default_factory=dict)  # provider-specific options
+    pricing: dict | None = None  # optional pricing override from project.yaml
 
 
 @dataclass(frozen=True)

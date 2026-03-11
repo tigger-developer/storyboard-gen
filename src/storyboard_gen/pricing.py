@@ -1,5 +1,5 @@
-# ABOUTME: FAL pricing API integration for cost estimates.
-# ABOUTME: Session-cached lookups; used by CLI dry-run and GUI.
+# ABOUTME: Pricing lookup for cost estimates across all backends.
+# ABOUTME: Priority chain: project.yaml override > FAL API > static defaults > None.
 
 import json
 import logging
@@ -15,6 +15,55 @@ _price_cache: dict[str, dict | None] = {}
 
 # FAL-billed model prefixes (models routed through FAL's billing)
 _FAL_PREFIXES = ("fal-ai/", "xai/", "wan/")
+
+# Static pricing defaults for models without a live pricing API.
+# Google Gemini API pricing as of 2026-03 (direct API, not FAL-proxied).
+_STATIC_PRICES: dict[str, dict] = {
+    # Imagen 4 (image generation)
+    "imagen-4.0-fast-generate-001": {
+        "unit_price": 0.02,
+        "unit": "image",
+        "currency": "USD",
+    },
+    "imagen-4.0-generate-001": {
+        "unit_price": 0.04,
+        "unit": "image",
+        "currency": "USD",
+    },
+    "imagen-4.0-ultra-generate-001": {
+        "unit_price": 0.06,
+        "unit": "image",
+        "currency": "USD",
+    },
+    # Veo 2 (video generation)
+    "veo-2.0-generate-001": {
+        "unit_price": 0.35,
+        "unit": "second",
+        "currency": "USD",
+    },
+    # Veo 3 (video generation)
+    "veo-3.0-fast-generate-001": {
+        "unit_price": 0.15,
+        "unit": "second",
+        "currency": "USD",
+    },
+    "veo-3.0-generate-001": {
+        "unit_price": 0.40,
+        "unit": "second",
+        "currency": "USD",
+    },
+    # Veo 3.1 (video generation)
+    "veo-3.1-fast-generate-001": {
+        "unit_price": 0.15,
+        "unit": "second",
+        "currency": "USD",
+    },
+    "veo-3.1-generate-001": {
+        "unit_price": 0.40,
+        "unit": "second",
+        "currency": "USD",
+    },
+}
 
 
 def _normalise_unit(unit: str) -> str:
@@ -38,21 +87,15 @@ def _normalise_unit(unit: str) -> str:
     return unit
 
 
-def fetch_fal_price(model: str) -> dict | None:
-    """Fetch pricing for a FAL model endpoint.
-
-    Calls the FAL pricing API and caches the result for the session.
+def _fetch_fal_price(model: str) -> dict | None:
+    """Fetch pricing from the FAL live API (internal helper).
 
     Args:
-        model: The model endpoint ID (e.g. "fal-ai/flux-general",
-            "xai/grok-imagine-image", "wan/v2.6/text-to-video").
+        model: The model endpoint ID.
 
     Returns:
-        Dict with keys ``unit_price`` (float), ``unit`` (str), ``currency``
-        (str), or None if pricing is unavailable (non-FAL model, no key,
-        API error).
+        Pricing dict or None if unavailable.
     """
-    # Only FAL-billed models have pricing via this API
     if not any(model.startswith(prefix) for prefix in _FAL_PREFIXES):
         return None
 
@@ -90,12 +133,47 @@ def fetch_fal_price(model: str) -> dict | None:
     return result
 
 
+def fetch_price(model: str, *, pricing_override: dict | None = None) -> dict | None:
+    """Look up pricing for any model using the priority chain.
+
+    Priority: project.yaml override > FAL live API > static defaults > None.
+
+    Args:
+        model: The model endpoint ID (e.g. "fal-ai/flux-general",
+            "imagen-4.0-generate-001", "veo-3.1-fast-generate-001").
+        pricing_override: Optional pricing dict from project.yaml provider
+            config. When present, returned directly without any API call.
+
+    Returns:
+        Dict with keys ``unit_price`` (float), ``unit`` (str), ``currency``
+        (str), or None if pricing is unavailable.
+    """
+    # 1. Project-level override wins
+    if pricing_override is not None:
+        return pricing_override
+
+    # 2. FAL live API for FAL-billed models
+    fal_result = _fetch_fal_price(model)
+    if fal_result is not None:
+        return fal_result
+
+    # 3. Static defaults (Google models, etc.)
+    if model in _STATIC_PRICES:
+        return _STATIC_PRICES[model]
+
+    return None
+
+
+# Backward-compatible alias for callers not yet migrated
+fetch_fal_price = fetch_price
+
+
 def estimate_scene_cost(scene: Scene, pricing: dict | None) -> float | None:
     """Estimate the cost to generate a scene.
 
     Args:
         scene: The scene to estimate.
-        pricing: Pricing dict from ``fetch_fal_price``, or None.
+        pricing: Pricing dict from ``fetch_price``, or None.
 
     Returns:
         Estimated cost in the pricing currency, or None if unavailable.
@@ -117,7 +195,7 @@ def format_cost_line(scene: Scene, pricing: dict | None) -> str:
 
     Args:
         scene: The scene to format.
-        pricing: Pricing dict from ``fetch_fal_price``, or None.
+        pricing: Pricing dict from ``fetch_price``, or None.
 
     Returns:
         A string like ``$0.04/image`` or ``$0.40 (8s x $0.05/s)``

@@ -433,6 +433,105 @@ class TestProjectProviders:
         assert project.get_scene(1).provider.backend == "fal"
         assert project.get_scene(2).provider is None
 
+    def test_load_provider_with_pricing_override(self, tmp_path):
+        """Provider pricing override is parsed into ProviderConfig."""
+        # Arrange
+        data = {
+            "title": "Pricing Override",
+            "providers": {
+                "still": {
+                    "backend": "fal",
+                    "model": "fal-ai/flux-general",
+                    "pricing": {
+                        "unit_price": 0.99,
+                        "unit": "image",
+                        "currency": "EUR",
+                    },
+                },
+            },
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.still_provider.pricing is not None
+        assert project.still_provider.pricing["unit_price"] == 0.99
+        assert project.still_provider.pricing["unit"] == "image"
+        assert project.still_provider.pricing["currency"] == "EUR"
+
+    def test_load_provider_without_pricing_defaults_to_none(self, tmp_path):
+        """Provider without pricing field has pricing=None."""
+        # Arrange
+        data = {
+            "title": "No Pricing",
+            "providers": {
+                "still": {"backend": "fal", "model": "fal-ai/flux-general"},
+            },
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.still_provider.pricing is None
+
+    def test_load_provider_pricing_defaults_currency_to_usd(self, tmp_path):
+        """Pricing override without currency defaults to USD."""
+        # Arrange
+        data = {
+            "title": "Default Currency",
+            "providers": {
+                "clip": {
+                    "backend": "google",
+                    "model": "veo-3.1-fast-generate-001",
+                    "pricing": {"unit_price": 0.20, "unit": "second"},
+                },
+            },
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert
+        assert project.clip_provider.pricing["currency"] == "USD"
+
+    def test_load_provider_pricing_ignores_incomplete_override(self, tmp_path):
+        """Pricing override missing required fields is ignored."""
+        # Arrange — no unit_price
+        data = {
+            "title": "Incomplete Pricing",
+            "providers": {
+                "still": {
+                    "backend": "fal",
+                    "model": "fal-ai/flux-general",
+                    "pricing": {"unit": "image"},
+                },
+            },
+            "scenes": [
+                {"number": 1, "type": "still", "prompt": "x", "duration": 3},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+
+        # Act
+        project = load_project(tmp_path)
+
+        # Assert — incomplete pricing is ignored
+        assert project.still_provider.pricing is None
+
 
 class TestSceneReferenceOverride:
     def test_load_scene_with_reference_override(self, tmp_path):

@@ -30,7 +30,7 @@ from storyboard_gen.gui.archive_dialog import ArchiveDialog
 from storyboard_gen.gui.output_dialog import OutputDialog
 from storyboard_gen.gui.preview_panel import PreviewPanel
 from storyboard_gen.gui.scene_list import SceneListWidget, get_scene_status
-from storyboard_gen.pricing import fetch_fal_price
+from storyboard_gen.pricing import fetch_price
 from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
 from storyboard_gen.gui.settings import AppSettings
 from storyboard_gen.gui.yaml_viewer import YamlViewer
@@ -275,21 +275,23 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _fetch_project_pricing(project: Project) -> dict[str, dict]:
-        """Fetch FAL pricing for all unique models in the project.
+        """Fetch pricing for all unique models in the project.
 
         Returns a dict mapping model endpoint IDs to pricing dicts.
-        Non-FAL models and failed lookups are silently skipped.
+        Models without pricing are silently skipped.
         """
         from storyboard_gen.generate import resolve_provider_config
 
-        models: set[str] = set()
+        # Collect unique models with their pricing overrides
+        model_overrides: dict[str, dict | None] = {}
         for scene in project.scenes:
             cfg = resolve_provider_config(scene, project, scene.scene_type)
-            models.add(cfg.model)
+            if cfg.model not in model_overrides:
+                model_overrides[cfg.model] = cfg.pricing
 
         pricing_map: dict[str, dict] = {}
-        for model in models:
-            pricing = fetch_fal_price(model)
+        for model, override in model_overrides.items():
+            pricing = fetch_price(model, pricing_override=override)
             if pricing is not None:
                 pricing_map[model] = pricing
         return pricing_map

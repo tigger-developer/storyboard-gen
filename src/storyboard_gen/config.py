@@ -130,7 +130,22 @@ def _parse_provider_config(raw: dict, context: str) -> ProviderConfig:
     options = raw.get("options", {})
     if not isinstance(options, dict):
         options = {}
-    return ProviderConfig(backend=backend, model=model, options=options)
+
+    pricing = None
+    raw_pricing = raw.get("pricing")
+    if isinstance(raw_pricing, dict):
+        unit_price = raw_pricing.get("unit_price")
+        unit = raw_pricing.get("unit")
+        if unit_price is not None and unit:
+            pricing = {
+                "unit_price": float(unit_price),
+                "unit": str(unit),
+                "currency": str(raw_pricing.get("currency", "USD")),
+            }
+
+    return ProviderConfig(
+        backend=backend, model=model, options=options, pricing=pricing
+    )
 
 
 def _parse_providers(
