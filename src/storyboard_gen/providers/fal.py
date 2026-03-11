@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import urllib.request
+from abc import ABC, abstractmethod
 from pathlib import Path
 
 from storyboard_gen.providers.base import ImageProvider
@@ -50,6 +51,234 @@ def _download_url(url: str) -> bytes:
     """Download bytes from a URL."""
     with urllib.request.urlopen(url) as resp:  # noqa: S310 — URL from trusted FAL API
         return resp.read()
+
+
+class StillHandler(ABC):
+    """Base class for model-family-specific still argument building.
+
+    Each handler encapsulates the argument construction, reference upload,
+    prompt rewriting, and safety defaults for a particular FAL model family.
+    """
+
+    @abstractmethod
+    def match(self, model: str) -> bool:
+        """Return True if this handler handles the given model ID."""
+
+    @abstractmethod
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        """Build (endpoint, arguments) for still generation."""
+
+    @abstractmethod
+    def safety_defaults(self) -> dict:
+        """Return safety default key-value pairs for this model family."""
+
+
+class IdeogramCharacterHandler(StillHandler):
+    """Handler for Ideogram Character models (dual-channel refs)."""
+
+    def match(self, model: str) -> bool:
+        lower = model.lower()
+        return "ideogram" in lower and "character" in lower
+
+    def safety_defaults(self) -> dict:
+        return {}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        cdn_cache = provider._load_cdn_cache(project_dir)
+        endpoint, arguments = provider._build_ideogram_character_args(
+            prompt, aspect_ratio, scene_characters, style_reference_images, cdn_cache
+        )
+        provider._save_cdn_cache(project_dir, cdn_cache)
+        return endpoint, arguments
+
+
+class O1ImageHandler(StillHandler):
+    """Handler for Kling O1 Image models (multi-ref @ImageN mapping)."""
+
+    def match(self, model: str) -> bool:
+        lower = model.lower()
+        return "kling-image" in lower and "/o1" in lower
+
+    def safety_defaults(self) -> dict:
+        return {}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        if scene_characters:
+            cdn_cache = provider._load_cdn_cache(project_dir)
+            prompt = provider._rewrite_prompt(prompt, scene_characters)
+            endpoint, arguments = provider._build_o1_image_args(
+                prompt, aspect_ratio, scene_characters, cdn_cache
+            )
+            provider._save_cdn_cache(project_dir, cdn_cache)
+        else:
+            endpoint = provider.model
+            arguments = {
+                "prompt": prompt,
+                "aspect_ratio": aspect_ratio,
+                "num_images": 1,
+                "output_format": "png",
+            }
+        return endpoint, arguments
+
+
+class KontextMultiHandler(StillHandler):
+    """Handler for Kontext Max Multi models (multi-ref, implicit mapping)."""
+
+    def match(self, model: str) -> bool:
+        lower = model.lower()
+        return "kontext" in lower and "multi" in lower
+
+    def safety_defaults(self) -> dict:
+        return {"safety_tolerance": "6"}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        if scene_characters:
+            cdn_cache = provider._load_cdn_cache(project_dir)
+            prompt = provider._rewrite_prompt(prompt, scene_characters)
+            endpoint, arguments = provider._build_kontext_multi_args(
+                prompt, aspect_ratio, scene_characters, cdn_cache
+            )
+            provider._save_cdn_cache(project_dir, cdn_cache)
+        else:
+            endpoint = provider.model
+            arguments = {
+                "prompt": prompt,
+                "aspect_ratio": aspect_ratio,
+                "num_images": 1,
+                "output_format": "png",
+            }
+        return endpoint, arguments
+
+
+class KontextHandler(StillHandler):
+    """Handler for Kontext Pro models (i2i/t2i routing)."""
+
+    def match(self, model: str) -> bool:
+        return "kontext" in model.lower()
+
+    def safety_defaults(self) -> dict:
+        return {"safety_tolerance": "6"}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        ref_url = provider._upload_reference(reference_images)
+        return provider._build_kontext_args(prompt, aspect_ratio, ref_url)
+
+
+class Flux2Handler(StillHandler):
+    """Handler for Flux 2 models (no reference support)."""
+
+    def match(self, model: str) -> bool:
+        return "flux-2" in model.lower()
+
+    def safety_defaults(self) -> dict:
+        return {"enable_safety_checker": False}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        ref_url = provider._upload_reference(reference_images)
+        return provider._build_flux_args(prompt, aspect_ratio, ref_url)
+
+
+class FluxHandler(StillHandler):
+    """Handler for Flux 1.x models (single reference via reference_image_url). Fallback handler."""
+
+    def match(self, model: str) -> bool:
+        return True
+
+    def safety_defaults(self) -> dict:
+        return {"enable_safety_checker": False}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        ref_url = provider._upload_reference(reference_images)
+        return provider._build_flux_args(prompt, aspect_ratio, ref_url)
+
+
+# Registry: order matters — more specific handlers first, FluxHandler (fallback) last.
+_STILL_HANDLERS: list[StillHandler] = [
+    IdeogramCharacterHandler(),
+    O1ImageHandler(),
+    KontextMultiHandler(),
+    KontextHandler(),
+    Flux2Handler(),
+    FluxHandler(),
+]
+
+
+def _resolve_still_handler(model: str) -> StillHandler:
+    """Resolve the appropriate handler for a given model ID.
+
+    Args:
+        model: FAL model ID string.
+
+    Returns:
+        The first matching StillHandler instance.
+    """
+    for handler in _STILL_HANDLERS:
+        if handler.match(model):
+            return handler
+    return _STILL_HANDLERS[-1]
 
 
 class FalProvider(ImageProvider):
@@ -350,74 +579,19 @@ class FalProvider(ImageProvider):
                 "fal-client is not installed. Run: pip install fal-client"
             )
 
-        # Ideogram Character: separate character + style reference channels
-        if self._is_ideogram_character:
-            cdn_cache = self._load_cdn_cache(project_dir)
-            endpoint, arguments = self._build_ideogram_character_args(
-                prompt,
-                aspect_ratio,
-                scene_characters,
-                style_reference_images,
-                cdn_cache,
-            )
-            self._save_cdn_cache(project_dir, cdn_cache)
-
-        # O1 Image and Kontext Multi: multi-ref models with CDN caching
-        elif (self._is_o1_image or self._is_kontext_multi) and scene_characters:
-            cdn_cache = self._load_cdn_cache(project_dir)
-
-            # Rewrite @character_id tokens in prompt
-            prompt = self._rewrite_prompt(prompt, scene_characters)
-
-            if self._is_o1_image:
-                endpoint, arguments = self._build_o1_image_args(
-                    prompt, aspect_ratio, scene_characters, cdn_cache
-                )
-            else:
-                endpoint, arguments = self._build_kontext_multi_args(
-                    prompt, aspect_ratio, scene_characters, cdn_cache
-                )
-
-            self._save_cdn_cache(project_dir, cdn_cache)
-        elif self._is_o1_image:
-            # O1 Image without characters — basic args with raw aspect_ratio
-            endpoint = self.model
-            arguments = {
-                "prompt": prompt,
-                "aspect_ratio": aspect_ratio,
-                "num_images": 1,
-                "output_format": "png",
-            }
-        elif self._is_kontext_multi:
-            # Kontext Multi without characters — basic args with raw aspect_ratio
-            endpoint = self.model
-            arguments = {
-                "prompt": prompt,
-                "aspect_ratio": aspect_ratio,
-                "num_images": 1,
-                "output_format": "png",
-            }
-        else:
-            # Standard Flux/Kontext path
-            ref_url = self._upload_reference(reference_images)
-
-            if self._is_kontext:
-                endpoint, arguments = self._build_kontext_args(
-                    prompt, aspect_ratio, ref_url
-                )
-            else:
-                endpoint, arguments = self._build_flux_args(
-                    prompt, aspect_ratio, ref_url
-                )
+        handler = _resolve_still_handler(self.model)
+        endpoint, arguments = handler.build_args(
+            self,
+            prompt,
+            aspect_ratio,
+            reference_images,
+            scene_characters,
+            style_reference_images,
+            project_dir,
+        )
 
         # Inject safety defaults (overridable by user options)
-        # Ideogram Character and O1 Image have no safety toggle
-        if self._is_ideogram_character or self._is_o1_image:
-            pass
-        elif self._is_kontext:
-            arguments["safety_tolerance"] = "6"
-        else:
-            arguments["enable_safety_checker"] = False
+        arguments.update(handler.safety_defaults())
 
         # Merge provider options (seed, safety_tolerance, etc.)
         merged_options = self.options.copy()

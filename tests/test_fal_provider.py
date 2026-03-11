@@ -8,7 +8,18 @@ from unittest.mock import patch
 import pytest
 
 from storyboard_gen.models import Character
-from storyboard_gen.providers.fal import FalProvider, _map_aspect_ratio
+from storyboard_gen.providers.fal import (
+    FalProvider,
+    Flux2Handler,
+    FluxHandler,
+    IdeogramCharacterHandler,
+    KontextHandler,
+    KontextMultiHandler,
+    O1ImageHandler,
+    StillHandler,
+    _map_aspect_ratio,
+    _resolve_still_handler,
+)
 
 
 class TestMapAspectRatio:
@@ -2395,3 +2406,144 @@ class TestO1ImageSafetyDefaults:
         arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
         assert "enable_safety_checker" not in arguments
         assert "safety_tolerance" not in arguments
+
+
+class TestStillHandlerRegistry:
+    """Tests for the still handler registry and model matching."""
+
+    def test_resolve_handler_flux_general_returns_flux_handler(self):
+        handler = _resolve_still_handler("fal-ai/flux-general")
+        assert isinstance(handler, FluxHandler)
+
+    def test_resolve_handler_flux_pro_returns_flux_handler(self):
+        handler = _resolve_still_handler("fal-ai/flux-pro/v1.1")
+        assert isinstance(handler, FluxHandler)
+
+    def test_resolve_handler_flux2_returns_flux2_handler(self):
+        handler = _resolve_still_handler("fal-ai/flux-2")
+        assert isinstance(handler, Flux2Handler)
+
+    def test_resolve_handler_flux2_turbo_returns_flux2_handler(self):
+        handler = _resolve_still_handler("fal-ai/flux-2/turbo")
+        assert isinstance(handler, Flux2Handler)
+
+    def test_resolve_handler_flux2_dev_returns_flux2_handler(self):
+        handler = _resolve_still_handler("fal-ai/flux-2/dev")
+        assert isinstance(handler, Flux2Handler)
+
+    def test_resolve_handler_kontext_returns_kontext_handler(self):
+        handler = _resolve_still_handler("fal-ai/flux-pro/kontext")
+        assert isinstance(handler, KontextHandler)
+
+    def test_resolve_handler_kontext_multi_returns_kontext_multi_handler(self):
+        handler = _resolve_still_handler("fal-ai/flux-pro/kontext/max/multi")
+        assert isinstance(handler, KontextMultiHandler)
+
+    def test_resolve_handler_o1_image_returns_o1_image_handler(self):
+        handler = _resolve_still_handler("fal-ai/kling-image/o1")
+        assert isinstance(handler, O1ImageHandler)
+
+    def test_resolve_handler_ideogram_character_returns_ideogram_handler(self):
+        handler = _resolve_still_handler("fal-ai/ideogram/character")
+        assert isinstance(handler, IdeogramCharacterHandler)
+
+    def test_resolve_handler_unknown_model_returns_flux_handler(self):
+        handler = _resolve_still_handler("fal-ai/some-unknown-model")
+        assert isinstance(handler, FluxHandler)
+
+
+class TestStillHandlerMatch:
+    """Tests for individual handler match methods."""
+
+    def test_ideogram_character_match_positive(self):
+        assert IdeogramCharacterHandler().match("fal-ai/ideogram/character")
+
+    def test_ideogram_character_match_edit(self):
+        assert IdeogramCharacterHandler().match("fal-ai/ideogram/character/edit")
+
+    def test_ideogram_character_match_negative_flux(self):
+        assert not IdeogramCharacterHandler().match("fal-ai/flux-general")
+
+    def test_o1_image_match_positive(self):
+        assert O1ImageHandler().match("fal-ai/kling-image/o1")
+
+    def test_o1_image_match_negative_kling_video(self):
+        assert not O1ImageHandler().match("fal-ai/kling-video/o3/standard")
+
+    def test_o1_image_match_negative_flux(self):
+        assert not O1ImageHandler().match("fal-ai/flux-general")
+
+    def test_kontext_multi_match_positive(self):
+        assert KontextMultiHandler().match("fal-ai/flux-pro/kontext/max/multi")
+
+    def test_kontext_multi_match_negative_plain_kontext(self):
+        assert not KontextMultiHandler().match("fal-ai/flux-pro/kontext")
+
+    def test_kontext_match_positive(self):
+        assert KontextHandler().match("fal-ai/flux-pro/kontext")
+
+    def test_kontext_match_also_matches_multi(self):
+        # KontextHandler matches any kontext, but KontextMulti is checked first
+        assert KontextHandler().match("fal-ai/flux-pro/kontext/max/multi")
+
+    def test_flux2_match_positive(self):
+        assert Flux2Handler().match("fal-ai/flux-2")
+
+    def test_flux2_match_turbo(self):
+        assert Flux2Handler().match("fal-ai/flux-2/turbo")
+
+    def test_flux2_match_negative_flux_general(self):
+        assert not Flux2Handler().match("fal-ai/flux-general")
+
+    def test_flux_handler_always_matches(self):
+        assert FluxHandler().match("anything-at-all")
+
+
+class TestStillHandlerSafetyDefaults:
+    """Tests for model-family safety defaults."""
+
+    def test_flux_handler_safety_defaults_disable_safety_checker(self):
+        handler = FluxHandler()
+        assert handler.safety_defaults() == {"enable_safety_checker": False}
+
+    def test_flux2_handler_safety_defaults_disable_safety_checker(self):
+        handler = Flux2Handler()
+        assert handler.safety_defaults() == {"enable_safety_checker": False}
+
+    def test_kontext_handler_safety_defaults_tolerance_6(self):
+        handler = KontextHandler()
+        assert handler.safety_defaults() == {"safety_tolerance": "6"}
+
+    def test_kontext_multi_handler_safety_defaults_tolerance_6(self):
+        handler = KontextMultiHandler()
+        assert handler.safety_defaults() == {"safety_tolerance": "6"}
+
+    def test_o1_image_handler_no_safety_toggle(self):
+        handler = O1ImageHandler()
+        assert handler.safety_defaults() == {}
+
+    def test_ideogram_character_handler_no_safety_toggle(self):
+        handler = IdeogramCharacterHandler()
+        assert handler.safety_defaults() == {}
+
+
+class TestStillHandlerIsABC:
+    """Tests that all handlers inherit from StillHandler."""
+
+    def test_flux_handler_is_still_handler(self):
+        assert isinstance(FluxHandler(), StillHandler)
+
+    def test_flux2_handler_is_still_handler(self):
+        assert isinstance(Flux2Handler(), StillHandler)
+
+    def test_kontext_handler_is_still_handler(self):
+        assert isinstance(KontextHandler(), StillHandler)
+
+    def test_kontext_multi_handler_is_still_handler(self):
+        assert isinstance(KontextMultiHandler(), StillHandler)
+
+    def test_o1_image_handler_is_still_handler(self):
+        assert isinstance(O1ImageHandler(), StillHandler)
+
+    def test_ideogram_character_handler_is_still_handler(self):
+        assert isinstance(IdeogramCharacterHandler(), StillHandler)
