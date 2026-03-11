@@ -1,4 +1,4 @@
-<!-- Version: 2.1 | Last updated: 2026-03-11 -->
+<!-- Version: 2.2 | Last updated: 2026-03-11 -->
 
 # Architecture: storyboard-gen
 
@@ -39,6 +39,14 @@ Thin orchestrator that resolves the provider, delegates generation, and handles 
 - `generate_still(scene, project)` — resolves provider, calls `provider.generate_still()`, applies aspect ratio crop, archives previous output, saves PNG.
 - `generate_clip(scene, project)` — resolves provider, calls `provider.generate_clip()`, archives previous output, saves MP4.
 
+### Pricing (`pricing.py`)
+
+Session-cached FAL pricing API integration. Provides cost estimates for `--dry-run` and GUI display:
+
+- `fetch_fal_price(model)` — calls `GET https://rest.fal.ai/v1/models/pricing?endpoint_id=<model>` with the `FAL_KEY`. Returns `{unit_price, unit, currency}` or `None` for non-FAL models, missing keys, or errors. Results are cached in-memory for the session.
+- `estimate_scene_cost(scene, pricing)` — calculates per-scene cost: flat `unit_price` for stills, `unit_price * duration` for clips.
+- `format_cost_line(scene, pricing)` — human-readable cost string for CLI dry-run output.
+
 ### Ken Burns (`ken_burns.py`)
 
 Applies zoom/pan effects to still images using FFmpeg, producing short video clips at the scene's specified duration.
@@ -56,10 +64,10 @@ Generates a Kdenlive project file (MLT XML format) for timeline editing. Referen
 A PySide6 (Qt6) graphical interface that wraps the operational commands. Installed via `pip install storyboard-gen[gui]`. The GUI does not edit `project.yaml` — it only reads.
 
 - `gui/app.py` — `MainWindow` with toolbar (Open Project, New Project, Refresh, Generate, Stop, Output, View YAML, Archive), splitter layout, progress label, and signal wiring. New Project prompts for a location and name, scaffolds via `init_project()`, and opens the new project. Refresh reloads `project.yaml` from disk. Generation always reloads `project.yaml` and `.env` from disk before creating a worker, ensuring external edits are picked up without requiring a manual Refresh. Output opens an `OutputDialog` to choose between MP4 assembly and Kdenlive export. Archive opens an `ArchiveDialog` for the selected scene. Entry point: `run()`.
-- `gui/scene_list.py` — `SceneListWidget` shows scenes with `SceneItemWidget` custom widgets: status indicator, scene info label, inline Generate/Regenerate button, and Archive button. Uses `ExtendedSelection` mode for Cmd+click / Shift+click multi-select. `get_selected_scenes()` returns all selected scenes in order; `get_selected_scene()` returns the current row. `get_scene_status()` checks output file existence. Emits `scene_selected(Scene)`, `generate_requested(Scene)`, and `archive_requested(Scene)`.
+- `gui/scene_list.py` — `SceneListWidget` shows scenes with `SceneItemWidget` custom widgets: status indicator, scene info label, per-scene cost estimate, inline Generate/Regenerate button, and Archive button. Uses `ExtendedSelection` mode for Cmd+click / Shift+click multi-select. `load_project()` accepts an optional `pricing_map` to display per-scene costs. `get_selected_scenes()` returns all selected scenes in order; `get_selected_scene()` returns the current row. `get_scene_status()` checks output file existence. Emits `scene_selected(Scene)`, `generate_requested(Scene)`, and `archive_requested(Scene)`.
 - `gui/preview_panel.py` — `PreviewPanel` with `QStackedLayout` switching between placeholder, still image, clip info (thumbnail + file details), and inline video playback views. Video playback uses `QMediaPlayer` + `QVideoWidget` (QtMultimedia) with play/pause controls. Falls back to clip info view on playback error. Extracts thumbnails from video clips via ffmpeg for the fallback view.
 - `gui/console_panel.py` — `ConsolePanel` read-only text display. `QtLogHandler` bridges Python `logging` to Qt signals.
-- `gui/generate_dialog.py` — `GenerateDialog(QDialog)` with radio buttons: all scenes, all stills, all clips, or selected scene(s). Accepts a list of selected scenes for multi-scene generation; shows count or single scene title.
+- `gui/generate_dialog.py` — `GenerateDialog(QDialog)` with radio buttons: all scenes, all stills, all clips, or selected scene(s). Accepts a list of selected scenes for multi-scene generation; shows count or single scene title. Displays estimated cost summary when a `pricing_map` is provided, updating dynamically as the user changes the selection.
 - `gui/generate_worker.py` — `GenerateWorker(QThread)` runs generation in the background, emitting progress signals. Supports cooperative stop via `request_stop()`.
 - `gui/output_dialog.py` — `OutputDialog(QDialog)` with radio group (Assemble MP4 / Kdenlive export), preview mode checkbox, audio file picker, and output filename field. Returns options via `get_options()`.
 - `gui/archive_dialog.py` — `ArchiveDialog(QDialog)` for browsing and restoring previously generated scene outputs. Lists archived versions (from `output/{stills,clips}/archive/`) with timestamps, shows preview thumbnails for stills, and supports restore (swap selected archive ↔ current output). Utility functions: `list_scene_archives()`, `restore_archive()`, `get_scene_archive_dir()`, `get_scene_output_path()`, `parse_archive_timestamp()`.

@@ -19,6 +19,11 @@ from storyboard_gen.ken_burns import apply_ken_burns
 from storyboard_gen.assemble import assemble
 from storyboard_gen.kdenlive import generate_kdenlive
 from storyboard_gen.models import CAMERA_PROMPTS, format_scene_number
+from storyboard_gen.pricing import (
+    estimate_scene_cost,
+    fetch_fal_price,
+    format_cost_line,
+)
 
 
 HELP_EPILOG = """\
@@ -376,6 +381,9 @@ def _cmd_generate(args: argparse.Namespace) -> int:
 
 def _dry_run(project, scenes) -> int:
     """Print what would be sent to the API for each scene."""
+    total_cost = 0.0
+    has_any_pricing = False
+
     for i, scene in enumerate(scenes):
         if i > 0:
             print()
@@ -404,6 +412,15 @@ def _dry_run(project, scenes) -> int:
             for ref in project.style_reference:
                 status = "ok" if ref.exists() else "MISSING"
                 print(f"    [{status}] {ref}")
+
+        # Cost estimate (#80)
+        pricing = fetch_fal_price(provider_cfg.model)
+        print(f"  {format_cost_line(scene, pricing)}")
+        scene_cost = estimate_scene_cost(scene, pricing)
+        if scene_cost is not None:
+            total_cost += scene_cost
+            has_any_pricing = True
+
         print("  Prompt:")
         print(f"    {prompt}")
 
@@ -411,6 +428,10 @@ def _dry_run(project, scenes) -> int:
         warns = check_reference_warnings(scene, project, provider_cfg)
         for w in warns:
             print(f"  {w}")
+
+    # Total cost summary
+    if has_any_pricing:
+        print(f"\nEstimated total cost: ${total_cost:.2f}")
 
     return 0
 

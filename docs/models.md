@@ -1,10 +1,12 @@
-<!-- Version: 2.0 | Last updated: 2026-03-11 -->
+<!-- Version: 2.1 | Last updated: 2026-03-11 -->
 
 # Model Reference
 
 Comprehensive guide to all AI models supported by storyboard-gen, organised by provider.
 
 **Audio on clips:** All clip providers disable audio generation by default. Google Veo sets `generate_audio=False` in the config; FAL Kling sets `generate_audio: false` in the request. This prevents unwanted AI-generated audio from interfering with your project's audio track.
+
+**Cost estimates:** FAL model pricing is available via `--dry-run` (CLI) and in the GUI scene list and generate dialog. Pricing is fetched from the FAL API and cached for the session. Google and Replicate pricing is not available via their APIs.
 
 ---
 

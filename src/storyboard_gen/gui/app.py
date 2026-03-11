@@ -30,6 +30,7 @@ from storyboard_gen.gui.archive_dialog import ArchiveDialog
 from storyboard_gen.gui.output_dialog import OutputDialog
 from storyboard_gen.gui.preview_panel import PreviewPanel
 from storyboard_gen.gui.scene_list import SceneListWidget, get_scene_status
+from storyboard_gen.pricing import fetch_fal_price
 from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
 from storyboard_gen.gui.settings import AppSettings
 from storyboard_gen.gui.yaml_viewer import YamlViewer
@@ -53,6 +54,7 @@ class MainWindow(QMainWindow):
         self._output_dir: Path | None = None
         self._workers: dict[str, GenerateWorker] = {}
         self._settings = AppSettings()
+        self._pricing_map: dict[str, dict] = {}
 
         self._setup_widgets()
         self._setup_toolbar()
@@ -254,7 +256,13 @@ class MainWindow(QMainWindow):
             return
 
         self.setWindowTitle(f"{APP_TITLE} - {self._project.title}")
-        self.scene_list.load_project(self._project, self._output_dir)
+
+        # Fetch pricing for unique FAL models in the project
+        self._pricing_map = self._fetch_project_pricing(self._project)
+
+        self.scene_list.load_project(
+            self._project, self._output_dir, pricing_map=self._pricing_map
+        )
         self.console.append_message(
             f"Loaded project: {self._project.title} "
             f"({len(self._project.scenes)} scenes)"
@@ -264,6 +272,27 @@ class MainWindow(QMainWindow):
         # Persist session state
         self._settings.last_project = str(project_dir)
         self._settings.last_directory = str(project_dir.parent)
+
+    @staticmethod
+    def _fetch_project_pricing(project: Project) -> dict[str, dict]:
+        """Fetch FAL pricing for all unique models in the project.
+
+        Returns a dict mapping model endpoint IDs to pricing dicts.
+        Non-FAL models and failed lookups are silently skipped.
+        """
+        from storyboard_gen.generate import resolve_provider_config
+
+        models: set[str] = set()
+        for scene in project.scenes:
+            cfg = resolve_provider_config(scene, project, scene.scene_type)
+            models.add(cfg.model)
+
+        pricing_map: dict[str, dict] = {}
+        for model in models:
+            pricing = fetch_fal_price(model)
+            if pricing is not None:
+                pricing_map[model] = pricing
+        return pricing_map
 
     def _on_open_project(self) -> None:
         """Handle Open Project toolbar action."""
@@ -368,7 +397,10 @@ class MainWindow(QMainWindow):
 
         selected = self.scene_list.get_selected_scenes()
         dialog = GenerateDialog(
-            self._project, selected_scenes=selected or None, parent=self
+            self._project,
+            selected_scenes=selected or None,
+            parent=self,
+            pricing_map=self._pricing_map,
         )
         if dialog.exec():
             scenes = dialog.get_selected_scenes()

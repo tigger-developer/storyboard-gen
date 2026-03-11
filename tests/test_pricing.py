@@ -1,0 +1,300 @@
+# ABOUTME: Tests for storyboard_gen.pricing.
+# ABOUTME: Validates FAL pricing API integration, caching, and cost estimation.
+
+import json
+from unittest.mock import patch
+
+import pytest
+
+from storyboard_gen.models import Scene
+from storyboard_gen.pricing import (
+    estimate_scene_cost,
+    fetch_fal_price,
+    format_cost_line,
+)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: fetch_fal_price
+# ---------------------------------------------------------------------------
+
+
+class TestFetchFalPrice:
+    """Tests for FAL pricing API lookup."""
+
+    def _mock_response(self, data: dict, status: int = 200):
+        """Create a mock urllib response."""
+        from unittest.mock import MagicMock
+
+        resp = MagicMock()
+        resp.read.return_value = json.dumps(data).encode()
+        resp.status = status
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = lambda s, *a: None
+        return resp
+
+    def test_fetch_fal_price_returns_pricing_dict(self, monkeypatch):
+        """Successful lookup returns dict with unit_price, unit, currency."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        from storyboard_gen.pricing import _price_cache
+
+        _price_cache.clear()
+        response_data = {
+            "endpoint_id": "fal-ai/flux-general",
+            "unit_price": 0.04,
+            "unit": "image",
+            "currency": "USD",
+        }
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+
+            # Act
+            result = fetch_fal_price("fal-ai/flux-general")
+
+        # Assert
+        assert result is not None
+        assert result["unit_price"] == 0.04
+        assert result["unit"] == "image"
+        assert result["currency"] == "USD"
+
+    def test_fetch_fal_price_returns_none_without_fal_key(self, monkeypatch):
+        """Returns None when FAL_KEY is not set."""
+        # Arrange
+        monkeypatch.delenv("FAL_KEY", raising=False)
+
+        # Act
+        result = fetch_fal_price("fal-ai/flux-general")
+
+        # Assert
+        assert result is None
+
+    def test_fetch_fal_price_returns_none_for_non_fal_model(self, monkeypatch):
+        """Returns None for non-FAL models (Google, Replicate)."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+
+        # Act — Google model
+        result = fetch_fal_price("imagen-4.0-generate-001")
+
+        # Assert
+        assert result is None
+
+    def test_fetch_fal_price_returns_none_on_network_error(self, monkeypatch):
+        """Returns None gracefully on network errors."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        from storyboard_gen.pricing import _price_cache
+
+        _price_cache.clear()
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = OSError("Connection refused")
+
+            # Act
+            result = fetch_fal_price("fal-ai/flux-general")
+
+        # Assert
+        assert result is None
+
+    def test_fetch_fal_price_caches_results(self, monkeypatch):
+        """Second call for same model uses cached result, no HTTP call."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        response_data = {
+            "endpoint_id": "fal-ai/flux-general",
+            "unit_price": 0.04,
+            "unit": "image",
+            "currency": "USD",
+        }
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+
+            # Act — two calls for same model
+            from storyboard_gen.pricing import _price_cache
+
+            _price_cache.clear()
+            result1 = fetch_fal_price("fal-ai/flux-general")
+            result2 = fetch_fal_price("fal-ai/flux-general")
+
+        # Assert — only one HTTP call made
+        assert mock_urlopen.call_count == 1
+        assert result1 == result2
+
+    def test_fetch_fal_price_sends_auth_header(self, monkeypatch):
+        """Authorization header includes FAL_KEY."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "my-secret-key")
+        response_data = {
+            "endpoint_id": "fal-ai/flux-general",
+            "unit_price": 0.04,
+            "unit": "image",
+            "currency": "USD",
+        }
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+            from storyboard_gen.pricing import _price_cache
+
+            _price_cache.clear()
+
+            # Act
+            fetch_fal_price("fal-ai/flux-general")
+
+        # Assert — check the Request object passed to urlopen
+        call_args = mock_urlopen.call_args
+        request = call_args[0][0]
+        assert request.get_header("Authorization") == "Key my-secret-key"
+
+    def test_fetch_fal_price_video_model_returns_per_second(self, monkeypatch):
+        """Video model pricing returns unit='second'."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        response_data = {
+            "endpoint_id": "fal-ai/wan-i2v",
+            "unit_price": 0.05,
+            "unit": "second",
+            "currency": "USD",
+        }
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+            from storyboard_gen.pricing import _price_cache
+
+            _price_cache.clear()
+
+            # Act
+            result = fetch_fal_price("fal-ai/wan-i2v")
+
+        # Assert
+        assert result["unit"] == "second"
+        assert result["unit_price"] == 0.05
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: estimate_scene_cost
+# ---------------------------------------------------------------------------
+
+
+class TestEstimateSceneCost:
+    """Tests for per-scene cost estimation."""
+
+    def test_estimate_still_scene_returns_flat_cost(self):
+        """Still scene cost = unit_price (flat per image)."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Test",
+            scene_type="still",
+            prompt="test",
+            duration=5,
+        )
+        pricing = {"unit_price": 0.04, "unit": "image", "currency": "USD"}
+
+        # Act
+        cost = estimate_scene_cost(scene, pricing)
+
+        # Assert
+        assert cost == 0.04
+
+    def test_estimate_clip_scene_returns_duration_cost(self):
+        """Clip scene cost = unit_price * duration."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Test",
+            scene_type="clip",
+            prompt="test",
+            duration=8,
+        )
+        pricing = {"unit_price": 0.05, "unit": "second", "currency": "USD"}
+
+        # Act
+        cost = estimate_scene_cost(scene, pricing)
+
+        # Assert
+        assert cost == pytest.approx(0.40)
+
+    def test_estimate_scene_cost_returns_none_when_no_pricing(self):
+        """Returns None when pricing is None."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Test",
+            scene_type="still",
+            prompt="test",
+            duration=5,
+        )
+
+        # Act
+        cost = estimate_scene_cost(scene, None)
+
+        # Assert
+        assert cost is None
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: format_cost_line
+# ---------------------------------------------------------------------------
+
+
+class TestFormatCostLine:
+    """Tests for cost line formatting."""
+
+    def test_format_cost_line_still(self):
+        """Still scene shows flat cost."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Test",
+            scene_type="still",
+            prompt="test",
+            duration=5,
+        )
+        pricing = {"unit_price": 0.04, "unit": "image", "currency": "USD"}
+
+        # Act
+        line = format_cost_line(scene, pricing)
+
+        # Assert
+        assert "$0.04" in line
+        assert "image" in line
+
+    def test_format_cost_line_clip(self):
+        """Clip scene shows calculation."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Test",
+            scene_type="clip",
+            prompt="test",
+            duration=8,
+        )
+        pricing = {"unit_price": 0.05, "unit": "second", "currency": "USD"}
+
+        # Act
+        line = format_cost_line(scene, pricing)
+
+        # Assert
+        assert "$0.40" in line
+        assert "8" in line
+        assert "$0.05" in line
+
+    def test_format_cost_line_returns_unavailable_when_no_pricing(self):
+        """Returns 'unavailable' when pricing is None."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Test",
+            scene_type="still",
+            prompt="test",
+            duration=5,
+        )
+
+        # Act
+        line = format_cost_line(scene, None)
+
+        # Assert
+        assert "unavailable" in line.lower()

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from storyboard_gen.gui.archive_dialog import list_scene_archives
 from storyboard_gen.models import Project, Scene, format_scene_number
+from storyboard_gen.pricing import estimate_scene_cost
 
 
 def get_scene_status(scene: Scene, output_dir: Path) -> str:
@@ -55,6 +56,7 @@ class SceneItemWidget(QWidget):
         self,
         scene: Scene,
         output_dir: Path,
+        pricing: dict | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -70,6 +72,12 @@ class SceneItemWidget(QWidget):
         self._label = QLabel(
             f"{indicator} {scene.number:>3} [{type_label}] {scene.title}"
         )
+
+        # Cost label (shows per-scene estimated cost)
+        self._cost_label = QLabel()
+        self._cost_label.setFixedWidth(60)
+        self._cost_label.setStyleSheet("color: #888;")
+        self._set_cost(pricing)
 
         # Per-scene spinner (indeterminate, hidden by default)
         self._spinner = QProgressBar()
@@ -101,10 +109,19 @@ class SceneItemWidget(QWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(4, 2, 4, 2)
         layout.addWidget(self._label, stretch=1)
+        layout.addWidget(self._cost_label)
         layout.addWidget(self._spinner)
         layout.addWidget(self._gen_btn)
         layout.addWidget(self._archive_btn)
         self.setLayout(layout)
+
+    def _set_cost(self, pricing: dict | None) -> None:
+        """Update the cost label from pricing data."""
+        cost = estimate_scene_cost(self._scene, pricing)
+        if cost is not None:
+            self._cost_label.setText(f"${cost:.2f}")
+        else:
+            self._cost_label.setText("")
 
     def _on_gen_btn_clicked(self) -> None:
         """Handle generate button click based on current state."""
@@ -203,23 +220,39 @@ class SceneListWidget(QWidget):
         self._scenes: list[Scene] = []
         self._output_dir: Path | None = None
 
-    def load_project(self, project: Project, output_dir: Path) -> None:
+    def load_project(
+        self,
+        project: Project,
+        output_dir: Path,
+        pricing_map: dict[str, dict] | None = None,
+    ) -> None:
         """Populate the list from a project's scenes.
 
         Args:
             project: The loaded project.
             output_dir: The project's output directory for status checks.
+            pricing_map: Optional dict mapping model endpoint IDs to pricing
+                dicts (from ``fetch_fal_price``). Used to display per-scene
+                cost estimates.
         """
+        from storyboard_gen.generate import resolve_provider_config
+
         self.list_widget.clear()
         self._scenes = list(project.scenes)
         self._output_dir = output_dir
 
         for scene in self._scenes:
+            # Resolve pricing for this scene's model
+            scene_pricing = None
+            if pricing_map:
+                provider_cfg = resolve_provider_config(scene, project, scene.scene_type)
+                scene_pricing = pricing_map.get(provider_cfg.model)
+
             item = QListWidgetItem()
             item.setSizeHint(QSize(0, 36))
             self.list_widget.addItem(item)
 
-            item_widget = SceneItemWidget(scene, output_dir)
+            item_widget = SceneItemWidget(scene, output_dir, pricing=scene_pricing)
             item_widget.generate_clicked.connect(self.generate_requested.emit)
             item_widget.archive_clicked.connect(self.archive_requested.emit)
             item_widget.stop_clicked.connect(self.stop_requested.emit)

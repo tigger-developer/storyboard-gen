@@ -92,6 +92,7 @@ storyboard-gen/
 │       │   ├── scene_yaml_editor.py # Editable per-scene YAML with extraction/replacement
 │       │   ├── settings.py        # Persistent GUI settings (QSettings wrapper)
 │       │   └── yaml_viewer.py     # YAML viewer with syntax highlighting
+│       ├── pricing.py     # FAL pricing API (session-cached cost estimates)
 │       ├── ken_burns.py   # Ken Burns effects via FFmpeg
 │       ├── assemble.py    # Final video assembly via FFmpeg
 │       └── kdenlive.py    # Kdenlive project export (MLT XML)

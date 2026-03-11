@@ -417,6 +417,108 @@ class TestCliDryRun:
         assert "zoom_in" in output
 
 
+class TestCliDryRunPricing:
+    """Tests for cost estimates in --dry-run output (#80)."""
+
+    def test_dry_run_shows_cost_for_fal_still(self, tmp_path, capsys, monkeypatch):
+        """Dry-run shows per-image cost for FAL still scenes."""
+        # Arrange
+        data = {
+            "title": "Pricing Test",
+            "providers": {
+                "still": {
+                    "backend": "fal",
+                    "model": "fal-ai/flux-general",
+                },
+            },
+            "scenes": [
+                {"number": 1, "type": "still", "duration": 5, "prompt": "x"},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+        os.chdir(tmp_path)
+        monkeypatch.setenv("FAL_KEY", "test-key")
+
+        pricing_data = {"unit_price": 0.04, "unit": "image", "currency": "USD"}
+        with patch("storyboard_gen.cli.fetch_fal_price", return_value=pricing_data):
+            # Act
+            exit_code = main(["generate", "--dry-run", "--all"])
+            output = capsys.readouterr().out
+
+        # Assert
+        assert exit_code == 0
+        assert "$0.04" in output
+
+    def test_dry_run_shows_cost_for_fal_clip(self, tmp_path, capsys, monkeypatch):
+        """Dry-run shows duration-based cost for FAL clip scenes."""
+        # Arrange
+        data = {
+            "title": "Pricing Test",
+            "providers": {
+                "clip": {
+                    "backend": "fal",
+                    "model": "fal-ai/wan-i2v",
+                },
+            },
+            "scenes": [
+                {"number": 1, "type": "clip", "duration": 8, "prompt": "x"},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+        os.chdir(tmp_path)
+        monkeypatch.setenv("FAL_KEY", "test-key")
+
+        pricing_data = {"unit_price": 0.05, "unit": "second", "currency": "USD"}
+        with patch("storyboard_gen.cli.fetch_fal_price", return_value=pricing_data):
+            # Act
+            exit_code = main(["generate", "--dry-run", "--all"])
+            output = capsys.readouterr().out
+
+        # Assert
+        assert exit_code == 0
+        assert "$0.40" in output
+
+    def test_dry_run_shows_unavailable_for_google(self, sample_project_dir, capsys):
+        """Dry-run shows 'unavailable' for Google models (no pricing API)."""
+        # Arrange
+        os.chdir(sample_project_dir)
+
+        with patch("storyboard_gen.cli.fetch_fal_price", return_value=None):
+            # Act
+            main(["generate", "--dry-run", "--scene", "1"])
+            output = capsys.readouterr().out
+
+        # Assert
+        assert "unavailable" in output.lower()
+
+    def test_dry_run_shows_total_cost(self, tmp_path, capsys, monkeypatch):
+        """Dry-run shows total estimated cost across all scenes."""
+        # Arrange
+        data = {
+            "title": "Total Test",
+            "providers": {
+                "still": {"backend": "fal", "model": "fal-ai/flux-general"},
+            },
+            "scenes": [
+                {"number": 1, "type": "still", "duration": 5, "prompt": "x"},
+                {"number": 2, "type": "still", "duration": 5, "prompt": "y"},
+            ],
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+        os.chdir(tmp_path)
+        monkeypatch.setenv("FAL_KEY", "test-key")
+
+        pricing_data = {"unit_price": 0.04, "unit": "image", "currency": "USD"}
+        with patch("storyboard_gen.cli.fetch_fal_price", return_value=pricing_data):
+            # Act
+            main(["generate", "--dry-run", "--all"])
+            output = capsys.readouterr().out
+
+        # Assert — total should be $0.08 (2 x $0.04)
+        assert "$0.08" in output
+        assert "total" in output.lower()
+
+
 class TestCliSchema:
     def test_schema_subcommand_returns_zero(self, capsys):
         # Arrange & Act

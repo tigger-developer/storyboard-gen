@@ -4640,3 +4640,175 @@ class TestProjectReloadBeforeGeneration:
             # Assert — worker should receive project with no FAL provider
             call_kwargs = mock_cls.call_args[1]
             assert call_kwargs["project"].still_provider is None
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: GenerateDialog cost summary (#80)
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateDialogCostSummary:
+    """Test cost summary display in the generate dialog."""
+
+    FAL_PROJECT_YAML = {
+        "title": "FAL Pricing Test",
+        "aspect_ratio": "9:16",
+        "style_prefix": "Test style.",
+        "providers": {
+            "still": {"backend": "fal", "model": "fal-ai/flux-general"},
+        },
+        "scenes": [
+            {
+                "number": 1,
+                "title": "Still one",
+                "type": "still",
+                "duration": 5,
+                "prompt": "Test.",
+            },
+            {
+                "number": 2,
+                "title": "Still two",
+                "type": "still",
+                "duration": 4,
+                "prompt": "Test.",
+            },
+        ],
+    }
+
+    def test_dialog_shows_cost_summary_for_fal_scenes(self, qtbot, tmp_path):
+        """Dialog should show estimated total cost when pricing is available."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        (tmp_path / "project.yaml").write_text(yaml.dump(self.FAL_PROJECT_YAML))
+        project = load_project(tmp_path)
+        pricing_map = {
+            "fal-ai/flux-general": {
+                "unit_price": 0.04,
+                "unit": "image",
+                "currency": "USD",
+            },
+        }
+        dialog = GenerateDialog(project, pricing_map=pricing_map)
+        qtbot.addWidget(dialog)
+
+        # Assert — cost label shows dollar amount
+        assert "$" in dialog._cost_label.text()
+
+    def test_dialog_shows_no_cost_when_no_pricing(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Dialog should show no cost label when no pricing available."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        project = load_project(gui_project_dir_with_output)
+        dialog = GenerateDialog(project)
+        qtbot.addWidget(dialog)
+
+        # Assert — cost label is empty when no pricing
+        assert dialog._cost_label.text() == ""
+
+    def test_dialog_cost_updates_on_radio_change(self, qtbot, tmp_path):
+        """Changing radio button updates the cost display."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        (tmp_path / "project.yaml").write_text(yaml.dump(self.FAL_PROJECT_YAML))
+        project = load_project(tmp_path)
+        pricing_map = {
+            "fal-ai/flux-general": {
+                "unit_price": 0.04,
+                "unit": "image",
+                "currency": "USD",
+            },
+        }
+        dialog = GenerateDialog(project, pricing_map=pricing_map)
+        qtbot.addWidget(dialog)
+
+        # Act — switch to stills only
+        dialog._radio_stills.setChecked(True)
+        text_stills = dialog._cost_label.text()
+
+        # Act — switch to all
+        dialog._radio_all.setChecked(True)
+        text_all = dialog._cost_label.text()
+
+        # Assert — both should contain dollar sign
+        assert "$" in text_stills
+        assert "$" in text_all
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: SceneListWidget cost display (#80)
+# ---------------------------------------------------------------------------
+
+
+class TestSceneListCostDisplay:
+    """Test cost display in the scene list widget."""
+
+    FAL_PROJECT_YAML = {
+        "title": "FAL Cost Test",
+        "aspect_ratio": "9:16",
+        "style_prefix": "Test style.",
+        "providers": {
+            "still": {"backend": "fal", "model": "fal-ai/flux-general"},
+        },
+        "scenes": [
+            {
+                "number": 1,
+                "title": "Still one",
+                "type": "still",
+                "duration": 5,
+                "prompt": "Test.",
+            },
+        ],
+    }
+
+    def test_scene_list_shows_cost_for_fal_scenes(self, qtbot, tmp_path):
+        """Scene list items should show cost when pricing is available."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        (tmp_path / "project.yaml").write_text(yaml.dump(self.FAL_PROJECT_YAML))
+        project = load_project(tmp_path)
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+
+        pricing_map = {
+            "fal-ai/flux-general": {
+                "unit_price": 0.04,
+                "unit": "image",
+                "currency": "USD",
+            },
+        }
+        widget.load_project(project, output_dir, pricing_map=pricing_map)
+
+        # Assert — first scene item should have cost label with dollar sign
+        item = widget.list_widget.item(0)
+        item_widget = widget.list_widget.itemWidget(item)
+        assert hasattr(item_widget, "_cost_label")
+        assert "$0.04" in item_widget._cost_label.text()
+
+    def test_scene_list_hides_cost_when_no_pricing(
+        self, qtbot, gui_project_dir_with_output
+    ):
+        """Scene list items should show empty cost when no pricing."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.scene_list import SceneListWidget
+
+        project = load_project(gui_project_dir_with_output)
+        output_dir = gui_project_dir_with_output / "output"
+
+        widget = SceneListWidget()
+        qtbot.addWidget(widget)
+        widget.load_project(project, output_dir)
+
+        # Assert — cost label should be empty (no pricing available)
+        item = widget.list_widget.item(0)
+        item_widget = widget.list_widget.itemWidget(item)
+        assert hasattr(item_widget, "_cost_label")
+        assert item_widget._cost_label.text() == ""

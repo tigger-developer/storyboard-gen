@@ -1,21 +1,25 @@
 # ABOUTME: Dialog for selecting which scenes to generate.
-# ABOUTME: Supports multi-scene selection from the scene list.
+# ABOUTME: Supports multi-scene selection from the scene list with cost estimates.
 
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QLabel,
     QRadioButton,
     QVBoxLayout,
     QWidget,
 )
 
+from storyboard_gen.generate import resolve_provider_config
 from storyboard_gen.models import Project, Scene
+from storyboard_gen.pricing import estimate_scene_cost
 
 
 class GenerateDialog(QDialog):
     """Dialog that lets the user choose which scenes to generate.
 
     Options: all stills, all clips, all scenes, or selected scene(s).
+    Optionally displays cost estimates when a pricing_map is provided.
     """
 
     def __init__(
@@ -23,11 +27,13 @@ class GenerateDialog(QDialog):
         project: Project,
         selected_scenes: list[Scene] | None = None,
         parent: QWidget | None = None,
+        pricing_map: dict[str, dict] | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Generate")
         self._project = project
         self._selected_scenes = selected_scenes or []
+        self._pricing_map = pricing_map or {}
 
         self._radio_all = QRadioButton("All scenes")
         self._radio_stills = QRadioButton("All stills")
@@ -47,6 +53,16 @@ class GenerateDialog(QDialog):
                 f"Selected: {len(self._selected_scenes)} scenes"
             )
 
+        # Cost summary label
+        self._cost_label = QLabel()
+        self._cost_label.setStyleSheet("color: #888; margin-top: 6px;")
+
+        # Connect radio buttons to update cost display
+        self._radio_all.toggled.connect(self._update_cost)
+        self._radio_stills.toggled.connect(self._update_cost)
+        self._radio_clips.toggled.connect(self._update_cost)
+        self._radio_selected.toggled.connect(self._update_cost)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -58,8 +74,39 @@ class GenerateDialog(QDialog):
         layout.addWidget(self._radio_stills)
         layout.addWidget(self._radio_clips)
         layout.addWidget(self._radio_selected)
+        layout.addWidget(self._cost_label)
         layout.addWidget(buttons)
         self.setLayout(layout)
+
+        self._update_cost()
+
+    def _update_cost(self) -> None:
+        """Recalculate and display the cost summary for the current selection."""
+        if not self._pricing_map:
+            self._cost_label.setText("")
+            return
+
+        scenes = self.get_selected_scenes()
+        total = 0.0
+        has_pricing = False
+
+        for scene in scenes:
+            provider_cfg = resolve_provider_config(
+                scene, self._project, scene.scene_type
+            )
+            pricing = self._pricing_map.get(provider_cfg.model)
+            cost = estimate_scene_cost(scene, pricing)
+            if cost is not None:
+                total += cost
+                has_pricing = True
+
+        if has_pricing:
+            self._cost_label.setText(
+                f"Estimated cost: ${total:.2f} ({len(scenes)} scene"
+                f"{'s' if len(scenes) != 1 else ''})"
+            )
+        else:
+            self._cost_label.setText("")
 
     def get_selected_scenes(self) -> list[Scene]:
         """Return the list of scenes matching the user's selection."""
