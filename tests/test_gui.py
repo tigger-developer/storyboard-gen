@@ -640,21 +640,20 @@ class TestMainWindow:
         console_text = window.console.text_edit.toPlainText()
         assert "error" in console_text.lower() or "Error" in console_text
 
-    def test_main_window_toolbar_actions_exist(self, qtbot):
-        """MainWindow should have toolbar actions for generation and output."""
+    def test_main_window_toolbar_buttons_exist(self, qtbot):
+        """MainWindow should have toolbar buttons for generation and output."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
         qtbot.addWidget(window)
 
-        # Assert — check toolbar actions
-        action_texts = [a.text() for a in window.toolbar.actions() if a.text()]
-        assert "Open Project" in action_texts
-        assert "Refresh" in action_texts
-        assert "Generate" in action_texts
-        assert "Stop" in action_texts
-        assert "Output" in action_texts
-        assert "View YAML" in action_texts
+        # Assert — check toolbar button tooltips
+        assert window._btn_open.toolTip() == "Open Project"
+        assert window._btn_refresh.toolTip() == "Refresh"
+        assert window._btn_generate.toolTip() == "Generate"
+        assert window._btn_stop.toolTip() == "Stop"
+        assert window._btn_output.toolTip() == "Output"
+        assert window._btn_yaml_viewer.toolTip() == "View YAML"
 
     def test_main_window_stop_button_disabled_initially(self, qtbot):
         """Stop button should be disabled when not generating."""
@@ -663,7 +662,7 @@ class TestMainWindow:
         window = MainWindow()
         qtbot.addWidget(window)
 
-        assert not window._action_stop.isEnabled()
+        assert not window._btn_stop.isEnabled()
 
     def test_main_window_has_progress_label(self, qtbot):
         """MainWindow should have a progress label in the status bar."""
@@ -1390,16 +1389,14 @@ class TestMainWindowOutputAndRefresh:
     """Test Output and Refresh toolbar actions in MainWindow."""
 
     def test_main_window_toolbar_has_output_and_refresh(self, qtbot):
-        """MainWindow should have Output and Refresh actions instead of Assemble."""
+        """MainWindow should have Output and Refresh buttons."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
         qtbot.addWidget(window)
 
-        action_texts = [a.text() for a in window.toolbar.actions() if a.text()]
-        assert "Output" in action_texts
-        assert "Refresh" in action_texts
-        assert "Assemble" not in action_texts
+        assert window._btn_output.toolTip() == "Output"
+        assert window._btn_refresh.toolTip() == "Refresh"
 
     def test_main_window_refresh_reloads_project(
         self, qtbot, gui_project_dir_with_output
@@ -1877,43 +1874,18 @@ class TestArchiveDialog:
 # ---------------------------------------------------------------------------
 
 
-class TestMainWindowArchive:
-    """Test the Archive toolbar action in MainWindow."""
+class TestMainWindowArchivePerScene:
+    """Test that per-scene Archive still works (toolbar Archive removed in #85)."""
 
-    def test_main_window_toolbar_has_archive_action(self, qtbot):
-        """MainWindow should have an Archive action in the toolbar."""
+    def test_toolbar_has_no_archive_button(self, qtbot):
+        """Toolbar should not have an Archive button after #85."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
         qtbot.addWidget(window)
 
-        action_texts = [a.text() for a in window.toolbar.actions() if a.text()]
-        assert "Archive" in action_texts
-
-    def test_archive_action_disabled_without_project(self, qtbot):
-        """Archive action should be disabled when no project is loaded."""
-        from storyboard_gen.gui.app import MainWindow
-
-        window = MainWindow()
-        qtbot.addWidget(window)
-
-        assert not window._action_archive.isEnabled()
-
-    def test_archive_action_disabled_without_selection(
-        self, qtbot, gui_project_dir_with_output
-    ):
-        """Archive action should be disabled when no scene is selected."""
-        from storyboard_gen.gui.app import MainWindow
-
-        window = MainWindow()
-        qtbot.addWidget(window)
-        window.open_project(gui_project_dir_with_output)
-
-        # Clear selection
-        window.scene_list.list_widget.clearSelection()
-        window.scene_list.list_widget.setCurrentRow(-1)
-
-        assert not window._action_archive.isEnabled()
+        assert not hasattr(window, "_action_archive")
+        assert not hasattr(window, "_btn_archive")
 
 
 # ---------------------------------------------------------------------------
@@ -1974,15 +1946,14 @@ class TestInitProject:
 class TestMainWindowNewProject:
     """Test the New Project toolbar action in MainWindow."""
 
-    def test_main_window_toolbar_has_new_project_action(self, qtbot):
-        """MainWindow should have a New Project action in the toolbar."""
+    def test_main_window_toolbar_has_new_project_button(self, qtbot):
+        """MainWindow should have a New Project button in the toolbar."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
         qtbot.addWidget(window)
 
-        action_texts = [a.text() for a in window.toolbar.actions() if a.text()]
-        assert "New Project" in action_texts
+        assert window._btn_new.toolTip() == "New Project"
 
     def test_new_project_creates_and_opens_project(self, qtbot, tmp_path):
         """New Project should scaffold and open a new project."""
@@ -2972,13 +2943,13 @@ class TestConsolePanelToggle:
     """Test that the console panel can be toggled as a slide-out panel."""
 
     def test_main_window_has_console_toggle(self, qtbot):
-        """MainWindow should have a toolbar action to toggle the console."""
+        """MainWindow should have a toolbar button to toggle the console."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
         qtbot.addWidget(window)
 
-        assert hasattr(window, "_action_console")
+        assert hasattr(window, "_btn_console")
 
     def test_console_hidden_by_default(self, qtbot):
         """Console panel should be hidden by default."""
@@ -2998,7 +2969,7 @@ class TestConsolePanelToggle:
         qtbot.addWidget(window)
 
         # Act — toggle to show
-        window._action_console.trigger()
+        window._btn_console.click()
 
         # Assert — widget should no longer be explicitly hidden
         assert not window.console.isHidden()
@@ -3011,11 +2982,11 @@ class TestConsolePanelToggle:
         qtbot.addWidget(window)
 
         # Show
-        window._action_console.trigger()
+        window._btn_console.click()
         assert not window.console.isHidden()
 
         # Hide
-        window._action_console.trigger()
+        window._btn_console.click()
         assert window.console.isHidden()
 
 
@@ -3621,7 +3592,7 @@ class TestMainWindowSplitPane:
         qtbot.addWidget(window)
 
         # Assert
-        assert hasattr(window, "_action_yaml_editor")
+        assert hasattr(window, "_btn_yaml_editor")
 
 
 # ---------------------------------------------------------------------------
@@ -4985,11 +4956,129 @@ class TestStopButtonCleanup:
 
             window._start_scene_generation(scene)
             assert len(window._workers) == 1
-            assert window._action_stop.isEnabled()
+            assert window._btn_stop.isEnabled()
 
             # Act
             window._on_scene_stopped(scene)
 
             # Assert — no workers left, stop disabled
             assert len(window._workers) == 0
-            assert not window._action_stop.isEnabled()
+            assert not window._btn_stop.isEnabled()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: AboutDialog (#85)
+# ---------------------------------------------------------------------------
+
+
+class TestAboutDialog:
+    """Test the About dialog."""
+
+    def test_about_dialog_instantiation(self, qtbot):
+        """AboutDialog should instantiate without errors."""
+        from storyboard_gen.gui.about_dialog import AboutDialog
+
+        dialog = AboutDialog()
+        qtbot.addWidget(dialog)
+        assert dialog.windowTitle() == "About storyboard-gen"
+
+    def test_about_dialog_shows_app_name(self, qtbot):
+        """AboutDialog should display the app name."""
+        from storyboard_gen.gui.about_dialog import AboutDialog
+
+        dialog = AboutDialog()
+        qtbot.addWidget(dialog)
+        assert "storyboard-gen" in dialog._name_label.text()
+
+    def test_about_dialog_shows_version(self, qtbot):
+        """AboutDialog should display the current version string."""
+        from storyboard_gen import __version__
+        from storyboard_gen.gui.about_dialog import AboutDialog
+
+        dialog = AboutDialog()
+        qtbot.addWidget(dialog)
+        assert __version__ in dialog._version_label.text()
+
+    def test_about_dialog_shows_github_url(self, qtbot):
+        """AboutDialog should contain a clickable GitHub URL."""
+        from storyboard_gen.gui.about_dialog import AboutDialog, GITHUB_URL
+
+        dialog = AboutDialog()
+        qtbot.addWidget(dialog)
+        assert GITHUB_URL in dialog._link_label.text()
+        assert dialog._link_label.openExternalLinks()
+
+    def test_about_dialog_has_close_button(self, qtbot):
+        """AboutDialog should have a Close button."""
+        from PySide6.QtWidgets import QDialogButtonBox
+        from storyboard_gen.gui.about_dialog import AboutDialog
+
+        dialog = AboutDialog()
+        qtbot.addWidget(dialog)
+        buttons = dialog._button_box.buttons()
+        assert len(buttons) == 1
+        assert (
+            dialog._button_box.buttonRole(buttons[0])
+            == QDialogButtonBox.ButtonRole.RejectRole
+        )
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Toolbar icon buttons (#85)
+# ---------------------------------------------------------------------------
+
+
+class TestToolbarIcons:
+    """Test that toolbar uses icon buttons with tooltips."""
+
+    def test_toolbar_buttons_are_qtoolbutton(self, qtbot):
+        """Toolbar buttons should be QToolButton instances."""
+        from PySide6.QtWidgets import QToolButton
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert isinstance(window._btn_open, QToolButton)
+        assert isinstance(window._btn_generate, QToolButton)
+        assert isinstance(window._btn_stop, QToolButton)
+
+    def test_toolbar_buttons_have_tooltips(self, qtbot):
+        """All toolbar buttons should have descriptive tooltips."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        expected = {
+            "_btn_open": "Open Project",
+            "_btn_new": "New Project",
+            "_btn_refresh": "Refresh",
+            "_btn_generate": "Generate",
+            "_btn_stop": "Stop",
+            "_btn_output": "Output",
+            "_btn_yaml_viewer": "View YAML",
+            "_btn_yaml_editor": "Edit YAML",
+            "_btn_console": "Console",
+            "_btn_about": "About",
+        }
+        for attr, tooltip in expected.items():
+            btn = getattr(window, attr)
+            assert btn.toolTip() == tooltip, f"{attr} tooltip mismatch"
+
+    def test_toolbar_has_about_button(self, qtbot):
+        """Toolbar should have an About button."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        assert hasattr(window, "_btn_about")
+
+    def test_toolbar_has_no_archive_button(self, qtbot):
+        """Toolbar should no longer have an Archive button."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        assert not hasattr(window, "_btn_archive")
+        assert not hasattr(window, "_action_archive")

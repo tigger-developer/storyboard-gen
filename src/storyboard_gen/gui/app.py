@@ -18,11 +18,13 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QSplitter,
     QToolBar,
+    QToolButton,
     QWidget,
 )
 
 from storyboard_gen import __version__
 from storyboard_gen.config import ConfigError, load_project
+from storyboard_gen.gui.about_dialog import AboutDialog
 from storyboard_gen.gui.console_panel import ConsolePanel, QtLogHandler
 from storyboard_gen.gui.generate_dialog import GenerateDialog
 from storyboard_gen.gui.generate_worker import GenerateWorker
@@ -99,56 +101,84 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(self._main_splitter)
 
-        # Connect scene selection to preview and archive button
+        # Connect scene selection to preview
         self.scene_list.scene_selected.connect(self._on_scene_selected)
-        self.scene_list.scene_selected.connect(lambda _: self._update_archive_enabled())
 
         # Connect per-scene action buttons
         self.scene_list.generate_requested.connect(self._on_generate_scene)
         self.scene_list.archive_requested.connect(self._on_archive_scene)
         self.scene_list.stop_requested.connect(self._on_stop_scene)
 
+    @staticmethod
+    def _make_toolbar_button(emoji: str, tooltip: str, callback) -> QToolButton:
+        """Create a square toolbar button with an emoji icon and tooltip.
+
+        Args:
+            emoji: Emoji character to display as the button label.
+            tooltip: Tooltip text describing the action.
+            callback: Slot to connect to the clicked signal.
+        """
+        btn = QToolButton()
+        btn.setText(emoji)
+        btn.setToolTip(tooltip)
+        btn.setFixedSize(36, 36)
+        btn.setStyleSheet("font-size: 18pt;")
+        btn.clicked.connect(callback)
+        return btn
+
     def _setup_toolbar(self) -> None:
-        """Create the toolbar with generation, output, and refresh actions."""
+        """Create the toolbar with icon buttons, progress spinner, and label."""
         self.toolbar = QToolBar("Main")
         self.toolbar.setMovable(False)
         self.addToolBar(self.toolbar)
 
-        self._action_open = self.toolbar.addAction("Open Project")
-        self._action_open.triggered.connect(self._on_open_project)
+        self._btn_open = self._make_toolbar_button(
+            "📂", "Open Project", self._on_open_project
+        )
+        self.toolbar.addWidget(self._btn_open)
 
-        self._action_new = self.toolbar.addAction("New Project")
-        self._action_new.triggered.connect(self._on_new_project)
+        self._btn_new = self._make_toolbar_button(
+            "➕", "New Project", self._on_new_project
+        )
+        self.toolbar.addWidget(self._btn_new)
 
-        self._action_refresh = self.toolbar.addAction("Refresh")
-        self._action_refresh.triggered.connect(self._on_refresh)
-
-        self.toolbar.addSeparator()
-
-        self._action_generate = self.toolbar.addAction("Generate")
-        self._action_generate.triggered.connect(self._on_generate)
-
-        self._action_stop = self.toolbar.addAction("Stop")
-        self._action_stop.triggered.connect(self._on_stop_all)
+        self._btn_refresh = self._make_toolbar_button("🔄", "Refresh", self._on_refresh)
+        self.toolbar.addWidget(self._btn_refresh)
 
         self.toolbar.addSeparator()
 
-        self._action_output = self.toolbar.addAction("Output")
-        self._action_output.triggered.connect(self._on_output)
+        self._btn_generate = self._make_toolbar_button(
+            "🚀", "Generate", self._on_generate
+        )
+        self.toolbar.addWidget(self._btn_generate)
+
+        self._btn_stop = self._make_toolbar_button("⏹", "Stop", self._on_stop_all)
+        self.toolbar.addWidget(self._btn_stop)
 
         self.toolbar.addSeparator()
 
-        self._action_yaml_viewer = self.toolbar.addAction("View YAML")
-        self._action_yaml_viewer.triggered.connect(self._on_view_yaml)
+        self._btn_output = self._make_toolbar_button("🎞", "Output", self._on_output)
+        self.toolbar.addWidget(self._btn_output)
 
-        self._action_yaml_editor = self.toolbar.addAction("YAML")
-        self._action_yaml_editor.triggered.connect(self._on_toggle_yaml)
+        self.toolbar.addSeparator()
 
-        self._action_archive = self.toolbar.addAction("Archive")
-        self._action_archive.triggered.connect(self._on_archive)
+        self._btn_yaml_viewer = self._make_toolbar_button(
+            "📄", "View YAML", self._on_view_yaml
+        )
+        self.toolbar.addWidget(self._btn_yaml_viewer)
 
-        self._action_console = self.toolbar.addAction("Console")
-        self._action_console.triggered.connect(self._on_toggle_console)
+        self._btn_yaml_editor = self._make_toolbar_button(
+            "✏️", "Edit YAML", self._on_toggle_yaml
+        )
+        self.toolbar.addWidget(self._btn_yaml_editor)
+
+        self._btn_console = self._make_toolbar_button(
+            "🖥", "Console", self._on_toggle_console
+        )
+        self.toolbar.addWidget(self._btn_console)
+
+        self._btn_about = self._make_toolbar_button("ℹ️", "About", self._on_about)
+        self.toolbar.addWidget(self._btn_about)
 
         # Progress spinner and label in the toolbar
         spacer = QWidget()
@@ -211,16 +241,15 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Error", message)
 
     def _update_actions_enabled(self) -> None:
-        """Enable/disable toolbar actions based on current state."""
+        """Enable/disable toolbar buttons based on current state."""
         has_project = self._project is not None
         is_generating = len(self._workers) > 0
 
-        self._action_generate.setEnabled(has_project)
-        self._action_stop.setEnabled(is_generating)
-        self._action_output.setEnabled(has_project and not is_generating)
-        self._action_refresh.setEnabled(has_project)
-        self._action_yaml_viewer.setEnabled(has_project)
-        self._update_archive_enabled()
+        self._btn_generate.setEnabled(has_project)
+        self._btn_stop.setEnabled(is_generating)
+        self._btn_output.setEnabled(has_project and not is_generating)
+        self._btn_refresh.setEnabled(has_project)
+        self._btn_yaml_viewer.setEnabled(has_project)
 
     def _update_progress(self) -> None:
         """Update toolbar spinner and progress label based on active workers."""
@@ -695,29 +724,12 @@ class MainWindow(QMainWindow):
         except (RuntimeError, OSError) as exc:
             self._show_error(f"Kdenlive export failed: {exc}")
 
-    # ----- Archive -----
+    # ----- About dialog -----
 
-    def _update_archive_enabled(self) -> None:
-        """Enable the Archive action only when a scene is selected."""
-        has_project = self._project is not None
-        has_selection = has_project and self.scene_list.get_selected_scene() is not None
-        self._action_archive.setEnabled(has_selection)
-
-    def _on_archive(self) -> None:
-        """Open the Archive dialog for the currently selected scene."""
-        scene = self.scene_list.get_selected_scene()
-        if not scene or not self._output_dir:
-            return
-
-        dialog = ArchiveDialog(scene, self._output_dir, parent=self)
+    def _on_about(self) -> None:
+        """Show the About dialog."""
+        dialog = AboutDialog(parent=self)
         dialog.exec()
-
-        if dialog.restored:
-            self.scene_list.refresh_status()
-            self._refresh_preview_if_selected(scene)
-            self.console.append_message(
-                f"Restored archived version for scene {scene.number}"
-            )
 
     # ----- Session restore -----
 
