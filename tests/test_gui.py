@@ -1448,7 +1448,9 @@ class TestGuiKdenliveSubtitles:
 
         # Act — mock generate_kdenlive and call the export method
         with patch("storyboard_gen.kdenlive.generate_kdenlive") as mock_gen:
-            mock_gen.return_value = gui_project_dir_with_output / "output" / "final" / "test.kdenlive"
+            mock_gen.return_value = (
+                gui_project_dir_with_output / "output" / "final" / "test.kdenlive"
+            )
             window._run_kdenlive({"mode": "kdenlive"})
 
         # Assert — subtitles_path should be passed
@@ -1476,7 +1478,9 @@ class TestGuiKdenliveSubtitles:
 
         # Act
         with patch("storyboard_gen.kdenlive.generate_kdenlive") as mock_gen:
-            mock_gen.return_value = gui_project_dir_with_output / "output" / "final" / "test.kdenlive"
+            mock_gen.return_value = (
+                gui_project_dir_with_output / "output" / "final" / "test.kdenlive"
+            )
             window._run_kdenlive({"mode": "kdenlive", "preview": True})
 
         # Assert — no subtitles in preview mode
@@ -1501,7 +1505,9 @@ class TestGuiKdenliveSubtitles:
 
         # Act
         with patch("storyboard_gen.kdenlive.generate_kdenlive") as mock_gen:
-            mock_gen.return_value = gui_project_dir_with_output / "output" / "final" / "test.kdenlive"
+            mock_gen.return_value = (
+                gui_project_dir_with_output / "output" / "final" / "test.kdenlive"
+            )
             window._run_kdenlive({"mode": "kdenlive"})
 
         # Assert — subtitles_path should be None (file missing)
@@ -5119,6 +5125,15 @@ class TestAboutDialog:
             dialog._button_box.buttonRole(buttons[0])
             == QDialogButtonBox.ButtonRole.RejectRole
         )
+
+    def test_about_dialog_shows_pricing_caveat(self, qtbot):
+        """AboutDialog should display a pricing caveat note."""
+        from storyboard_gen.gui.about_dialog import AboutDialog
+
+        dialog = AboutDialog()
+        qtbot.addWidget(dialog)
+        assert "indicative" in dialog._pricing_label.text().lower()
+        assert "static defaults" in dialog._pricing_label.text().lower()
 
 
 # ---------------------------------------------------------------------------

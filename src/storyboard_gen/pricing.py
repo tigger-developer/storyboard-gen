@@ -1,5 +1,5 @@
 # ABOUTME: Pricing lookup for cost estimates across all backends.
-# ABOUTME: Priority chain: project.yaml override > FAL API > static defaults > None.
+# ABOUTME: Priority chain: project.yaml override > FAL API > static defaults (Google, Replicate) > None.
 
 import json
 import logging
@@ -17,9 +17,10 @@ _price_cache: dict[str, dict | None] = {}
 _FAL_PREFIXES = ("fal-ai/", "xai/", "wan/")
 
 # Static pricing defaults for models without a live pricing API.
-# Google Gemini API pricing as of 2026-03 (direct API, not FAL-proxied).
+# Google pricing as of 2026-03 (Gemini API pricing page).
+# Replicate pricing as of 2026-03 (replicate.com/pricing).
 _STATIC_PRICES: dict[str, dict] = {
-    # Imagen 4 (image generation)
+    # --- Google Imagen (stills) ---
     "imagen-4.0-fast-generate-001": {
         "unit_price": 0.02,
         "unit": "image",
@@ -35,13 +36,12 @@ _STATIC_PRICES: dict[str, dict] = {
         "unit": "image",
         "currency": "USD",
     },
-    # Veo 2 (video generation)
+    # --- Google Veo (clips) ---
     "veo-2.0-generate-001": {
         "unit_price": 0.35,
         "unit": "second",
         "currency": "USD",
     },
-    # Veo 3 (video generation)
     "veo-3.0-fast-generate-001": {
         "unit_price": 0.15,
         "unit": "second",
@@ -52,7 +52,6 @@ _STATIC_PRICES: dict[str, dict] = {
         "unit": "second",
         "currency": "USD",
     },
-    # Veo 3.1 (video generation)
     "veo-3.1-fast-generate-001": {
         "unit_price": 0.15,
         "unit": "second",
@@ -61,6 +60,17 @@ _STATIC_PRICES: dict[str, dict] = {
     "veo-3.1-generate-001": {
         "unit_price": 0.40,
         "unit": "second",
+        "currency": "USD",
+    },
+    # --- Replicate (stills only) ---
+    "black-forest-labs/flux-1.1-pro": {
+        "unit_price": 0.04,
+        "unit": "image",
+        "currency": "USD",
+    },
+    "black-forest-labs/flux-dev": {
+        "unit_price": 0.025,
+        "unit": "image",
         "currency": "USD",
     },
 }
@@ -157,7 +167,7 @@ def fetch_price(model: str, *, pricing_override: dict | None = None) -> dict | N
     if fal_result is not None:
         return fal_result
 
-    # 3. Static defaults (Google models, etc.)
+    # 3. Static defaults (Google, Replicate)
     if model in _STATIC_PRICES:
         return _STATIC_PRICES[model]
 

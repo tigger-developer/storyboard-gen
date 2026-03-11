@@ -90,6 +90,18 @@ class TestStaticPrices:
         assert "veo-2.0-generate-001" in _STATIC_PRICES
         assert _STATIC_PRICES["veo-2.0-generate-001"]["unit_price"] == 0.35
 
+    def test_replicate_flux_pro_in_static_prices(self):
+        assert "black-forest-labs/flux-1.1-pro" in _STATIC_PRICES
+        p = _STATIC_PRICES["black-forest-labs/flux-1.1-pro"]
+        assert p["unit_price"] == 0.04
+        assert p["unit"] == "image"
+
+    def test_replicate_flux_dev_in_static_prices(self):
+        assert "black-forest-labs/flux-dev" in _STATIC_PRICES
+        p = _STATIC_PRICES["black-forest-labs/flux-dev"]
+        assert p["unit_price"] == 0.025
+        assert p["unit"] == "image"
+
 
 # ---------------------------------------------------------------------------
 # Unit tests: fetch_price
@@ -347,13 +359,25 @@ class TestFetchPrice:
         assert result["unit_price"] == 0.15
         assert result["unit"] == "second"
 
-    def test_static_default_not_used_for_replicate(self):
-        """Replicate models have no static defaults, return None."""
+    def test_static_default_for_replicate_pro(self):
+        """Replicate Flux Pro returns static pricing."""
         # Act
         result = fetch_price("black-forest-labs/flux-1.1-pro")
 
         # Assert
-        assert result is None
+        assert result is not None
+        assert result["unit_price"] == 0.04
+        assert result["unit"] == "image"
+
+    def test_static_default_for_replicate_dev(self):
+        """Replicate Flux Dev returns static pricing."""
+        # Act
+        result = fetch_price("black-forest-labs/flux-dev")
+
+        # Assert
+        assert result is not None
+        assert result["unit_price"] == 0.025
+        assert result["unit"] == "image"
 
     def test_fal_api_failure_falls_back_to_static(self, monkeypatch):
         """When FAL API fails for a model that also has static pricing, static wins."""

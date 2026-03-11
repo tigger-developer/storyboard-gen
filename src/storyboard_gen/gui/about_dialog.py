@@ -48,6 +48,14 @@ class AboutDialog(QDialog):
         self._link_label.setOpenExternalLinks(True)
         layout.addWidget(self._link_label)
 
+        self._pricing_label = QLabel(
+            "Cost estimates are indicative. FAL prices are fetched live;"
+            " Google and Replicate use static defaults that may be outdated."
+        )
+        self._pricing_label.setWordWrap(True)
+        self._pricing_label.setStyleSheet("color: #888; font-size: 9pt;")
+        layout.addWidget(self._pricing_label)
+
         layout.addSpacing(12)
 
         self._button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)

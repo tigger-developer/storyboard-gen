@@ -41,10 +41,10 @@ Thin orchestrator that resolves the provider, delegates generation, and handles 
 
 ### Pricing (`pricing.py`)
 
-Unified pricing lookup with priority chain: **project.yaml override > FAL live API > static defaults > None**. Provides cost estimates for `--dry-run` and GUI display:
+Unified pricing lookup with priority chain: **project.yaml override > FAL live API > static defaults (Google, Replicate) > None**. Provides cost estimates for `--dry-run` and GUI display. Cost estimates are indicative — FAL prices are live; Google and Replicate use static defaults that may be outdated.
 
-- `fetch_price(model, pricing_override=None)` — resolves pricing using the priority chain. FAL models use `GET https://api.fal.ai/v1/models/pricing?endpoint_id=<model>` with `FAL_KEY` (session-cached). Google models (Imagen, Veo) use built-in `_STATIC_PRICES` defaults. Project-level `pricing` overrides in `project.yaml` take highest priority.
-- `_STATIC_PRICES` — dict of hardcoded pricing for Google Gemini API models (Imagen 4 Fast/Standard/Ultra, Veo 2/3/3.1).
+- `fetch_price(model, pricing_override=None)` — resolves pricing using the priority chain. FAL models use `GET https://api.fal.ai/v1/models/pricing?endpoint_id=<model>` with `FAL_KEY` (session-cached). Google models (Imagen, Veo) and Replicate models (Flux Pro, Flux Dev) use built-in `_STATIC_PRICES` defaults. Project-level `pricing` overrides in `project.yaml` take highest priority.
+- `_STATIC_PRICES` — dict of hardcoded pricing for Google models (Imagen 4 Fast/Standard/Ultra, Veo 2/3/3.1) and Replicate models (Flux Pro 1.1, Flux Dev).
 - `estimate_scene_cost(scene, pricing)` — calculates per-scene cost: flat `unit_price` for stills, `unit_price * duration` for clips.
 - `format_cost_line(scene, pricing)` — human-readable cost string for CLI dry-run output.
 

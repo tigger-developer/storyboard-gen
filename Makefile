@@ -36,6 +36,7 @@ install: $(VENV)/bin/activate ## Create venv, install deps, symlink to ~/.local/
 	@if ! echo "$$PATH" | grep -q "$(LOCAL_BIN)"; then \
 		echo "Warning: $(LOCAL_BIN) is not on your PATH"; \
 	fi
+	@echo "Note: Cost estimates are indicative. FAL prices are live; Google and Replicate use static defaults."
 
 install-gui: install ## Install with GUI dependencies (PySide6)
 	$(PIP) install PySide6 pytest-qt -q

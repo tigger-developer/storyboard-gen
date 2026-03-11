@@ -1,4 +1,4 @@
-<!-- Version: 3.1 | Last updated: 2026-03-11 -->
+<!-- Version: 3.2 | Last updated: 2026-03-11 -->
 
 # Model Reference
 
@@ -19,7 +19,7 @@ providers:
       # currency defaults to USD
 ```
 
-**Pricing note:** FAL pricing below was sourced from [fal.ai/pricing](https://fal.ai/pricing) as of 2026-03-11 and may change. Google pricing is from the [Gemini API pricing page](https://ai.google.dev/gemini-api/docs/pricing). Use `--dry-run` for current pricing.
+**Pricing note:** Cost estimates are indicative. FAL prices are fetched live from the FAL pricing API. Google and Replicate prices are static defaults that may be outdated. Google pricing is from the [Gemini API pricing page](https://ai.google.dev/gemini-api/docs/pricing); Replicate pricing is from [replicate.com/pricing](https://replicate.com/pricing) as of 2026-03-11. Use `--dry-run` for current estimates, or override per model in `project.yaml`.
 
 ---
 
@@ -418,10 +418,10 @@ FAL_KEY=your-fal-key
 
 Replicate models are accessed via the `replicate` SDK. Stills only — clips are not supported.
 
-| Model ID | Name | Reference support | Notes |
-|----------|------|-------------------|-------|
-| `black-forest-labs/flux-1.1-pro` | Flux Pro 1.1 | No | Text-to-image only. |
-| `black-forest-labs/flux-dev` | Flux Dev | Yes (`image` parameter) | Supports image-to-image with a single reference. |
+| Model ID | Name | Price | Reference support | Notes |
+|----------|------|-------|-------------------|-------|
+| `black-forest-labs/flux-1.1-pro` | Flux Pro 1.1 | $0.04/image | No | Text-to-image only. |
+| `black-forest-labs/flux-dev` | Flux Dev | $0.025/image | Yes (`image` parameter) | Supports image-to-image with a single reference. Non-commercial licence. |
 
 **Options:** `seed` (int), `output_quality` (0–100), `prompt_upsampling` (bool).
 
