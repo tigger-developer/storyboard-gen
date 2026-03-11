@@ -1,4 +1,4 @@
-<!-- Version: 2.3 | Last updated: 2026-03-11 -->
+<!-- Version: 2.4 | Last updated: 2026-03-11 -->
 
 # Architecture: storyboard-gen
 
@@ -26,7 +26,7 @@ Pluggable image/video generation backends. Each provider implements the `ImagePr
 
 - `providers/base.py` — Abstract base class defining `generate_still()` and `generate_clip()` interface.
 - `providers/google.py` — Google Vertex AI / Gemini (Imagen for stills, Veo for clips).
-- `providers/fal.py` — FAL.ai (Flux 1.x, Flux 2, Kontext, O1 Image models for stills; Kling models for clips). Uses a `StillHandler` strategy pattern with model-family registry for still generation: each model family (Flux, Flux 2, Kontext, Kontext Multi, O1 Image, Ideogram Character) has a dedicated handler class responsible for argument building, reference upload, and prompt rewriting. The `_resolve_still_handler()` registry matches model IDs to handlers in specificity order, with `FluxHandler` as fallback. Kontext models auto-route to image-to-image (with reference) or text-to-image (without). Flux 2 models do not support reference images. Kling O3 clips and O1 Image stills support character elements and `@character_id` prompt rewriting (`@ElementN`/`@ImageN`). Kontext Max Multi accepts multiple references without explicit mapping. Safety defaults are injected per handler before user options merge.
+- `providers/fal.py` — FAL.ai (Flux 1.x, Flux 2, Kontext, O1 Image, Grok, Seedream, Hunyuan Image, Recraft models for stills; Kling, Grok Video, Seedance, Hunyuan Video, Wan, MiniMax models for clips). Uses a `StillHandler` strategy pattern with model-family registry for still generation: each model family has a dedicated handler class responsible for argument building, reference upload, and prompt rewriting. The `_resolve_still_handler()` registry matches model IDs to handlers in specificity order, with `FluxHandler` as fallback. Kontext models auto-route to image-to-image (with reference) or text-to-image (without). Flux 2 models do not support reference images. Kling O3 clips and O1 Image stills support character elements and `@character_id` prompt rewriting (`@ElementN`/`@ImageN`). Kontext Max Multi accepts multiple references without explicit mapping. Grok Image and Seedream v4.5 route to `/edit` endpoints when references are provided. Video models use detection properties (`_is_grok_video`, `_is_seedance`, `_is_hunyuan_video`, `_is_wan`, `_is_minimax`) for model-specific argument building. Safety defaults are injected per handler before user options merge.
 - `providers/replicate.py` — Replicate (Flux models for stills).
 - `providers/__init__.py` — Registry and factory. Uses lazy imports so unused SDKs are not required.
 

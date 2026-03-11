@@ -1,5 +1,5 @@
 # ABOUTME: FAL.ai provider for storyboard-gen.
-# ABOUTME: Generates stills via Flux/Kontext and clips via Kling through the fal-client SDK.
+# ABOUTME: Generates stills and clips via fal-client SDK for multiple model families.
 
 import hashlib
 import json
@@ -340,6 +340,169 @@ class IdeogramV3Handler(StillHandler):
         return provider.model, arguments
 
 
+class GrokImageHandler(StillHandler):
+    """Handler for xAI Grok Imagine Image models (raw aspect_ratio, edit with refs)."""
+
+    def match(self, model: str) -> bool:
+        lower = model.lower()
+        return "grok-imagine-image" in lower
+
+    def safety_defaults(self) -> dict:
+        return {}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        # Strip /edit suffix to get clean base model
+        base_model = re.sub(r"/edit$", "", provider.model, flags=re.IGNORECASE)
+
+        if scene_characters:
+            cdn_cache = provider._load_cdn_cache(project_dir)
+
+            # Upload all character refs
+            all_refs: list[Path] = []
+            for char in scene_characters:
+                all_refs.extend(r for r in char.reference if r.exists())
+            image_urls = provider._upload_all_references(all_refs, cdn_cache)
+
+            provider._save_cdn_cache(project_dir, cdn_cache)
+
+            endpoint = base_model.rstrip("/") + "/edit"
+            arguments: dict = {
+                "prompt": prompt,
+                "image_urls": image_urls,
+                "num_images": 1,
+                "output_format": "png",
+            }
+        else:
+            endpoint = base_model
+            arguments = {
+                "prompt": prompt,
+                "aspect_ratio": aspect_ratio,
+                "num_images": 1,
+                "output_format": "png",
+            }
+        return endpoint, arguments
+
+
+class SeedreamHandler(StillHandler):
+    """Handler for ByteDance Seedream models (image_size presets, edit with refs)."""
+
+    def match(self, model: str) -> bool:
+        return "seedream" in model.lower()
+
+    def safety_defaults(self) -> dict:
+        return {"enable_safety_checker": False}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        image_size = _map_aspect_ratio(aspect_ratio)
+
+        if scene_characters:
+            cdn_cache = provider._load_cdn_cache(project_dir)
+
+            # Upload all character refs
+            all_refs: list[Path] = []
+            for char in scene_characters:
+                all_refs.extend(r for r in char.reference if r.exists())
+            image_urls = provider._upload_all_references(all_refs, cdn_cache)
+
+            provider._save_cdn_cache(project_dir, cdn_cache)
+
+            # Route to /edit endpoint (replace text-to-image or append)
+            base = re.sub(r"/text-to-image$", "", provider.model, flags=re.IGNORECASE)
+            endpoint = base.rstrip("/") + "/edit"
+            arguments: dict = {
+                "prompt": prompt,
+                "image_size": image_size,
+                "image_urls": image_urls,
+                "num_images": 1,
+                "output_format": "png",
+            }
+        else:
+            endpoint = provider.model
+            arguments = {
+                "prompt": prompt,
+                "image_size": image_size,
+                "num_images": 1,
+                "output_format": "png",
+            }
+        return endpoint, arguments
+
+
+class HunyuanImageHandler(StillHandler):
+    """Handler for Tencent Hunyuan Image models (image_size presets, no ref support)."""
+
+    def match(self, model: str) -> bool:
+        return "hunyuan-image" in model.lower()
+
+    def safety_defaults(self) -> dict:
+        return {"enable_safety_checker": False}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        image_size = _map_aspect_ratio(aspect_ratio)
+        arguments: dict = {
+            "prompt": prompt,
+            "image_size": image_size,
+            "num_images": 1,
+            "output_format": "png",
+        }
+        return provider.model, arguments
+
+
+class RecraftHandler(StillHandler):
+    """Handler for Recraft models (image_size presets, colour palette control)."""
+
+    def match(self, model: str) -> bool:
+        return "recraft" in model.lower()
+
+    def safety_defaults(self) -> dict:
+        return {"enable_safety_checker": False}
+
+    def build_args(
+        self,
+        provider: "FalProvider",
+        prompt: str,
+        aspect_ratio: str,
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        style_reference_images: list[Path] | None,
+        project_dir: Path | None,
+    ) -> tuple[str, dict]:
+        image_size = _map_aspect_ratio(aspect_ratio)
+        arguments: dict = {
+            "prompt": prompt,
+            "image_size": image_size,
+            "num_images": 1,
+            "output_format": "png",
+        }
+        return provider.model, arguments
+
+
 class Flux2Handler(StillHandler):
     """Handler for Flux 2 models (no reference support)."""
 
@@ -393,6 +556,10 @@ _STILL_HANDLERS: list[StillHandler] = [
     O1ImageHandler(),
     KontextMultiHandler(),
     KontextHandler(),
+    GrokImageHandler(),
+    SeedreamHandler(),
+    HunyuanImageHandler(),
+    RecraftHandler(),
     InstantCharacterHandler(),
     Flux2ProHandler(),
     Flux2Handler(),
@@ -758,17 +925,41 @@ class FalProvider(ImageProvider):
     def _is_video_model(self) -> bool:
         """Detect whether this provider is configured for a video model."""
         lower = self.model.lower()
-        return "kling-video" in lower or "/wan" in lower or "minimax" in lower
+        return (
+            "kling-video" in lower
+            or "/wan" in lower
+            or lower.startswith("wan/")
+            or "minimax" in lower
+            or "grok-imagine-video" in lower
+            or "seedance" in lower
+            or "hunyuan-video" in lower
+        )
 
     @property
     def _is_wan(self) -> bool:
         """Detect whether this is a Wan video model."""
-        return "/wan" in self.model.lower()
+        lower = self.model.lower()
+        return "/wan" in lower or lower.startswith("wan/")
 
     @property
     def _is_minimax(self) -> bool:
         """Detect whether this is a MiniMax video model."""
         return "minimax" in self.model.lower()
+
+    @property
+    def _is_grok_video(self) -> bool:
+        """Detect whether this is a Grok Imagine Video model."""
+        return "grok-imagine-video" in self.model.lower()
+
+    @property
+    def _is_seedance(self) -> bool:
+        """Detect whether this is a Seedance video model."""
+        return "seedance" in self.model.lower()
+
+    @property
+    def _is_hunyuan_video(self) -> bool:
+        """Detect whether this is a Hunyuan Video model."""
+        return "hunyuan-video" in self.model.lower()
 
     @property
     def _is_v3(self) -> bool:
@@ -1025,7 +1216,8 @@ class FalProvider(ImageProvider):
         if not self._is_video_model:
             raise NotImplementedError(
                 f"FAL provider ({self.model}) does not support video generation. "
-                f"Use a Kling, Wan, or MiniMax model, or Google (Veo) for clips."
+                f"Use a Kling, Wan, MiniMax, Grok, Seedance, or Hunyuan model, "
+                f"or Google (Veo) for clips."
             )
 
         if fal_client is None:
@@ -1049,8 +1241,38 @@ class FalProvider(ImageProvider):
             logger.info("Uploaded last frame -> %s", last_frame_url)
 
         # Build model-specific arguments
-        if self._is_wan:
-            arguments: dict = {"prompt": prompt}
+        if self._is_grok_video:
+            arguments: dict = {
+                "prompt": prompt,
+                "duration": int(duration),
+                "aspect_ratio": aspect_ratio,
+            }
+            if source_frame_url:
+                arguments["image_url"] = source_frame_url
+        elif self._is_seedance:
+            arguments = {
+                "prompt": prompt,
+                "duration": str(int(duration)),
+                "aspect_ratio": aspect_ratio,
+                "generate_audio": False,
+                "enable_safety_checker": False,
+            }
+            if source_frame_url:
+                arguments["image_url"] = source_frame_url
+            if last_frame_url:
+                arguments["end_image_url"] = last_frame_url
+        elif self._is_hunyuan_video:
+            arguments = {
+                "prompt": prompt,
+                "aspect_ratio": aspect_ratio,
+            }
+            if source_frame_url:
+                arguments["image_url"] = source_frame_url
+        elif self._is_wan:
+            arguments = {
+                "prompt": prompt,
+                "enable_safety_checker": False,
+            }
             if source_frame_url:
                 arguments["image_url"] = source_frame_url
         elif self._is_minimax:
@@ -1077,7 +1299,7 @@ class FalProvider(ImageProvider):
             merged_options.update(options)
         arguments.update(merged_options)
 
-        # Auto-route endpoint (Kling only — t2v ↔ i2v based on source_frame)
+        # Auto-route endpoint (t2v ↔ i2v based on source_frame)
         endpoint = self.model
         if not self._is_wan and not self._is_minimax:
             has_source = source_frame_url is not None

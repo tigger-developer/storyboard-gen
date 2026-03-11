@@ -13,12 +13,16 @@ from storyboard_gen.providers.fal import (
     Flux2Handler,
     Flux2ProHandler,
     FluxHandler,
+    GrokImageHandler,
+    HunyuanImageHandler,
     IdeogramCharacterHandler,
     IdeogramV3Handler,
     InstantCharacterHandler,
     KontextHandler,
     KontextMultiHandler,
     O1ImageHandler,
+    RecraftHandler,
+    SeedreamHandler,
     StillHandler,
     _map_aspect_ratio,
     _resolve_still_handler,
@@ -2907,6 +2911,771 @@ class TestMinimaxVideoModel:
             arguments["subject_reference_image_url"]
             == "https://fal.media/files/face.png"
         )
+
+
+class TestGrokImageHandler:
+    """Tests for Grok Image handler (#79)."""
+
+    def test_match_positive(self):
+        assert GrokImageHandler().match("xai/grok-imagine-image")
+
+    def test_match_positive_edit(self):
+        assert GrokImageHandler().match("xai/grok-imagine-image/edit")
+
+    def test_match_negative_flux(self):
+        assert not GrokImageHandler().match("fal-ai/flux-general")
+
+    def test_match_negative_grok_video(self):
+        assert not GrokImageHandler().match("xai/grok-imagine-video/text-to-video")
+
+    def test_safety_defaults_empty(self):
+        """Grok Image has no safety toggle."""
+        assert GrokImageHandler().safety_defaults() == {}
+
+    def test_is_still_handler(self):
+        assert isinstance(GrokImageHandler(), StillHandler)
+
+    def test_resolve_handler(self):
+        handler = _resolve_still_handler("xai/grok-imagine-image")
+        assert isinstance(handler, GrokImageHandler)
+
+    def test_resolve_handler_edit(self):
+        handler = _resolve_still_handler("xai/grok-imagine-image/edit")
+        assert isinstance(handler, GrokImageHandler)
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_uses_raw_aspect_ratio(self, mock_fal, tmp_path):
+        """Grok Image uses raw aspect_ratio strings, not image_size presets."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="xai/grok-imagine-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A sunset landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert — raw aspect_ratio, not image_size
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["aspect_ratio"] == "9:16"
+        assert "image_size" not in arguments
+        assert arguments["output_format"] == "png"
+        assert arguments["num_images"] == 1
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_with_refs_routes_to_edit_endpoint(self, mock_fal, tmp_path):
+        """Grok Image routes to /edit when references are provided."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        chars = [Character(id="boy", description="A boy", reference=[ref_img])]
+        provider = FalProvider(model="xai/grok-imagine-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy running",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert — endpoint should be /edit, with image_urls
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "xai/grok-imagine-image/edit"
+        arguments = call_args.kwargs["arguments"]
+        assert "image_urls" in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_without_refs_uses_base_endpoint(self, mock_fal, tmp_path):
+        """Grok Image uses base endpoint when no references."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="xai/grok-imagine-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+            )
+
+        # Assert — base endpoint
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "xai/grok-imagine-image"
+        arguments = call_args.kwargs["arguments"]
+        assert "image_urls" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_edit_model_does_not_double_edit(self, mock_fal, tmp_path):
+        """When user specifies /edit model, don't append /edit again."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        chars = [Character(id="boy", description="A boy", reference=[ref_img])]
+        provider = FalProvider(model="xai/grok-imagine-image/edit")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy in a park",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert — should be /edit, NOT /edit/edit
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "xai/grok-imagine-image/edit"
+
+
+class TestSeedreamHandler:
+    """Tests for Seedream handler (#79)."""
+
+    def test_match_v45(self):
+        assert SeedreamHandler().match("fal-ai/bytedance/seedream/v4.5/text-to-image")
+
+    def test_match_v45_edit(self):
+        assert SeedreamHandler().match("fal-ai/bytedance/seedream/v4.5/edit")
+
+    def test_match_v5_lite(self):
+        assert SeedreamHandler().match(
+            "fal-ai/bytedance/seedream/v5/lite/text-to-image"
+        )
+
+    def test_match_negative_flux(self):
+        assert not SeedreamHandler().match("fal-ai/flux-general")
+
+    def test_match_negative_seedance(self):
+        assert not SeedreamHandler().match(
+            "fal-ai/bytedance/seedance/v1.5/pro/text-to-video"
+        )
+
+    def test_safety_defaults_disable_safety_checker(self):
+        assert SeedreamHandler().safety_defaults() == {"enable_safety_checker": False}
+
+    def test_is_still_handler(self):
+        assert isinstance(SeedreamHandler(), StillHandler)
+
+    def test_resolve_handler_v45(self):
+        handler = _resolve_still_handler("fal-ai/bytedance/seedream/v4.5/text-to-image")
+        assert isinstance(handler, SeedreamHandler)
+
+    def test_resolve_handler_v5_lite(self):
+        handler = _resolve_still_handler(
+            "fal-ai/bytedance/seedream/v5/lite/text-to-image"
+        )
+        assert isinstance(handler, SeedreamHandler)
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_uses_image_size_preset(self, mock_fal, tmp_path):
+        """Seedream uses image_size presets."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/bytedance/seedream/v4.5/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A beautiful scene",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_size"] == "portrait_16_9"
+        assert "aspect_ratio" not in arguments
+        assert arguments["num_images"] == 1
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_with_refs_routes_to_edit_endpoint(self, mock_fal, tmp_path):
+        """Seedream v4.5 routes to /edit when references are provided."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        chars = [Character(id="boy", description="A boy", reference=[ref_img])]
+        provider = FalProvider(model="fal-ai/bytedance/seedream/v4.5/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy smiling",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert — endpoint should be /edit
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/bytedance/seedream/v4.5/edit"
+        arguments = call_args.kwargs["arguments"]
+        assert "image_urls" in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_v5_lite_without_refs_uses_base_endpoint(self, mock_fal, tmp_path):
+        """Seedream v5 Lite has no edit endpoint — uses base."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/bytedance/seedream/v5/lite/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+            )
+
+        # Assert
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/bytedance/seedream/v5/lite/text-to-image"
+
+
+class TestHunyuanImageHandler:
+    """Tests for Hunyuan Image handler (#79)."""
+
+    def test_match_positive(self):
+        assert HunyuanImageHandler().match("fal-ai/hunyuan-image/v3/text-to-image")
+
+    def test_match_negative_flux(self):
+        assert not HunyuanImageHandler().match("fal-ai/flux-general")
+
+    def test_match_negative_hunyuan_video(self):
+        assert not HunyuanImageHandler().match(
+            "fal-ai/hunyuan-video-v1.5/text-to-video"
+        )
+
+    def test_safety_defaults_disable_safety_checker(self):
+        assert HunyuanImageHandler().safety_defaults() == {
+            "enable_safety_checker": False
+        }
+
+    def test_is_still_handler(self):
+        assert isinstance(HunyuanImageHandler(), StillHandler)
+
+    def test_resolve_handler(self):
+        handler = _resolve_still_handler("fal-ai/hunyuan-image/v3/text-to-image")
+        assert isinstance(handler, HunyuanImageHandler)
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_uses_image_size_preset(self, mock_fal, tmp_path):
+        """Hunyuan Image uses image_size presets."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/hunyuan-image/v3/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A traditional landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_size"] == "portrait_16_9"
+        assert arguments["num_images"] == 1
+        assert arguments["output_format"] == "png"
+        assert "aspect_ratio" not in arguments
+
+
+class TestRecraftHandler:
+    """Tests for Recraft handler (#79)."""
+
+    def test_match_positive(self):
+        assert RecraftHandler().match("fal-ai/recraft/v4/text-to-image")
+
+    def test_match_negative_flux(self):
+        assert not RecraftHandler().match("fal-ai/flux-general")
+
+    def test_safety_defaults_disable_safety_checker(self):
+        assert RecraftHandler().safety_defaults() == {"enable_safety_checker": False}
+
+    def test_is_still_handler(self):
+        assert isinstance(RecraftHandler(), StillHandler)
+
+    def test_resolve_handler(self):
+        handler = _resolve_still_handler("fal-ai/recraft/v4/text-to-image")
+        assert isinstance(handler, RecraftHandler)
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_uses_image_size_preset(self, mock_fal, tmp_path):
+        """Recraft uses image_size presets."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/recraft/v4/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A product design",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="1:1",
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_size"] == "square_hd"
+        assert arguments["num_images"] == 1
+        assert arguments["output_format"] == "png"
+        assert "aspect_ratio" not in arguments
+
+
+class TestGrokVideoModel:
+    """Tests for Grok video model support (#79)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_grok_video_t2v_is_video_model(self, mock_fal):
+        provider = FalProvider(model="xai/grok-imagine-video/text-to-video")
+        assert provider._is_video_model
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_grok_video_i2v_is_video_model(self, mock_fal):
+        provider = FalProvider(model="xai/grok-imagine-video/image-to-video")
+        assert provider._is_video_model
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_grok_video_is_detected(self, mock_fal):
+        provider = FalProvider(model="xai/grok-imagine-video/text-to-video")
+        assert provider._is_grok_video
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_grok_video_not_detected_for_image(self, mock_fal):
+        provider = FalProvider(model="xai/grok-imagine-image")
+        assert not provider._is_grok_video
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_grok_video_t2v_args(self, mock_fal, tmp_path):
+        """Grok video passes prompt, duration (int), aspect_ratio."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        provider = FalProvider(model="xai/grok-imagine-video/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A sunset timelapse",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="16:9",
+                duration=8,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["prompt"] == "A sunset timelapse"
+        assert arguments["duration"] == 8
+        assert arguments["aspect_ratio"] == "16:9"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_grok_video_i2v_passes_image_url(self, mock_fal, tmp_path):
+        """Grok video i2v passes source_frame as image_url."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"frame-data")
+        provider = FalProvider(model="xai/grok-imagine-video/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A boy running",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_url"] == "https://fal.media/files/frame.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_grok_video_auto_routes_t2v_to_i2v(self, mock_fal, tmp_path):
+        """Grok video auto-routes from t2v to i2v when source_frame set."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"frame-data")
+        provider = FalProvider(model="xai/grok-imagine-video/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="Motion",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="16:9",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert — endpoint auto-routed to i2v
+        endpoint = mock_fal.subscribe.call_args.args[0]
+        assert endpoint == "xai/grok-imagine-video/image-to-video"
+
+
+class TestSeedanceVideoModel:
+    """Tests for Seedance video model support (#79)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_seedance_t2v_is_video_model(self, mock_fal):
+        provider = FalProvider(model="fal-ai/bytedance/seedance/v1.5/pro/text-to-video")
+        assert provider._is_video_model
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_seedance_is_detected(self, mock_fal):
+        provider = FalProvider(model="fal-ai/bytedance/seedance/v1.5/pro/text-to-video")
+        assert provider._is_seedance
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_seedance_not_detected_for_seedream(self, mock_fal):
+        provider = FalProvider(model="fal-ai/bytedance/seedream/v4.5/text-to-image")
+        assert not provider._is_seedance
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_seedance_t2v_args(self, mock_fal, tmp_path):
+        """Seedance passes prompt, duration (string), aspect_ratio, generate_audio=False."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/bytedance/seedance/v1.5/pro/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A dance sequence",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=8,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["prompt"] == "A dance sequence"
+        assert arguments["duration"] == "8"
+        assert arguments["aspect_ratio"] == "9:16"
+        assert arguments["generate_audio"] is False
+        assert arguments["enable_safety_checker"] is False
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_seedance_i2v_passes_image_url(self, mock_fal, tmp_path):
+        """Seedance i2v passes source_frame as image_url."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"frame-data")
+        provider = FalProvider(
+            model="fal-ai/bytedance/seedance/v1.5/pro/image-to-video"
+        )
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A boy dancing",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_url"] == "https://fal.media/files/frame.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_seedance_passes_last_frame(self, mock_fal, tmp_path):
+        """Seedance passes last_frame as end_image_url."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/end.png"
+        end = tmp_path / "end.png"
+        end.write_bytes(b"end-data")
+        provider = FalProvider(model="fal-ai/bytedance/seedance/v1.5/pro/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A scene",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="16:9",
+                duration=5,
+                last_frame=end,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["end_image_url"] == "https://fal.media/files/end.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_seedance_auto_routes_t2v_to_i2v(self, mock_fal, tmp_path):
+        """Seedance auto-routes from t2v to i2v when source_frame set."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"frame-data")
+        provider = FalProvider(model="fal-ai/bytedance/seedance/v1.5/pro/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="Motion",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="16:9",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert — auto-routed
+        endpoint = mock_fal.subscribe.call_args.args[0]
+        assert endpoint == "fal-ai/bytedance/seedance/v1.5/pro/image-to-video"
+
+
+class TestHunyuanVideoModel:
+    """Tests for Hunyuan video model support (#79)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_hunyuan_video_t2v_is_video_model(self, mock_fal):
+        provider = FalProvider(model="fal-ai/hunyuan-video-v1.5/text-to-video")
+        assert provider._is_video_model
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_hunyuan_video_is_detected(self, mock_fal):
+        provider = FalProvider(model="fal-ai/hunyuan-video-v1.5/text-to-video")
+        assert provider._is_hunyuan_video
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_hunyuan_image_not_detected_as_video(self, mock_fal):
+        provider = FalProvider(model="fal-ai/hunyuan-image/v3/text-to-image")
+        assert not provider._is_hunyuan_video
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_hunyuan_video_t2v_args(self, mock_fal, tmp_path):
+        """Hunyuan video passes prompt, aspect_ratio. No generate_audio toggle."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        provider = FalProvider(model="fal-ai/hunyuan-video-v1.5/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A cityscape",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="16:9",
+                duration=5,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["prompt"] == "A cityscape"
+        assert arguments["aspect_ratio"] == "16:9"
+        assert "generate_audio" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_hunyuan_video_i2v_passes_image_url(self, mock_fal, tmp_path):
+        """Hunyuan video i2v passes source_frame as image_url."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"frame-data")
+        provider = FalProvider(model="fal-ai/hunyuan-video-v1.5/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A scene",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="16:9",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_url"] == "https://fal.media/files/frame.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_hunyuan_video_auto_routes_t2v_to_i2v(self, mock_fal, tmp_path):
+        """Hunyuan video auto-routes from t2v to i2v when source_frame set."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"frame-data")
+        provider = FalProvider(model="fal-ai/hunyuan-video-v1.5/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="Motion",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="16:9",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert — auto-routed
+        endpoint = mock_fal.subscribe.call_args.args[0]
+        assert endpoint == "fal-ai/hunyuan-video-v1.5/image-to-video"
+
+
+class TestWan26VideoModel:
+    """Tests for Wan 2.6 video model support (#79)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_wan26_t2v_is_video_model(self, mock_fal):
+        provider = FalProvider(model="wan/v2.6/text-to-video")
+        assert provider._is_video_model
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_wan26_is_detected_as_wan(self, mock_fal):
+        provider = FalProvider(model="wan/v2.6/text-to-video")
+        assert provider._is_wan
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_wan26_t2v_passes_image_url(self, mock_fal, tmp_path):
+        """Wan 2.6 i2v passes source_frame as image_url."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/frame.png"
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"frame-data")
+        provider = FalProvider(model="wan/v2.6/image-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A boy running",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="9:16",
+                duration=5,
+                source_frame=frame,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_url"] == "https://fal.media/files/frame.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_wan26_safety_defaults_in_args(self, mock_fal, tmp_path):
+        """Wan 2.6 includes enable_safety_checker: False in args."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "video": {"url": "https://fal.media/files/out.mp4"},
+        }
+        provider = FalProvider(model="wan/v2.6/text-to-video")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"video-bytes"
+
+            # Act
+            provider.generate_clip(
+                prompt="A scene",
+                output_path=tmp_path / "scene_01.mp4",
+                aspect_ratio="16:9",
+                duration=5,
+            )
+
+        # Assert
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["enable_safety_checker"] is False
 
 
 class TestGoogleClipAudioDisabled:
