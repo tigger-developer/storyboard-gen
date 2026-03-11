@@ -13,7 +13,7 @@ PYTEST := $(VENV)/bin/pytest
 VERSION_FILE := src/storyboard_gen/__init__.py
 CURRENT_VERSION := $(shell grep '__version__' $(VERSION_FILE) 2>/dev/null | sed 's/.*"\(.*\)".*/\1/')
 
-.PHONY: help install install-gui test lint lint-fix clean sync release formula brew-upgrade gui gui-verbose
+.PHONY: help install install-gui test lint lint-fix clean sync release formula brew-upgrade gui gui-verbose app
 
 help: ## Show this help
 	@echo "storyboard-gen v$(CURRENT_VERSION)"
@@ -61,6 +61,9 @@ gui-verbose: ## Launch the GUI with verbose stderr logging
 	fi
 	$(PYTHON) -m storyboard_gen.gui --verbose
 
+app: ## Build macOS .app bundle and DMG
+	@scripts/build-macos.sh $(VERSION)
+
 clean: ## Remove build artefacts
 	rm -rf build/ dist/ *.egg-info src/*.egg-info
 	find . -type d -name __pycache__ -print0 | xargs -0 rm -rf
@@ -83,9 +86,14 @@ c = re.sub(r'url \".*\.tar\.gz\"', 'url \"$${url}\"', c); \
 f.write_text(c); \
 print('Updated formula')"
 
-brew-upgrade: ## Upgrade local Homebrew install
+brew-upgrade: ## Upgrade local Homebrew install (CLI + GUI if installed)
 	brew update
 	brew upgrade tigger04/tap/storyboard-gen
+	@if brew list --cask tigger04/tap/storyboard-gen-gui > /dev/null 2>&1; then \
+		brew upgrade --cask tigger04/tap/storyboard-gen-gui; \
+	else \
+		echo "GUI cask not installed. Install with: brew install --cask tigger04/tap/storyboard-gen-gui"; \
+	fi
 
 MSG ?= $(shell hostname):$(USER)
 

@@ -62,8 +62,10 @@ storyboard-gen/
 ├── docs/
 │   ├── VISION.md          # Project vision and goals
 │   └── architecture.md    # Technical architecture
+├── resources/              # App resources (icon, etc.)
 ├── scripts/
-│   └── release.sh         # Release automation (version, tag, Homebrew)
+│   ├── build-macos.sh     # Build macOS .app bundle and DMG (PyInstaller)
+│   └── release.sh         # Release automation (version, tag, Homebrew, DMG)
 ├── src/
 │   └── storyboard_gen/
 │       ├── __init__.py

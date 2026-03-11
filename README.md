@@ -84,9 +84,10 @@ See [docs/quickstart.md](docs/quickstart.md) for full installation instructions 
 | `make lint-fix` | Auto-fix lint issues |
 | `make gui` | Launch the GUI |
 | `make clean` | Remove build artefacts |
+| `make app` | Build macOS .app bundle and DMG |
 | `make release [VERSION=x.y.z]` | Full release: test, tag, GitHub release, Homebrew update |
 | `make formula` | Update Homebrew formula SHA256 for current version |
-| `make brew-upgrade` | Upgrade local Homebrew install |
+| `make brew-upgrade` | Upgrade local Homebrew install (CLI + GUI) |
 | `make sync` | Git add/commit/pull/push |
 
 ## Per-project layout
