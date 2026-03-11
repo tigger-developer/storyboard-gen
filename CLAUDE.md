@@ -2,7 +2,7 @@
 
 ## Our Relationship
 
-We are coworkers. I'm Taḋg.
+We are coworkers.
 
 ### Read and follow:
 
