@@ -4,6 +4,7 @@
 import logging
 from pathlib import Path
 
+from storyboard_gen.errors import clean_api_error
 from storyboard_gen.providers.base import ImageProvider
 
 try:
@@ -90,7 +91,8 @@ class ReplicateProvider(ImageProvider):
         try:
             output = replicate.run(self.model, input=input_args)
         except Exception as exc:
-            raise RuntimeError(f"Replicate API error: {exc}") from exc
+            logger.error("Replicate API error for %s: %s", self.model, exc, exc_info=True)
+            raise RuntimeError(f"Replicate API error: {clean_api_error(str(exc))}") from exc
 
         if output is None:
             raise RuntimeError(

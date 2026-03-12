@@ -1,4 +1,4 @@
-<!-- Version: 2.9 | Last updated: 2026-03-12 -->
+<!-- Version: 2.10 | Last updated: 2026-03-12 -->
 
 # Architecture: storyboard-gen
 
@@ -31,6 +31,14 @@ Pluggable image/video generation backends. Each provider implements the `ImagePr
 - `providers/__init__.py` — Registry and factory. Uses lazy imports so unused SDKs are not required.
 
 Providers are configured in `project.yaml` via the `providers` section, with per-scene overrides possible. Projects without a `providers` section default to Google.
+
+### Error formatting (`errors.py`)
+
+`clean_api_error(raw)` extracts human-readable messages from raw API error objects (dicts, lists, strings). Used by all providers to present clean error messages in both CLI and GUI.
+
+### Model registry (`model_registry.py`)
+
+Centralized registry of known backends and their common models (`BACKEND_MODELS`). Used by the GUI project settings form for cascading backend→model dropdowns. Users can type custom model IDs.
 
 ### Generation orchestrator (`generate.py`)
 
@@ -70,18 +78,20 @@ Generates a Kdenlive project file (MLT XML format) for timeline editing. Referen
 
 ### GUI layer (`gui/`) — optional
 
-A PySide6 (Qt6) graphical interface that wraps the operational commands. Installed via `pip install storyboard-gen[gui]`. The GUI does not edit `project.yaml` — it only reads.
+A PySide6 (Qt6) graphical interface that wraps the operational commands. Installed via `pip install storyboard-gen[gui]`. The GUI supports limited editing of `project.yaml` via a settings form (title, providers, aspect ratio, style prefix, audio/subtitles, character descriptions).
 
-- `gui/app.py` — `MainWindow` with icon-only toolbar (Open Project, New Project, Refresh, Generate, Stop, Output, View YAML, Edit YAML, Console, About), splitter layout, progress label, and signal wiring. Toolbar buttons are `QToolButton` widgets with emoji icons, tooltips, and platform-aware keyboard shortcut hints (Cmd on macOS, Ctrl on Linux/Windows). Keyboard shortcuts: Cmd/Ctrl+O (Open), N (New), R (Refresh), G (Generate), Y (View YAML), L (Console), I (About); Cmd/Ctrl+Shift+S (Stop), Shift+O (Output), Shift+Y (Edit YAML); Cmd/Ctrl+[ and ] for scene navigation. New Project prompts for a location and name, scaffolds via `init_project()`, and opens the new project. Refresh reloads `project.yaml` from disk. Generation always reloads `project.yaml` and `.env` from disk before creating a worker, ensuring external edits are picked up without requiring a manual Refresh. Output opens an `OutputDialog` to choose between MP4 assembly and Kdenlive export. About opens an `AboutDialog` showing version and GitHub link. Entry point: `run()`.
+- `gui/app.py` — `MainWindow` with icon-only toolbar (Open Project, New Project, Refresh, Generate, Stop, Output, View YAML, Edit YAML, Console, About), splitter layout, progress label, and signal wiring. Toolbar buttons are `QToolButton` widgets with emoji icons, tooltips, and platform-aware keyboard shortcut hints (Cmd on macOS, Ctrl on Linux/Windows). Keyboard shortcuts: Cmd/Ctrl+O (Open), N (New), R (Refresh), G (Generate), S (Save YAML), Y (View YAML), L (Console), I (About); Cmd/Ctrl+Shift+C (Stop), Shift+O (Output), Shift+Y (Edit YAML); Cmd/Ctrl+[ and ] for scene navigation. New Project prompts for a location and name, scaffolds via `init_project()`, and opens the new project. Refresh reloads `project.yaml` from disk. Generation always reloads `project.yaml` and `.env` from disk before creating a worker, ensuring external edits are picked up without requiring a manual Refresh. Generate dialog includes a dry-run checkbox: when checked, prints scene info (provider, model, prompt, cost) to the console without making API calls. Generation errors log to the console instead of showing modal dialogs, allowing concurrent interaction with other scenes. Worker cleanup is deferred to `QThread.finished` to prevent crashes from GC destroying the thread while the OS thread is still running. Output opens an `OutputDialog` to choose between MP4 assembly and Kdenlive export. About opens an `AboutDialog` showing version and GitHub link. `_install_excepthook()` logs unhandled exceptions in Qt slots. Entry point: `run()`.
 - `gui/about_dialog.py` — `AboutDialog(QDialog)` displaying app name, version, brief description, and clickable GitHub link. Single Close button.
 - `gui/scene_list.py` — `SceneListWidget` shows scenes with `SceneItemWidget` custom widgets: status indicator, scene info label, per-scene cost estimate, inline Generate/Regenerate button, and Archive button. Uses `ExtendedSelection` mode for Cmd+click / Shift+click multi-select. `load_project()` accepts an optional `pricing_map` to display per-scene costs. `get_selected_scenes()` returns all selected scenes in order; `get_selected_scene()` returns the current row. `get_scene_status()` checks output file existence. Emits `scene_selected(Scene)`, `generate_requested(Scene)`, and `archive_requested(Scene)`.
 - `gui/preview_panel.py` — `PreviewPanel` with `QStackedLayout` switching between placeholder, still image, clip info (thumbnail + file details), and inline video playback views. Video playback uses `QMediaPlayer` + `QVideoWidget` (QtMultimedia) with play/pause controls. Falls back to clip info view on playback error. Extracts thumbnails from video clips via ffmpeg for the fallback view.
 - `gui/console_panel.py` — `ConsolePanel` read-only text display. `QtLogHandler` bridges Python `logging` to Qt signals.
-- `gui/generate_dialog.py` — `GenerateDialog(QDialog)` with radio buttons: all scenes, all stills, all clips, or selected scene(s). Accepts a list of selected scenes for multi-scene generation; shows count or single scene title. Displays estimated cost summary when a `pricing_map` is provided, updating dynamically as the user changes the selection.
+- `gui/generate_dialog.py` — `GenerateDialog(QDialog)` with radio buttons: all scenes, all stills, all clips, or selected scene(s). Includes a dry-run checkbox for preview-only mode. Accepts a list of selected scenes for multi-scene generation; shows count or single scene title. Displays estimated cost summary when a `pricing_map` is provided, updating dynamically as the user changes the selection.
 - `gui/generate_worker.py` — `GenerateWorker(QThread)` runs generation in the background, emitting progress signals. Supports cooperative stop via `request_stop()`: emits `stopped(Scene)` on completion when stop was requested, enabling proper state cleanup. Emits `scene_started(Scene)`, `scene_finished(Scene)`, `stopped(Scene)`, and `error(str)`.
 - `gui/output_dialog.py` — `OutputDialog(QDialog)` with radio group (Assemble MP4 / Kdenlive export), preview mode checkbox, audio file picker, and output filename field. Returns options via `get_options()`.
 - `gui/archive_dialog.py` — `ArchiveDialog(QDialog)` for browsing and restoring previously generated scene outputs. Lists archived versions (from `output/{stills,clips}/archive/`) with timestamps, shows preview thumbnails for stills, and supports restore (swap selected archive ↔ current output). Utility functions: `list_scene_archives()`, `restore_archive()`, `get_scene_archive_dir()`, `get_scene_output_path()`, `parse_archive_timestamp()`.
-- `gui/yaml_viewer.py` — `YamlViewer` read-only YAML display with `YamlHighlighter(QSyntaxHighlighter)` for syntax colouring (keys, strings, comments, numbers, booleans).
+- `gui/yaml_viewer.py` — `YamlViewer` with `YamlHighlighter(QSyntaxHighlighter)` for syntax colouring. Contains a horizontal splitter: `ProjectSettingsForm` (editable fields) on the left, read-only YAML display on the right. `load_project()` populates both. Saving the form refreshes the YAML and emits `project_saved`.
+- `gui/project_settings.py` — `ProjectSettingsForm(QWidget)` for editing project-level YAML fields: title, aspect ratio, style prefix, still/clip provider backends and models (cascading dropdowns), audio/subtitles file pickers, and per-character descriptions. Uses format-preserving YAML round-trip via `ruamel.yaml`. Emits `saved` when changes are written.
+- `gui/yaml_editor_helpers.py` — Format-preserving YAML read/write helpers using `ruamel.yaml`. `load_yaml_roundtrip()`, `save_yaml_roundtrip()`, `update_nested()`, `get_nested()`.
 - `gui/__main__.py` — `python -m storyboard_gen.gui` and `storyboard-gen-gui` entry point.
 
 ## Data flow

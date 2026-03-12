@@ -76,24 +76,32 @@ _STATIC_PRICES: dict[str, dict] = {
 }
 
 
-def _normalise_unit(unit: str) -> str:
+def _normalise_unit(unit: str) -> str | None:
     """Normalise FAL API unit strings to canonical forms.
 
     The FAL pricing API returns varying unit names across models.
     We normalise to "image" (flat per-generation) or "second"
     (duration-based) for consistent downstream handling.
 
+    Units we cannot reliably convert (megapixels, compute seconds)
+    return None — the caller should treat these as unavailable.
+
     Args:
         unit: Raw unit string from the API.
 
     Returns:
-        Normalised unit: "image", "second", or the original string.
+        Normalised unit: "image", "second", None for unsupported units,
+        or the original string for unknown units.
     """
     lower = unit.lower()
-    if lower in ("image", "images", "megapixels"):
+    if lower in ("image", "images"):
         return "image"
-    if lower in ("second", "seconds", "compute seconds"):
+    if lower in ("second", "seconds"):
         return "second"
+    # Megapixel pricing depends on output resolution; compute seconds
+    # are not video seconds — both are unsuitable for cost estimation.
+    if lower in ("megapixels", "compute seconds"):
+        return None
     return unit
 
 
@@ -130,11 +138,20 @@ def _fetch_fal_price(model: str) -> dict | None:
             result = None
         else:
             entry = prices[0]
-            result = {
-                "unit_price": entry["unit_price"],
-                "unit": _normalise_unit(entry["unit"]),
-                "currency": entry["currency"],
-            }
+            normalised = _normalise_unit(entry["unit"])
+            if normalised is None:
+                logger.debug(
+                    "Unsupported pricing unit %r for %s — treating as unavailable",
+                    entry["unit"],
+                    model,
+                )
+                result = None
+            else:
+                result = {
+                    "unit_price": entry["unit_price"],
+                    "unit": normalised,
+                    "currency": entry["currency"],
+                }
     except (OSError, KeyError, json.JSONDecodeError, IndexError) as exc:
         logger.debug("Failed to fetch pricing for %s: %s", model, exc)
         result = None

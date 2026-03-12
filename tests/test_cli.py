@@ -954,3 +954,35 @@ class TestCliKdenliveSubtitles:
         assert exit_code == 0
         _, kwargs = mock_gen.call_args
         assert kwargs.get("subtitles_path") is None
+
+
+# ---------------------------------------------------------------------------
+# CLI RuntimeError handling — issue #101
+# ---------------------------------------------------------------------------
+
+
+class TestCliRuntimeErrorHandling:
+    """Tests for clean RuntimeError handling in the CLI main entry point."""
+
+    @patch("storyboard_gen.cli._dispatch")
+    def test_runtime_error_returns_exit_code_1(self, mock_dispatch):
+        """RuntimeError from providers should be caught and return exit code 1."""
+        from storyboard_gen.cli import main
+
+        mock_dispatch.side_effect = RuntimeError("FAL API error: Field required")
+
+        exit_code = main(["validate"])
+
+        assert exit_code == 1
+
+    @patch("storyboard_gen.cli._dispatch")
+    def test_runtime_error_logged_cleanly(self, mock_dispatch, caplog):
+        """RuntimeError message should appear in log output without traceback."""
+        from storyboard_gen.cli import main
+
+        mock_dispatch.side_effect = RuntimeError("Video generation timed out after 300s")
+
+        with caplog.at_level(logging.ERROR):
+            main(["validate"])
+
+        assert "Video generation timed out after 300s" in caplog.text

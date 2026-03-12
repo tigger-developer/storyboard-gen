@@ -2,6 +2,7 @@
 # ABOUTME: Supports multi-scene selection from the scene list with cost estimates.
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QLabel,
@@ -53,6 +54,9 @@ class GenerateDialog(QDialog):
                 f"Selected: {len(self._selected_scenes)} scenes"
             )
 
+        # Dry-run checkbox
+        self._dry_run_check = QCheckBox("Dry run (preview only, no API calls)")
+
         # Cost summary label
         self._cost_label = QLabel()
         self._cost_label.setStyleSheet("color: #888; margin-top: 6px;")
@@ -74,6 +78,7 @@ class GenerateDialog(QDialog):
         layout.addWidget(self._radio_stills)
         layout.addWidget(self._radio_clips)
         layout.addWidget(self._radio_selected)
+        layout.addWidget(self._dry_run_check)
         layout.addWidget(self._cost_label)
         layout.addWidget(buttons)
         self.setLayout(layout)
@@ -107,6 +112,10 @@ class GenerateDialog(QDialog):
             )
         else:
             self._cost_label.setText("")
+
+    def is_dry_run(self) -> bool:
+        """Return True if the dry-run checkbox is checked."""
+        return self._dry_run_check.isChecked()
 
     def get_selected_scenes(self) -> list[Scene]:
         """Return the list of scenes matching the user's selection."""

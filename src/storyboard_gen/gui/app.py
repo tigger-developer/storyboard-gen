@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
         self.yaml_editor = SceneYamlEditor()
         self.console = ConsolePanel()
         self.yaml_viewer = YamlViewer()
+        self.yaml_viewer.project_saved.connect(self._on_project_settings_saved)
 
         # Wire YAML editor signals
         self.yaml_editor.scene_modified.connect(self._on_scene_yaml_modified)
@@ -161,7 +162,7 @@ class MainWindow(QMainWindow):
         self.toolbar.addWidget(self._btn_generate)
 
         self._btn_stop = self._make_toolbar_button(
-            "⏹", f"Stop ({mod}+Shift+S)", self._on_stop_all
+            "⏹", f"Stop ({mod}+Shift+C)", self._on_stop_all
         )
         self.toolbar.addWidget(self._btn_stop)
 
@@ -243,8 +244,12 @@ class MainWindow(QMainWindow):
         self._shortcut_about = QShortcut(QKeySequence("Ctrl+I"), self)
         self._shortcut_about.activated.connect(self._on_about)
 
+        # Save shortcut for scene YAML editor
+        self._shortcut_save = QShortcut(QKeySequence("Ctrl+S"), self)
+        self._shortcut_save.activated.connect(self._on_save_yaml)
+
         # Shift shortcuts
-        self._shortcut_stop = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
+        self._shortcut_stop = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
         self._shortcut_stop.activated.connect(self._on_stop_all)
         self._shortcut_output = QShortcut(QKeySequence("Ctrl+Shift+O"), self)
         self._shortcut_output.activated.connect(self._on_output)
@@ -334,6 +339,8 @@ class MainWindow(QMainWindow):
         self.scene_list.load_project(
             self._project, self._output_dir, pricing_map=self._pricing_map
         )
+        # Ensure archive buttons reflect current disk state (#99)
+        self.scene_list.refresh_status()
         self.console.append_message(
             f"Loaded project: {self._project.title} "
             f"({len(self._project.scenes)} scenes)"
@@ -464,7 +471,7 @@ class MainWindow(QMainWindow):
     # ----- Generation -----
 
     def _on_generate(self) -> None:
-        """Open the Generate dialog and start generation."""
+        """Open the Generate dialog and start generation or dry run."""
         if not self._project:
             return
 
@@ -477,7 +484,81 @@ class MainWindow(QMainWindow):
         )
         if dialog.exec():
             scenes = dialog.get_selected_scenes()
-            self._start_generation(scenes)
+            if dialog.is_dry_run():
+                self._run_dry_run(scenes)
+            else:
+                self._start_generation(scenes)
+
+    def _run_dry_run(self, scenes: list[Scene]) -> None:
+        """Print a dry-run summary of what would be generated.
+
+        Shows provider, model, prompt, and cost for each scene
+        without making any API calls.
+        """
+        if not self._project:
+            return
+
+        from storyboard_gen.generate import (
+            check_reference_warnings,
+            resolve_provider_config,
+        )
+        from storyboard_gen.pricing import (
+            estimate_scene_cost,
+            fetch_price,
+            format_cost_line,
+        )
+
+        self.console.setVisible(True)
+        self.console.append_message("--- Dry Run ---")
+
+        total_cost = 0.0
+        has_any_pricing = False
+
+        for scene in scenes:
+            provider_cfg = resolve_provider_config(
+                scene, self._project, scene.scene_type
+            )
+            prompt = self._project.build_prompt(scene)
+            refs = self._project.get_reference_images(scene)
+
+            lines = [f"Scene {scene.number}: {scene.title}"]
+            lines.append(f"  Type:       {scene.scene_type}")
+            lines.append(f"  Duration:   {scene.duration:g}s")
+            if scene.camera:
+                lines.append(f"  Camera:     {scene.camera}")
+            if scene.ken_burns:
+                lines.append(f"  Ken Burns:  {scene.ken_burns}")
+            lines.append(f"  Provider:   {provider_cfg.backend} / {provider_cfg.model}")
+            if provider_cfg.options:
+                lines.append(f"  Options:    {provider_cfg.options}")
+            if refs:
+                lines.append("  References:")
+                for ref in refs:
+                    status = "ok" if ref.exists() else "MISSING"
+                    lines.append(f"    [{status}] {ref}")
+
+            pricing = fetch_price(
+                provider_cfg.model, pricing_override=provider_cfg.pricing
+            )
+            lines.append(f"  {format_cost_line(scene, pricing)}")
+            scene_cost = estimate_scene_cost(scene, pricing)
+            if scene_cost is not None:
+                total_cost += scene_cost
+                has_any_pricing = True
+
+            lines.append("  Prompt:")
+            lines.append(f"    {prompt}")
+
+            warns = check_reference_warnings(scene, self._project, provider_cfg)
+            for w in warns:
+                lines.append(f"  {w}")
+
+            self.console.append_message("\n".join(lines))
+
+        if has_any_pricing:
+            self.console.append_message(f"Estimated total cost: ${total_cost:.2f}")
+
+        self.console.append_message("--- End Dry Run ---")
 
     def _on_stop_scene(self, scene: Scene) -> None:
         """Stop generation for a specific scene."""
@@ -555,6 +636,7 @@ class MainWindow(QMainWindow):
         worker.scene_finished.connect(self._on_scene_gen_finished)
         worker.stopped.connect(self._on_scene_stopped)
         worker.error.connect(lambda msg, s=scene: self._on_gen_error(s, msg))
+        worker.finished.connect(lambda key=scene_key: self._cleanup_worker(key))
         self._workers[scene_key] = worker
         self.scene_list.set_scene_state(scene_key, "generating")
         self._update_actions_enabled()
@@ -585,9 +667,13 @@ class MainWindow(QMainWindow):
         self.scene_list.set_scene_state(str(scene.number), "generating")
 
     def _on_scene_gen_finished(self, scene: Scene) -> None:
-        """Handle scene generation finished."""
+        """Handle scene generation finished.
+
+        Worker cleanup is deferred to ``_cleanup_worker`` via the
+        QThread ``finished`` signal — avoids GC destroying the thread
+        while the OS thread is still unwinding.
+        """
         scene_key = str(scene.number)
-        self._workers.pop(scene_key, None)
         self.console.append_message(f"Finished scene {scene.number}: {scene.title}")
         self.scene_list.set_scene_state(scene_key, "idle")
         self.scene_list.refresh_status()
@@ -603,9 +689,11 @@ class MainWindow(QMainWindow):
             self._on_scene_selected(scene)
 
     def _on_scene_stopped(self, scene: Scene) -> None:
-        """Handle worker stopped signal — clean up state after cooperative stop."""
+        """Handle worker stopped signal — clean up state after cooperative stop.
+
+        Worker removal deferred to ``_cleanup_worker`` via ``finished``.
+        """
         scene_key = str(scene.number)
-        self._workers.pop(scene_key, None)
         self.console.append_message(f"Stopped scene {scene.number}: {scene.title}")
         self.scene_list.set_scene_state(scene_key, "idle")
         self.scene_list.refresh_status()
@@ -613,13 +701,36 @@ class MainWindow(QMainWindow):
         self._update_progress()
 
     def _on_gen_error(self, scene: Scene, message: str) -> None:
-        """Handle generation error for a specific scene."""
+        """Handle generation error for a specific scene.
+
+        Logs to console instead of showing a modal dialog to avoid
+        blocking interaction with other scenes (#97).
+
+        Worker removal deferred to ``_cleanup_worker`` via ``finished``.
+        """
         scene_key = str(scene.number)
-        self._workers.pop(scene_key, None)
-        self._show_error(message)
+        self.console.append_message(f"ERROR: {message}")
         self.scene_list.set_scene_state(scene_key, "idle")
         self._update_actions_enabled()
         self._update_progress()
+
+    def _cleanup_worker(self, scene_key: str) -> None:
+        """Remove a finished worker from the tracking dict.
+
+        Connected to QThread.finished — fires after the OS thread has
+        fully terminated, so it's safe to drop the last Python reference.
+        """
+        self._workers.pop(scene_key, None)
+        self._update_actions_enabled()
+        self._update_progress()
+
+    def closeEvent(self, event) -> None:
+        """Wait for running workers before closing to prevent QThread crashes."""
+        if self._workers:
+            self._stop_all_generation()
+            for worker in list(self._workers.values()):
+                worker.wait(5000)
+        super().closeEvent(event)
 
     def _on_generate_scene(self, scene: Scene) -> None:
         """Handle per-scene Generate/Regenerate button click."""
@@ -648,6 +759,11 @@ class MainWindow(QMainWindow):
         """Toggle the YAML editor pane visibility."""
         currently_hidden = self.yaml_editor.isHidden()
         self.yaml_editor.setVisible(currently_hidden)
+
+    def _on_save_yaml(self) -> None:
+        """Save the scene YAML editor if it is visible and has unsaved changes."""
+        if not self.yaml_editor.isHidden() and self.yaml_editor.is_dirty():
+            self.yaml_editor._save()
 
     def _on_font_size_changed(self, size: int) -> None:
         """Persist YAML editor font size to settings."""
@@ -806,17 +922,36 @@ class MainWindow(QMainWindow):
 
     # ----- YAML viewer -----
 
+    def _on_project_settings_saved(self) -> None:
+        """Reload the project after settings are saved via the YAML viewer form."""
+        if self._project_dir:
+            self.open_project(self._project_dir)
+
     def _on_view_yaml(self) -> None:
-        """Show the project.yaml in the YAML viewer."""
+        """Show the project.yaml in the YAML viewer with settings form."""
         if not self._project_dir:
             return
 
-        yaml_path = self._project_dir / "project.yaml"
-        self.yaml_viewer.load_file(yaml_path)
+        self.yaml_viewer.load_project(self._project_dir)
         self.yaml_viewer.setWindowTitle(f"project.yaml — {self._project_dir.name}")
-        self.yaml_viewer.resize(700, 600)
+        self.yaml_viewer.resize(1100, 700)
         self.yaml_viewer.show()
         self.yaml_viewer.raise_()
+
+
+def _install_excepthook() -> None:
+    """Install a global exception hook to log unhandled exceptions.
+
+    Qt slots swallow Python exceptions silently. This hook ensures
+    they are logged with full stack traces before re-raising.
+    """
+    _original = sys.excepthook
+
+    def _hook(exc_type, exc_value, exc_tb):
+        logger.critical("Unhandled exception", exc_info=(exc_type, exc_value, exc_tb))
+        _original(exc_type, exc_value, exc_tb)
+
+    sys.excepthook = _hook
 
 
 def run(project_dir: str | None = None, verbose: bool = False) -> int:
@@ -829,6 +964,8 @@ def run(project_dir: str | None = None, verbose: bool = False) -> int:
     Returns:
         Application exit code.
     """
+    _install_excepthook()
+
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)

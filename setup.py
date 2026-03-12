@@ -21,7 +21,7 @@ setup(
     extras_require={
         "fal": ["fal-client>=0.5.0"],
         "replicate": ["replicate>=1.0.0"],
-        "gui": ["PySide6>=6.6.0"],
+        "gui": ["PySide6>=6.6.0", "ruamel.yaml>=0.18.0"],
         "all": [
             "google-genai>=1.0.0",
             "fal-client>=0.5.0",

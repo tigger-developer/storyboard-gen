@@ -5,6 +5,8 @@ import argparse
 import logging
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 from dotenv import load_dotenv
 
 from storyboard_gen import __version__
@@ -260,6 +262,10 @@ def main(argv: list[str] | None = None) -> int:
         return _dispatch(args)
     except ConfigError as e:
         logging.error("Configuration error: %s", e)
+        return 1
+    except RuntimeError as e:
+        logging.error("%s", e)
+        logger.debug("Full traceback:", exc_info=True)
         return 1
     except KeyboardInterrupt:
         logging.info("Interrupted")

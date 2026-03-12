@@ -1,10 +1,10 @@
-# ABOUTME: Read-only YAML viewer with syntax highlighting for storyboard-gen GUI.
-# ABOUTME: Uses QSyntaxHighlighter to colour-code keys, values, comments, and strings.
+# ABOUTME: YAML viewer with syntax highlighting and embedded project settings form.
+# ABOUTME: Provides read-only YAML display alongside editable form fields for key project settings.
 
 import re
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -13,8 +13,9 @@ from PySide6.QtGui import (
     QSyntaxHighlighter,
     QTextCharFormat,
 )
-from PySide6.QtWidgets import QTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QSplitter, QTextEdit, QVBoxLayout, QWidget
 
+from storyboard_gen.gui.project_settings import ProjectSettingsForm
 from storyboard_gen.gui.settings import MAX_FONT_SIZE, MIN_FONT_SIZE
 
 
@@ -77,13 +78,24 @@ class YamlHighlighter(QSyntaxHighlighter):
 
 
 class YamlViewer(QWidget):
-    """Read-only viewer for YAML files with syntax highlighting."""
+    """YAML viewer with syntax highlighting and embedded project settings form.
+
+    Displays a splitter with the ProjectSettingsForm on the left
+    and a read-only syntax-highlighted YAML view on the right.
+    """
 
     font_size_changed = Signal(int)
+    project_saved = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
+        self._project_dir: Path | None = None
 
+        # Settings form (left pane)
+        self.settings_form = ProjectSettingsForm()
+        self.settings_form.saved.connect(self._on_form_saved)
+
+        # Read-only YAML view (right pane)
         self.text_edit = QTextEdit()
         self.text_edit.setReadOnly(True)
         self.text_edit.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
@@ -100,6 +112,13 @@ class YamlViewer(QWidget):
 
         self._highlighter = YamlHighlighter(self.text_edit.document())
 
+        # Horizontal splitter: form | YAML
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self.settings_form)
+        splitter.addWidget(self.text_edit)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 1)
+
         # Font size keyboard shortcuts (Ctrl maps to Cmd on macOS)
         self._shortcut_zoom_in = QShortcut(QKeySequence("Ctrl+="), self)
         self._shortcut_zoom_in.activated.connect(self._increase_font)
@@ -108,9 +127,13 @@ class YamlViewer(QWidget):
         self._shortcut_zoom_out = QShortcut(QKeySequence("Ctrl+-"), self)
         self._shortcut_zoom_out.activated.connect(self._decrease_font)
 
+        # Close window shortcut (Ctrl maps to Cmd on macOS)
+        self._shortcut_close = QShortcut(QKeySequence("Ctrl+W"), self)
+        self._shortcut_close.activated.connect(self.close)
+
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.text_edit)
+        layout.addWidget(splitter)
         self.setLayout(layout)
 
     def load_file(self, path: Path) -> None:
@@ -124,6 +147,24 @@ class YamlViewer(QWidget):
             return
         content = path.read_text(encoding="utf-8")
         self.text_edit.setPlainText(content)
+
+    def load_project(self, project_dir: Path) -> None:
+        """Load a project directory into both the form and YAML view.
+
+        Args:
+            project_dir: Directory containing project.yaml.
+        """
+        self._project_dir = project_dir
+        yaml_path = project_dir / "project.yaml"
+        self.load_file(yaml_path)
+        self.settings_form.load_project(project_dir)
+
+    def _on_form_saved(self) -> None:
+        """Refresh YAML text after form saves and emit project_saved."""
+        if self._project_dir:
+            yaml_path = self._project_dir / "project.yaml"
+            self.load_file(yaml_path)
+        self.project_saved.emit()
 
     def set_content(self, text: str) -> None:
         """Display YAML content from a string.

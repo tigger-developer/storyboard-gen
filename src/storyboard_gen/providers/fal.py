@@ -9,6 +9,7 @@ import urllib.request
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from storyboard_gen.errors import clean_api_error
 from storyboard_gen.providers.base import ImageProvider
 
 try:
@@ -908,7 +909,8 @@ class FalProvider(ImageProvider):
         try:
             result = fal_client.subscribe(endpoint, arguments=arguments)
         except Exception as exc:
-            raise RuntimeError(f"FAL API error: {exc}") from exc
+            logger.error("FAL still API error for %s: %s", self.model, exc, exc_info=True)
+            raise RuntimeError(f"FAL API error: {clean_api_error(str(exc))}") from exc
 
         images = result.get("images", [])
         if not images:
@@ -1318,7 +1320,8 @@ class FalProvider(ImageProvider):
         try:
             result = fal_client.subscribe(endpoint, arguments=arguments)
         except Exception as exc:
-            raise RuntimeError(f"FAL API error: {exc}") from exc
+            logger.error("FAL clip API error for %s: %s", self.model, exc, exc_info=True)
+            raise RuntimeError(f"FAL API error: {clean_api_error(str(exc))}") from exc
 
         video = result.get("video")
         if not video or not video.get("url"):

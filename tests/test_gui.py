@@ -1,6 +1,7 @@
 # ABOUTME: Tests for the storyboard-gen GUI module.
 # ABOUTME: Covers scene status, log handler, widgets, and generate worker.
 
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1072,6 +1073,40 @@ class TestClipPreview:
         assert "scene_02.mp4" in panel.clip_info_label.text()
 
 
+class TestClipPreviewReload:
+    """Clip preview should reload when file is replaced on disk — issue #98."""
+
+    def test_play_clip_clears_source_before_reload(self, qtbot, tmp_path):
+        """play_clip should stop and clear source before setting new source."""
+        from storyboard_gen.gui.preview_panel import PreviewPanel
+
+        panel = PreviewPanel()
+        qtbot.addWidget(panel)
+
+        clip = tmp_path / "test.mp4"
+        clip.write_bytes(b"\x00" * 100)
+
+        # Track setSource calls
+        calls = []
+        original_set_source = panel._player.setSource
+
+        def tracking_set_source(url):
+            calls.append(url)
+            original_set_source(url)
+
+        panel._player.setSource = tracking_set_source
+
+        # Act — play clip twice (simulating archive restore)
+        panel.play_clip(clip)
+        calls.clear()
+        panel.play_clip(clip)
+
+        # Assert — source should have been cleared (empty QUrl) then set
+        assert len(calls) >= 2
+        assert calls[0].isEmpty()  # first call clears
+        assert not calls[1].isEmpty()  # second call sets the file
+
+
 # ---------------------------------------------------------------------------
 # E2E: clip selection shows info
 # ---------------------------------------------------------------------------
@@ -1552,8 +1587,8 @@ class TestErrorDialog:
         # Assert — console should contain the error
         assert "Something broke" in window.console.text_edit.toPlainText()
 
-    def test_generation_error_shows_message_box(self, qtbot, gui_project_dir):
-        """Generation errors should pop a visible error dialog."""
+    def test_generation_error_logs_to_console(self, qtbot, gui_project_dir):
+        """Generation errors should log to console, not show modal (#97)."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
@@ -1562,10 +1597,10 @@ class TestErrorDialog:
 
         scene = window._project.scenes[0]
 
-        with patch("storyboard_gen.gui.app.QMessageBox.critical") as mock_crit:
-            window._on_gen_error(scene, "Scene 1: fal-client is not installed")
+        window._on_gen_error(scene, "Scene 1: fal-client is not installed")
 
-            mock_crit.assert_called_once()
+        text = window.console.text_edit.toPlainText()
+        assert "fal-client is not installed" in text
 
     def test_config_error_shows_message_box(self, qtbot, tmp_path):
         """Config load errors should pop a visible error dialog."""
@@ -2859,7 +2894,7 @@ class TestConcurrentGeneration:
                 assert stop_counts[num] == 1
 
     def test_scene_finished_removes_worker(self, qtbot, gui_project_dir):
-        """When a scene finishes, its worker should be removed from _workers."""
+        """When a scene finishes and cleanup runs, worker is removed."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
@@ -2875,14 +2910,15 @@ class TestConcurrentGeneration:
             window._start_scene_generation(scene)
             assert str(scene.number) in window._workers
 
-            # Act — simulate scene finished
+            # Act — simulate scene finished + deferred cleanup
             window._on_scene_gen_finished(scene)
+            window._cleanup_worker(str(scene.number))
 
             # Assert
             assert str(scene.number) not in window._workers
 
     def test_scene_error_removes_worker(self, qtbot, gui_project_dir):
-        """When a scene errors, its worker should be removed from _workers."""
+        """When a scene errors and cleanup runs, worker is removed."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
@@ -2898,8 +2934,9 @@ class TestConcurrentGeneration:
             window._start_scene_generation(scene)
             assert str(scene.number) in window._workers
 
-            # Act — simulate error
+            # Act — simulate error + deferred cleanup
             window._on_gen_error(scene, "API timeout")
+            window._cleanup_worker(str(scene.number))
 
             # Assert
             assert str(scene.number) not in window._workers
@@ -3134,7 +3171,7 @@ class TestConcurrentProgressDisplay:
             assert not window._spinner.isHidden()
 
     def test_spinner_hidden_when_all_workers_done(self, qtbot, gui_project_dir):
-        """Toolbar spinner should hide when all workers finish."""
+        """Toolbar spinner should hide when all workers finish and cleanup runs."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
@@ -3149,8 +3186,9 @@ class TestConcurrentProgressDisplay:
 
             window._start_scene_generation(scene)
 
-            # Act — simulate finish
+            # Act — simulate finish + deferred cleanup
             window._on_scene_gen_finished(scene)
+            window._cleanup_worker(str(scene.number))
 
             # Assert
             assert window._spinner.isHidden()
@@ -5001,8 +5039,9 @@ class TestStopButtonCleanup:
             window._start_scene_generation(scene)
             assert str(scene.number) in window._workers
 
-            # Act — simulate stopped signal
+            # Act — simulate stopped signal + deferred cleanup
             window._on_scene_stopped(scene)
+            window._cleanup_worker(str(scene.number))
 
             # Assert — worker removed, scene back to idle
             assert str(scene.number) not in window._workers
@@ -5054,8 +5093,9 @@ class TestStopButtonCleanup:
             assert len(window._workers) == 1
             assert window._btn_stop.isEnabled()
 
-            # Act
+            # Act — stopped signal fires, then finished cleans up worker
             window._on_scene_stopped(scene)
+            window._cleanup_worker(str(scene.number))
 
             # Assert — no workers left, stop disabled
             assert len(window._workers) == 0
@@ -5279,14 +5319,24 @@ class TestKeyboardShortcuts:
         assert window._shortcut_about.key().toString() == "Ctrl+I"
 
     def test_shortcut_stop_exists(self, qtbot):
-        """Ctrl/Cmd+Shift+S shortcut should exist and map to Stop."""
+        """Ctrl/Cmd+Shift+C shortcut should exist and map to Stop."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
         qtbot.addWidget(window)
 
         assert hasattr(window, "_shortcut_stop")
-        assert window._shortcut_stop.key().toString() == "Ctrl+Shift+S"
+        assert window._shortcut_stop.key().toString() == "Ctrl+Shift+C"
+
+    def test_shortcut_save_exists(self, qtbot):
+        """Ctrl/Cmd+S shortcut should exist and map to Save."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_shortcut_save")
+        assert window._shortcut_save.key().toString() == "Ctrl+S"
 
     def test_shortcut_output_exists(self, qtbot):
         """Ctrl/Cmd+Shift+O shortcut should exist and map to Output."""
@@ -5424,3 +5474,891 @@ class TestYamlViewerFontSize:
 
         assert hasattr(viewer, "_shortcut_zoom_in")
         assert hasattr(viewer, "_shortcut_zoom_out")
+
+    def test_viewer_has_close_shortcut(self, qtbot):
+        """YamlViewer should have Cmd+W/Ctrl+W keyboard shortcut to close (#92)."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+
+        assert hasattr(viewer, "_shortcut_close")
+        assert viewer._shortcut_close.key().toString() == "Ctrl+W"
+
+
+# ---------------------------------------------------------------------------
+# Stop tooltip updated — issue #92
+# ---------------------------------------------------------------------------
+
+
+class TestGenerationErrorNonModal:
+    """Generation errors should not block UI — issue #97."""
+
+    def test_gen_error_logs_to_console_not_modal(self, qtbot, gui_project_dir):
+        """_on_gen_error should log to console, not show modal dialog."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Act — simulate error (should NOT show modal)
+            with patch.object(window, "_show_error") as mock_show:
+                window._on_gen_error(scene, "API error: timeout")
+                mock_show.assert_not_called()
+
+        # Error should appear in console
+        assert "API error: timeout" in window.console.text_edit.toPlainText()
+
+    def test_other_scenes_clickable_after_error(self, qtbot, gui_project_dir):
+        """Other scene buttons should remain enabled after an error."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        if len(window._project.scenes) < 2:
+            pytest.skip("Need at least 2 scenes")
+
+        scene_0 = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene_0)
+
+            # Error on scene 0
+            window._on_gen_error(scene_0, "API error")
+            window._cleanup_worker(str(scene_0.number))
+
+            # Scene 1's generate button should be enabled
+            item_1 = window.scene_list.list_widget.itemWidget(
+                window.scene_list.list_widget.item(1)
+            )
+            assert item_1._gen_btn.isEnabled()
+
+
+class TestArchiveButtonOnLoad:
+    """Archive button should reflect disk state on project load — issue #99."""
+
+    def test_archive_button_enabled_when_archives_exist(self, qtbot, gui_project_dir):
+        """Archive button should be enabled when archive files exist on disk."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Create an archive file for scene 1 (first scene) before loading
+        output_dir = gui_project_dir / "output"
+        archive_dir = output_dir / "stills" / "archive"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        (archive_dir / "scene_01_20260101_120000.png").write_bytes(b"\x89PNG")
+
+        window.open_project(gui_project_dir)
+
+        # Find scene 1 widget (first item in list)
+        item = window.scene_list.list_widget.itemWidget(
+            window.scene_list.list_widget.item(0)
+        )
+        assert item._archive_btn.isEnabled()
+
+    def test_refresh_status_called_on_open(self, qtbot, gui_project_dir):
+        """open_project should call refresh_status to update archive buttons."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        with patch.object(
+            window.scene_list, "refresh_status", wraps=window.scene_list.refresh_status
+        ) as mock_refresh:
+            window.open_project(gui_project_dir)
+            mock_refresh.assert_called()
+
+
+class TestStopTooltipBinding:
+    """Verify the Stop button tooltip reflects Cmd+Shift+C."""
+
+    def test_stop_tooltip_has_shift_c(self, qtbot):
+        """Stop button tooltip should reference Shift+C, not Shift+S."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        tooltip = window._btn_stop.toolTip()
+        assert "Shift+C" in tooltip
+        assert "Shift+S" not in tooltip
+
+
+# ---------------------------------------------------------------------------
+# QThread worker lifecycle — issue #100
+# ---------------------------------------------------------------------------
+
+
+class TestWorkerLifecycle:
+    """Tests for deferred worker cleanup via QThread.finished signal."""
+
+    def test_worker_connected_to_finished_signal(self, qtbot, gui_project_dir):
+        """Worker's finished signal should be connected for cleanup."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Assert — finished signal connected
+            mock_worker.finished.connect.assert_called()
+
+    def test_worker_not_removed_in_scene_finished_handler(self, qtbot, gui_project_dir):
+        """_on_scene_gen_finished should NOT remove worker from _workers.
+
+        Cleanup is deferred to the QThread.finished signal to prevent
+        GC destroying the thread while it's still running.
+        """
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Act — simulate scene finished (custom signal, NOT Qt finished)
+            window._on_scene_gen_finished(scene)
+
+            # Assert — worker still in _workers (cleanup deferred to finished)
+            assert str(scene.number) in window._workers
+
+    def test_worker_not_removed_in_error_handler(self, qtbot, gui_project_dir):
+        """_on_gen_error should NOT remove worker from _workers."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Act — simulate error
+            window._on_gen_error(scene, "API error")
+
+            # Assert — worker still in _workers
+            assert str(scene.number) in window._workers
+
+    def test_worker_not_removed_in_stopped_handler(self, qtbot, gui_project_dir):
+        """_on_scene_stopped should NOT remove worker from _workers."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Act — simulate stopped
+            window._on_scene_stopped(scene)
+
+            # Assert — worker still in _workers
+            assert str(scene.number) in window._workers
+
+    def test_cleanup_worker_removes_from_dict(self, qtbot, gui_project_dir):
+        """_cleanup_worker should remove the worker from _workers dict."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+        scene_key = str(scene.number)
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+            assert scene_key in window._workers
+
+            # Act — simulate Qt finished signal callback
+            window._cleanup_worker(scene_key)
+
+            # Assert
+            assert scene_key not in window._workers
+
+    def test_close_event_requests_stop_for_running_workers(
+        self, qtbot, gui_project_dir
+    ):
+        """closeEvent should request stop on all running workers."""
+        from PySide6.QtGui import QCloseEvent
+
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+            mock_worker.wait.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Act — close the window
+            event = QCloseEvent()
+            window.closeEvent(event)
+
+            # Assert — stop was requested
+            mock_worker.request_stop.assert_called()
+
+    def test_close_event_waits_for_workers(self, qtbot, gui_project_dir):
+        """closeEvent should wait for workers to finish before closing."""
+        from PySide6.QtGui import QCloseEvent
+
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+            mock_worker.wait.return_value = True
+
+            window._start_scene_generation(scene)
+
+            # Act — close the window
+            event = QCloseEvent()
+            window.closeEvent(event)
+
+            # Assert — wait was called with timeout
+            mock_worker.wait.assert_called()
+
+
+class TestExceptHook:
+    """Tests for GUI global exception hook — issue #101."""
+
+    def test_excepthook_installed(self):
+        """_install_excepthook should replace sys.excepthook."""
+        import sys
+
+        from storyboard_gen.gui.app import _install_excepthook
+
+        original = sys.excepthook
+        try:
+            _install_excepthook()
+            assert sys.excepthook is not original
+        finally:
+            sys.excepthook = original
+
+    def test_excepthook_logs_exception(self, caplog):
+        """Installed excepthook should log unhandled exceptions."""
+        import sys
+        from unittest.mock import MagicMock
+
+        from storyboard_gen.gui.app import _install_excepthook
+
+        original = sys.excepthook
+        # Replace with a no-op so pytest-qt doesn't intercept
+        sys.excepthook = MagicMock()
+        try:
+            _install_excepthook()
+            hook = sys.excepthook
+            with caplog.at_level(logging.CRITICAL):
+                hook(ValueError, ValueError("test crash"), None)
+            assert "test crash" in caplog.text
+        finally:
+            sys.excepthook = original
+
+
+# ---------------------------------------------------------------------------
+# Fixture for project settings form tests — issue #93
+# ---------------------------------------------------------------------------
+
+SAMPLE_PROJECT_YAML_WITH_PROVIDERS = {
+    "title": "Settings Test Project",
+    "aspect_ratio": "16:9",
+    "style_prefix": "Cinematic look.",
+    "providers": {
+        "still": {
+            "backend": "google",
+            "model": "imagen-4.0-generate-001",
+        },
+        "clip": {
+            "backend": "fal",
+            "model": "fal-ai/wan/v2.1/text-to-video",
+        },
+    },
+    "audio": "audio/music.mp3",
+    "subtitles": "subs/captions.srt",
+    "characters": {
+        "hero": {
+            "description": "A brave warrior with a sword",
+            "reference": ["references/hero.png"],
+        },
+        "villain": {
+            "description": "A dark sorcerer",
+        },
+    },
+    "scenes": [
+        {
+            "number": 1,
+            "title": "Opening",
+            "type": "still",
+            "duration": 5,
+            "prompt": "A castle on a hill.",
+        },
+    ],
+}
+
+
+@pytest.fixture
+def settings_project_dir(tmp_path):
+    """Project directory with providers and characters for settings form tests."""
+    yaml_path = tmp_path / "project.yaml"
+    yaml_path.write_text(yaml.dump(SAMPLE_PROJECT_YAML_WITH_PROVIDERS))
+    return tmp_path
+
+
+# ---------------------------------------------------------------------------
+# Tests: Project Settings Form — issue #93
+# ---------------------------------------------------------------------------
+
+
+class TestProjectSettingsForm:
+    """Tests for the ProjectSettingsForm widget."""
+
+    def test_form_populates_title(self, qtbot, settings_project_dir):
+        """Loading a project should populate the title field."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        assert form._title_edit.text() == "Settings Test Project"
+
+    def test_form_populates_aspect_ratio(self, qtbot, settings_project_dir):
+        """Loading a project should set the aspect ratio combo."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        assert form._aspect_combo.currentText() == "16:9"
+
+    def test_form_populates_style_prefix(self, qtbot, settings_project_dir):
+        """Loading a project should set the style prefix."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        assert form._style_edit.toPlainText() == "Cinematic look."
+
+    def test_form_populates_still_backend(self, qtbot, settings_project_dir):
+        """Loading should set still provider backend."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        assert form._still_backend.currentText() == "google"
+
+    def test_form_populates_still_model(self, qtbot, settings_project_dir):
+        """Loading should set still provider model."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        assert form._still_model.currentText() == "imagen-4.0-generate-001"
+
+    def test_form_populates_clip_backend(self, qtbot, settings_project_dir):
+        """Loading should set clip provider backend."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        assert form._clip_backend.currentText() == "fal"
+
+    def test_form_populates_clip_model(self, qtbot, settings_project_dir):
+        """Loading should set clip provider model."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        assert form._clip_model.currentText() == "fal-ai/wan/v2.1/text-to-video"
+
+    def test_form_populates_audio(self, qtbot, settings_project_dir):
+        """Loading should set audio file path."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        assert form._audio_edit.text() == "audio/music.mp3"
+
+    def test_form_populates_subtitles(self, qtbot, settings_project_dir):
+        """Loading should set subtitles file path."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        assert form._subs_edit.text() == "subs/captions.srt"
+
+    def test_form_populates_characters(self, qtbot, settings_project_dir):
+        """Loading should create character description fields."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        assert "hero" in form._char_edits
+        assert "villain" in form._char_edits
+        assert form._char_edits["hero"].toPlainText() == "A brave warrior with a sword"
+        assert form._char_edits["villain"].toPlainText() == "A dark sorcerer"
+
+    def test_form_not_dirty_after_load(self, qtbot, settings_project_dir):
+        """Form should not be dirty immediately after loading."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        assert not form.is_dirty()
+
+    def test_form_dirty_after_title_change(self, qtbot, settings_project_dir):
+        """Changing the title should mark the form dirty."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        form._title_edit.setText("Changed Title")
+        assert form.is_dirty()
+
+    def test_form_save_writes_title(self, qtbot, settings_project_dir):
+        """Saving after title change should update project.yaml."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+        from storyboard_gen.gui.yaml_editor_helpers import load_yaml_roundtrip
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+        form._title_edit.setText("New Title")
+        form._save()
+
+        reloaded = load_yaml_roundtrip(settings_project_dir / "project.yaml")
+        assert reloaded["title"] == "New Title"
+
+    def test_form_save_writes_aspect_ratio(self, qtbot, settings_project_dir):
+        """Saving after aspect ratio change should update project.yaml."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+        from storyboard_gen.gui.yaml_editor_helpers import load_yaml_roundtrip
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+        form._aspect_combo.setCurrentText("9:16")
+        form._save()
+
+        reloaded = load_yaml_roundtrip(settings_project_dir / "project.yaml")
+        assert reloaded["aspect_ratio"] == "9:16"
+
+    def test_form_save_writes_style_prefix(self, qtbot, settings_project_dir):
+        """Saving after style prefix change should update project.yaml."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+        from storyboard_gen.gui.yaml_editor_helpers import load_yaml_roundtrip
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+        form._style_edit.setPlainText("New style.")
+        form._save()
+
+        reloaded = load_yaml_roundtrip(settings_project_dir / "project.yaml")
+        assert reloaded["style_prefix"] == "New style."
+
+    def test_form_save_writes_provider_backend(self, qtbot, settings_project_dir):
+        """Saving after backend change should update project.yaml."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+        from storyboard_gen.gui.yaml_editor_helpers import (
+            get_nested,
+            load_yaml_roundtrip,
+        )
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        idx = form._still_backend.findText("fal")
+        form._still_backend.setCurrentIndex(idx)
+        form._save()
+
+        reloaded = load_yaml_roundtrip(settings_project_dir / "project.yaml")
+        assert get_nested(reloaded, ["providers", "still", "backend"]) == "fal"
+
+    def test_form_save_removes_options_on_backend_change(self, qtbot, tmp_path):
+        """Changing backend should remove options from project.yaml on save."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+        from storyboard_gen.gui.yaml_editor_helpers import (
+            get_nested,
+            load_yaml_roundtrip,
+        )
+
+        project_data = {
+            **SAMPLE_PROJECT_YAML_WITH_PROVIDERS,
+            "providers": {
+                "still": {
+                    "backend": "google",
+                    "model": "imagen-4.0-generate-001",
+                    "options": {"seed": 42},
+                },
+                "clip": {
+                    "backend": "fal",
+                    "model": "fal-ai/wan/v2.1/text-to-video",
+                },
+            },
+        }
+        yaml_path = tmp_path / "project.yaml"
+        yaml_path.write_text(yaml.dump(project_data))
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(tmp_path)
+
+        # Change backend
+        idx = form._still_backend.findText("fal")
+        form._still_backend.setCurrentIndex(idx)
+        form._save()
+
+        reloaded = load_yaml_roundtrip(yaml_path)
+        assert get_nested(reloaded, ["providers", "still", "options"]) is None
+
+    def test_form_save_writes_character_description(self, qtbot, settings_project_dir):
+        """Saving after character edit should update description in YAML."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+        from storyboard_gen.gui.yaml_editor_helpers import load_yaml_roundtrip
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        form._char_edits["hero"].setPlainText("Updated hero description")
+        form._save()
+
+        reloaded = load_yaml_roundtrip(settings_project_dir / "project.yaml")
+        assert (
+            reloaded["characters"]["hero"]["description"] == "Updated hero description"
+        )
+
+    def test_form_save_emits_saved_signal(self, qtbot, settings_project_dir):
+        """Saving should emit the saved signal."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+        form._title_edit.setText("Changed")
+
+        with qtbot.waitSignal(form.saved, timeout=1000):
+            form._save()
+
+    def test_form_revert_restores_values(self, qtbot, settings_project_dir):
+        """Reverting should restore form to on-disk values."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        form._title_edit.setText("Changed Title")
+        assert form.is_dirty()
+
+        form._revert()
+        assert form._title_edit.text() == "Settings Test Project"
+        assert not form.is_dirty()
+
+    def test_form_backend_change_updates_model_combo(self, qtbot, settings_project_dir):
+        """Changing backend should repopulate the model dropdown."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        # Change still backend to fal
+        idx = form._still_backend.findText("fal")
+        form._still_backend.setCurrentIndex(idx)
+
+        # Model combo should now contain fal models
+        models = [
+            form._still_model.itemText(i) for i in range(form._still_model.count())
+        ]
+        assert any("fal-ai" in m for m in models)
+
+    def test_form_clears_empty_audio_on_save(self, qtbot, settings_project_dir):
+        """Clearing audio field should remove it from YAML on save."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+        from storyboard_gen.gui.yaml_editor_helpers import load_yaml_roundtrip
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        form._audio_edit.setText("")
+        form._save()
+
+        reloaded = load_yaml_roundtrip(settings_project_dir / "project.yaml")
+        assert "audio" not in reloaded
+
+    def test_form_clears_empty_style_prefix_on_save(self, qtbot, settings_project_dir):
+        """Clearing style_prefix should remove it from YAML on save."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+        from storyboard_gen.gui.yaml_editor_helpers import load_yaml_roundtrip
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        form._style_edit.setPlainText("")
+        form._save()
+
+        reloaded = load_yaml_roundtrip(settings_project_dir / "project.yaml")
+        assert "style_prefix" not in reloaded
+
+
+# ---------------------------------------------------------------------------
+# Tests: YAML Viewer with Settings Form — issue #93
+# ---------------------------------------------------------------------------
+
+
+class TestYamlViewerSettingsIntegration:
+    """Tests for YamlViewer integration with ProjectSettingsForm."""
+
+    def test_yaml_viewer_has_settings_form(self, qtbot):
+        """YamlViewer should contain a ProjectSettingsForm."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+
+        assert hasattr(viewer, "settings_form")
+        assert isinstance(viewer.settings_form, ProjectSettingsForm)
+
+    def test_yaml_viewer_load_project_populates_form(self, qtbot, settings_project_dir):
+        """load_project should populate both YAML text and form fields."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+        viewer.load_project(settings_project_dir)
+
+        # YAML text should contain the title
+        assert "Settings Test Project" in viewer.text_edit.toPlainText()
+        # Form should have the title
+        assert viewer.settings_form._title_edit.text() == "Settings Test Project"
+
+    def test_yaml_viewer_form_save_refreshes_yaml(self, qtbot, settings_project_dir):
+        """Saving the form should refresh the YAML text display."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+        viewer.load_project(settings_project_dir)
+
+        viewer.settings_form._title_edit.setText("Updated Title")
+        viewer.settings_form._save()
+
+        assert "Updated Title" in viewer.text_edit.toPlainText()
+
+    def test_yaml_viewer_emits_project_saved(self, qtbot, settings_project_dir):
+        """Saving via form should emit project_saved from YamlViewer."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+        viewer.load_project(settings_project_dir)
+
+        viewer.settings_form._title_edit.setText("Changed")
+
+        with qtbot.waitSignal(viewer.project_saved, timeout=1000):
+            viewer.settings_form._save()
+
+
+# ---------------------------------------------------------------------------
+# Tests: Generate Dialog Dry Run checkbox — issue #95
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateDialogDryRun:
+    """Tests for dry-run checkbox in GenerateDialog."""
+
+    def test_dialog_has_dry_run_checkbox(self, qtbot, gui_project_dir):
+        """GenerateDialog should have a dry_run checkbox."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        project = load_project(gui_project_dir)
+        dialog = GenerateDialog(project)
+        qtbot.addWidget(dialog)
+
+        assert hasattr(dialog, "_dry_run_check")
+
+    def test_dry_run_unchecked_by_default(self, qtbot, gui_project_dir):
+        """Dry-run checkbox should be unchecked by default."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        project = load_project(gui_project_dir)
+        dialog = GenerateDialog(project)
+        qtbot.addWidget(dialog)
+
+        assert not dialog.is_dry_run()
+
+    def test_dry_run_checked_returns_true(self, qtbot, gui_project_dir):
+        """Checking dry-run should make is_dry_run() return True."""
+        from storyboard_gen.config import load_project
+        from storyboard_gen.gui.generate_dialog import GenerateDialog
+
+        project = load_project(gui_project_dir)
+        dialog = GenerateDialog(project)
+        qtbot.addWidget(dialog)
+
+        dialog._dry_run_check.setChecked(True)
+        assert dialog.is_dry_run()
+
+
+# ---------------------------------------------------------------------------
+# Tests: Dry Run output — issue #95
+# ---------------------------------------------------------------------------
+
+
+class TestDryRunOutput:
+    """Tests for dry-run output formatting in the GUI."""
+
+    def test_dry_run_outputs_to_console(self, qtbot, gui_project_dir):
+        """Dry run should write scene info to the console panel."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        window._run_dry_run(list(window._project.scenes))
+
+        text = window.console.text_edit.toPlainText()
+        assert "Scene 1" in text
+        assert "Opening shot" in text
+
+    def test_dry_run_shows_provider_info(self, qtbot, gui_project_dir):
+        """Dry run should include provider/model info."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        window._run_dry_run(list(window._project.scenes))
+
+        text = window.console.text_edit.toPlainText()
+        # Default backend is google
+        assert "google" in text.lower()
+
+    def test_dry_run_shows_prompt(self, qtbot, gui_project_dir):
+        """Dry run should include the resolved prompt."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        window._run_dry_run(list(window._project.scenes))
+
+        text = window.console.text_edit.toPlainText()
+        assert "Prompt:" in text
+
+    def test_dry_run_shows_all_scenes(self, qtbot, gui_project_dir):
+        """Dry run should list all requested scenes."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        window._run_dry_run(list(window._project.scenes))
+
+        text = window.console.text_edit.toPlainText()
+        assert "Scene 1" in text
+        assert "Scene 2" in text
+        assert "Scene 3" in text
+
+    def test_dry_run_does_not_start_workers(self, qtbot, gui_project_dir):
+        """Dry run should not create any generation workers."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        window._run_dry_run(list(window._project.scenes))
+
+        assert len(window._workers) == 0

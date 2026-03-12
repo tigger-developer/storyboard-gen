@@ -6,6 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from storyboard_gen.errors import clean_api_error
 from storyboard_gen.providers.base import ImageProvider
 
 logger = logging.getLogger(__name__)
@@ -301,7 +302,10 @@ class GoogleProvider(ImageProvider):
 
         # Surface operation errors (quota, invalid request, etc.)
         if hasattr(operation, "error") and operation.error:
-            raise RuntimeError(f"Video generation failed: {operation.error}")
+            logger.error("Google Veo operation error: %s", operation.error)
+            raise RuntimeError(
+                f"Video generation failed: {clean_api_error(operation.error)}"
+            )
 
         if not video_response or not video_response.generated_videos:
             # Check for RAI (safety) filter rejection

@@ -184,6 +184,11 @@ class PreviewPanel(QWidget):
             self.clear_image()
             return
 
+        # Stop and clear source first — forces Qt to reload from disk
+        # even if the path is the same (e.g. after archive restore #98)
+        self._player.stop()
+        self._player.setSource(QUrl())
+
         self._current_clip_path = clip_path
         self._player.setSource(QUrl.fromLocalFile(str(clip_path)))
         self._layout.setCurrentWidget(self._video_container)
