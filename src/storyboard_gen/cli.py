@@ -195,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         "--subtitles",
         type=str,
         default=None,
-        help="SRT subtitle file to include (overrides project.yaml)",
+        help="Subtitle file to include — SRT, VTT, ASS/SSA (overrides project.yaml)",
     )
     kdenlive_parser.add_argument(
         "--preview",
@@ -552,7 +552,7 @@ TOP-LEVEL FIELDS
                                       Values: 9:16, 16:9, 4:3, 1:1
   audio           (string)            Audio file path, relative to project dir.
                                       Muxed into assembled video.
-  subtitles       (string)            SRT subtitle file path, relative to project dir.
+  subtitles       (string)            Subtitle file path (SRT, VTT, ASS/SSA), relative to project dir.
                                       Included in Kdenlive export.
   style_prefix    (string)            Visual style prepended to every prompt.
   style_reference (list)              Style reference image paths for Ideogram Character.

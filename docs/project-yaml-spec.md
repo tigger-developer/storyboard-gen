@@ -32,7 +32,7 @@ my-project/
 | `title` | string | **yes** | — | Project title |
 | `aspect_ratio` | string | no | `"16:9"` | Output aspect ratio |
 | `audio` | string | no | `null` | Path to audio file for assembly (relative to project dir) |
-| `subtitles` | string | no | `null` | Path to SRT subtitle file for Kdenlive export (relative to project dir) |
+| `subtitles` | string | no | `null` | Path to subtitle file for Kdenlive export — SRT, VTT, ASS/SSA (relative to project dir) |
 | `style_prefix` | string | no | `""` | Visual style description prepended to every scene prompt |
 | `style_reference` | list | no | `[]` | Style reference image paths for Ideogram Character (`image_urls`) |
 | `providers` | object | no | — | AI provider configuration (defaults to Google) |
@@ -53,9 +53,9 @@ audio: "audio.m4a"
 
 ### `subtitles`
 
-Optional path to an SRT subtitle file to include in the Kdenlive export. Relative to the project directory. The CLI `--subtitles` flag overrides this value; `--preview` skips subtitles entirely. If the file doesn't exist at export time, a warning is logged and the export proceeds without subtitles.
+Optional path to a subtitle file to include in the Kdenlive export. Supports SRT, WebVTT (.vtt), ASS, and SSA formats. Relative to the project directory. The CLI `--subtitles` flag overrides this value; `--preview` skips subtitles entirely. If the file doesn't exist at export time, a warning is logged and the export proceeds without subtitles.
 
-The SRT file is copied alongside the `.kdenlive` project as `{project}.kdenlive.srt`, and an `avfilter.subtitles` filter is added to the sequence tractor in the MLT XML.
+The subtitle file is converted to Kdenlive-compatible ASS format and written alongside the `.kdenlive` project as `{project}.kdenlive.ass`. ASS/SSA input files are copied directly. The sequence tractor gets a native subtitle track with `avfilter.subtitles` filter, `subtitlesList` metadata, and `hidesubtitle=0`.
 
 ```yaml
 subtitles: "subs/voiceover.srt"
@@ -457,7 +457,7 @@ storyboard-gen assemble --preview           # Assemble without audio
 storyboard-gen assemble --audio voice.m4a   # Override audio track
 storyboard-gen kdenlive                              # Export Kdenlive project with Ken Burns effects
 storyboard-gen kdenlive --output my.kdenlive         # Custom output filename
-storyboard-gen kdenlive --subtitles subs.srt         # Include SRT subtitles
+storyboard-gen kdenlive --subtitles subs.srt         # Include subtitles (SRT, VTT, ASS/SSA)
 storyboard-gen --version                             # Show version
 ```
 

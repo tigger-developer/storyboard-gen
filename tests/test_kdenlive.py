@@ -964,8 +964,8 @@ class TestZeroDurationScene:
         assert seq.get("out") == "149"
 
 
-class TestSubtitleFilter:
-    """Tests for subtitle support in Kdenlive export (#84)."""
+class TestSubtitleTrack:
+    """Tests for Kdenlive native subtitle track support (#84, #89)."""
 
     def _build(self, tmp_path, subtitles_path=None, **kwargs):
         """Build an MLT document from a test project, optionally with subtitles."""
@@ -1015,7 +1015,8 @@ class TestSubtitleFilter:
         filt = seq.find("filter[@id='subtitle_filter']")
         assert _get_prop(filt, "mlt_service") == "avfilter.subtitles"
 
-    def test_subtitle_filter_has_correct_filename(self, tmp_path):
+    def test_subtitle_filter_has_internal_added(self, tmp_path):
+        """Kdenlive's native subtitle filter uses internal_added=237 (#89)."""
         # Arrange
         srt_file = tmp_path / "test.srt"
         srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
@@ -1026,7 +1027,40 @@ class TestSubtitleFilter:
         # Assert
         seq = mlt.find("tractor[@id='sequence_tractor']")
         filt = seq.find("filter[@id='subtitle_filter']")
-        assert _get_prop(filt, "av.filename") == str(srt_file.resolve())
+        assert _get_prop(filt, "internal_added") == "237"
+
+    def test_subtitle_filter_has_alpha(self, tmp_path):
+        """Subtitle filter should have av.alpha=1 for full opacity (#89)."""
+        # Arrange
+        srt_file = tmp_path / "test.srt"
+        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+
+        # Act
+        mlt = self._build(tmp_path, subtitles_path=srt_file)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filt = seq.find("filter[@id='subtitle_filter']")
+        assert _get_prop(filt, "av.alpha") == "1"
+
+    def test_subtitle_filter_filename_is_ass(self, tmp_path):
+        """Subtitle filter av.filename should reference the ASS file, not the input (#89)."""
+        # Arrange — _build_mlt always receives a pre-converted ASS path
+        ass_file = tmp_path / "test.ass"
+        ass_file.write_text(
+            "[Script Info]\n\n[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Hello\n"
+        )
+
+        # Act
+        mlt = self._build(tmp_path, subtitles_path=ass_file)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filt = seq.find("filter[@id='subtitle_filter']")
+        filename = _get_prop(filt, "av.filename")
+        assert filename.endswith(".ass")
 
     def test_subtitle_filter_is_child_of_sequence_tractor(self, tmp_path):
         # Arrange
@@ -1045,40 +1079,54 @@ class TestSubtitleFilter:
         video_tractor = mlt.find("tractor[@id='video_tractor']")
         assert video_tractor.find("filter[@id='subtitle_filter']") is None
 
-    def test_srt_file_copied_alongside_kdenlive_project(self, tmp_path):
-        """generate_kdenlive() copies the SRT file to {output}.srt."""
+    def test_ass_file_written_alongside_kdenlive_project(self, tmp_path):
+        """generate_kdenlive() writes ASS subtitle file to {output}.kdenlive.ass (#89)."""
         # Arrange
         project_dir = _make_project_dir(tmp_path)
         project = _load_project_from(project_dir)
         output_dir = project_dir / "output"
 
         srt_file = tmp_path / "subs.srt"
-        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+        srt_file.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n")
 
         # Act
         result = generate_kdenlive(project, output_dir, subtitles_path=srt_file)
 
-        # Assert — SRT copied alongside the .kdenlive file
-        expected_srt = Path(str(result) + ".srt")
-        assert expected_srt.exists()
-        assert expected_srt.read_text() == srt_file.read_text()
+        # Assert — ASS file alongside the .kdenlive
+        expected_ass = Path(str(result) + ".ass")
+        assert expected_ass.exists()
+        content = expected_ass.read_text()
+        assert "[Script Info]" in content
+        assert "Dialogue:" in content
+        assert "Hello" in content
 
-    def test_subtitle_filter_has_no_internal_added(self, tmp_path):
-        """Subtitle filter must NOT be marked internal — Kdenlive hides internal filters (#89)."""
-        # Arrange
-        srt_file = tmp_path / "test.srt"
-        srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+    def test_subtitles_list_property_present(self, tmp_path):
+        """Sequence tractor must have subtitlesList JSON property (#89)."""
+        # Arrange — _build_mlt always receives a pre-converted ASS path
+        ass_file = tmp_path / "test.ass"
+        ass_file.write_text(
+            "[Script Info]\n\n[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Hello\n"
+        )
 
         # Act
-        mlt = self._build(tmp_path, subtitles_path=srt_file)
+        mlt = self._build(tmp_path, subtitles_path=ass_file)
 
-        # Assert — internal_added must NOT be set on subtitle filter
+        # Assert
         seq = mlt.find("tractor[@id='sequence_tractor']")
-        filt = seq.find("filter[@id='subtitle_filter']")
-        assert _get_prop(filt, "internal_added") is None
+        subs_list_raw = _get_prop(seq, "kdenlive:sequenceproperties.subtitlesList")
+        assert subs_list_raw is not None
+        import json
 
-    def test_subtitle_filter_has_kdenlive_id(self, tmp_path):
-        """Subtitle filter must have kdenlive_id so Kdenlive recognises the effect (#89)."""
+        subs_list = json.loads(subs_list_raw)
+        assert len(subs_list) == 1
+        assert subs_list[0]["id"] == 0
+        assert subs_list[0]["name"] == "Subtitles"
+        assert subs_list[0]["file"].endswith(".ass")
+
+    def test_hide_subtitle_property(self, tmp_path):
+        """Sequence tractor must have hidesubtitle=0 when subtitles present (#89)."""
         # Arrange
         srt_file = tmp_path / "test.srt"
         srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
@@ -1088,8 +1136,59 @@ class TestSubtitleFilter:
 
         # Assert
         seq = mlt.find("tractor[@id='sequence_tractor']")
-        filt = seq.find("filter[@id='subtitle_filter']")
-        assert _get_prop(filt, "kdenlive_id") == "avfilter.subtitles"
+        assert _get_prop(seq, "kdenlive:sequenceproperties.hidesubtitle") == "0"
+
+    def test_no_subtitle_properties_when_no_subtitles(self, tmp_path):
+        """No subtitle properties when subtitles_path is None."""
+        # Arrange & Act
+        mlt = self._build(tmp_path, subtitles_path=None)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        assert _get_prop(seq, "kdenlive:sequenceproperties.subtitlesList") is None
+
+    def test_vtt_input_generates_ass_output(self, tmp_path):
+        """VTT input should be converted to ASS for Kdenlive (#89)."""
+        # Arrange
+        project_dir = _make_project_dir(tmp_path)
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+
+        vtt_file = tmp_path / "subs.vtt"
+        vtt_file.write_text("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello VTT\n")
+
+        # Act
+        result = generate_kdenlive(project, output_dir, subtitles_path=vtt_file)
+
+        # Assert
+        expected_ass = Path(str(result) + ".ass")
+        assert expected_ass.exists()
+        content = expected_ass.read_text()
+        assert "Hello VTT" in content
+
+    def test_ass_input_copied_directly(self, tmp_path):
+        """ASS input should be copied directly without re-conversion (#89)."""
+        # Arrange
+        project_dir = _make_project_dir(tmp_path)
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+
+        ass_content = (
+            "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\n\n"
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hello ASS\n"
+        )
+        ass_file = tmp_path / "subs.ass"
+        ass_file.write_text(ass_content)
+
+        # Act
+        result = generate_kdenlive(project, output_dir, subtitles_path=ass_file)
+
+        # Assert — ASS copied directly, preserving original content
+        expected_ass = Path(str(result) + ".ass")
+        assert expected_ass.exists()
+        assert expected_ass.read_text() == ass_content
 
 
 class TestProbeAudio:

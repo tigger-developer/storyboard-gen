@@ -3,6 +3,7 @@
 
 import json
 import logging
+import shutil
 import subprocess
 import uuid
 import xml.dom.minidom
@@ -30,7 +31,7 @@ def generate_kdenlive(
         output_dir: Base output directory (contains stills/, clips/).
         output_filename: Custom output filename. Defaults to "{title}.kdenlive".
         audio_path: Optional path to an audio file to include.
-        subtitles_path: Optional path to an SRT subtitle file to include.
+        subtitles_path: Optional path to a subtitle file (SRT, VTT, ASS/SSA) to include.
         fps: Frames per second.
 
     Returns:
@@ -54,16 +55,14 @@ def generate_kdenlive(
     final_dir.mkdir(parents=True, exist_ok=True)
     output_path = final_dir / output_filename
 
-    # Copy SRT alongside the .kdenlive file before building MLT
-    srt_dest = None
+    # Convert subtitles to ASS format alongside the .kdenlive file
+    ass_dest = None
     if subtitles_path is not None:
-        import shutil
+        ass_dest = Path(str(output_path) + ".ass")
+        _write_ass_subtitle(subtitles_path, ass_dest, project.aspect_ratio)
+        logger.info("Wrote subtitle track to %s", ass_dest)
 
-        srt_dest = Path(str(output_path) + ".srt")
-        shutil.copy2(subtitles_path, srt_dest)
-        logger.info("Copied subtitles to %s", srt_dest)
-
-    mlt = _build_mlt(project, output_dir, fps, audio_path, subtitles_path=srt_dest)
+    mlt = _build_mlt(project, output_dir, fps, audio_path, subtitles_path=ass_dest)
 
     # Pretty-print the XML
     rough_string = ET.tostring(mlt, encoding="unicode")
@@ -88,6 +87,27 @@ def _resolve_clip_path(scene: Scene, output_dir: Path) -> Path:
     if scene.scene_type == "still":
         return output_dir / "stills" / f"scene_{format_scene_number(scene.number)}.png"
     return output_dir / "clips" / f"scene_{format_scene_number(scene.number)}.mp4"
+
+
+def _write_ass_subtitle(
+    subtitles_path: Path, ass_dest: Path, aspect_ratio: str
+) -> None:
+    """Convert a subtitle file to Kdenlive-compatible ASS format.
+
+    If the input is already ASS/SSA, it is copied directly. Otherwise it is
+    parsed (SRT, VTT) and converted to ASS.
+    """
+    ext = subtitles_path.suffix.lower()
+    if ext in (".ass", ".ssa"):
+        shutil.copy2(subtitles_path, ass_dest)
+        return
+
+    from storyboard_gen.subtitles import parse_subtitle_file, to_ass
+
+    subs = parse_subtitle_file(subtitles_path)
+    width, height = ASPECT_DIMENSIONS.get(aspect_ratio, (1920, 1080))
+    ass_content = to_ass(subs, width, height)
+    ass_dest.write_text(ass_content, encoding="utf-8")
 
 
 # ProducerInfo: (producer_id, length_frames, kdenlive_id, clip_name)
@@ -325,12 +345,24 @@ def _build_sequence_tractor(
     # qtblend transition for video compositing over black
     _add_internal_qtblend(tractor, "seq_blend_video", a_track=0, b_track=track_index)
 
-    # Subtitle filter (if configured)
+    # Kdenlive native subtitle track (if configured)
     if subtitles_path is not None:
         filt = ET.SubElement(tractor, "filter", id="subtitle_filter")
         _set_prop(filt, "mlt_service", "avfilter.subtitles")
-        _set_prop(filt, "kdenlive_id", "avfilter.subtitles")
+        _set_prop(filt, "internal_added", "237")
+        _set_prop(filt, "av.alpha", "1")
         _set_prop(filt, "av.filename", str(subtitles_path.resolve()))
+
+        # Subtitle track metadata required by Kdenlive
+        subs_list = [
+            {"file": str(subtitles_path.resolve()), "id": 0, "name": "Subtitles"}
+        ]
+        _set_prop(
+            tractor,
+            "kdenlive:sequenceproperties.subtitlesList",
+            json.dumps(subs_list),
+        )
+        _set_prop(tractor, "kdenlive:sequenceproperties.hidesubtitle", "0")
 
 
 def _build_main_bin(

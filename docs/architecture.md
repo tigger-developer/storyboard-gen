@@ -50,7 +50,11 @@ Unified pricing lookup with priority chain: **project.yaml override > FAL live A
 
 ### SRT parser (`srt.py`)
 
-Parses `.srt` subtitle files into `Subtitle` dataclasses (index, start/end milliseconds, text). Used by the Kdenlive export to include subtitles in the project.
+Parses `.srt` subtitle files into `Subtitle` dataclasses (index, start/end milliseconds, text).
+
+### Subtitle module (`subtitles.py`)
+
+Multi-format subtitle parser and ASS writer. Supports SRT, WebVTT, ASS/SSA input formats. `parse_subtitle_file(path)` auto-detects format by extension. `to_ass(subtitles, width, height)` generates Kdenlive-compatible ASS output with `[Script Info]`, `[Kdenlive Extradata]`, `[V4+ Styles]`, and `[Events]` sections.
 
 ### Ken Burns (`ken_burns.py`)
 
@@ -62,7 +66,7 @@ Concatenates all scene outputs (Ken Burns stills + video clips) in order using F
 
 ### Kdenlive export (`kdenlive.py`)
 
-Generates a Kdenlive project file (MLT XML format) for timeline editing. References still PNGs directly (not pre-rendered intermediate MP4s), with Ken Burns pan/zoom effects applied via Kdenlive's native `qtblend` transform filter. Audio producers are tagged with `video_index=-1`, `audio_index=0`, and `kdenlive:clip_type=1` so MLT handles them as audio-only clips. When ffprobe is available, audio metadata (sample rate, channels, codec) is probed at export time. When a subtitle file (SRT) is configured, it is copied alongside the `.kdenlive` project as `{project}.kdenlive.srt` and an `avfilter.subtitles` filter (with `kdenlive_id` for Kdenlive effect recognition) is added to the sequence tractor. Both CLI and GUI pass `subtitles_path` from `project.subtitles` (skipped in preview mode, with existence check). The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adjusting Ken Burns keyframes, and adding transitions before final render.
+Generates a Kdenlive project file (MLT XML format) for timeline editing. References still PNGs directly (not pre-rendered intermediate MP4s), with Ken Burns pan/zoom effects applied via Kdenlive's native `qtblend` transform filter. Audio producers are tagged with `video_index=-1`, `audio_index=0`, and `kdenlive:clip_type=1` so MLT handles them as audio-only clips. When ffprobe is available, audio metadata (sample rate, channels, codec) is probed at export time. Subtitle support uses Kdenlive's native subtitle track: input files (SRT, VTT, ASS/SSA) are converted to ASS format via `subtitles.py` and written alongside the `.kdenlive` project as `{project}.kdenlive.ass`. The sequence tractor gets an `avfilter.subtitles` filter with `internal_added=237` and `av.alpha=1`, plus `subtitlesList` JSON and `hidesubtitle=0` metadata properties. Both CLI and GUI pass `subtitles_path` from `project.subtitles` (skipped in preview mode, with existence check). The output `.kdenlive` file can be opened in Kdenlive for fine-tuning timing, adjusting Ken Burns keyframes, and adding transitions before final render.
 
 ### GUI layer (`gui/`) — optional
 
