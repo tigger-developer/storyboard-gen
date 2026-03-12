@@ -2454,6 +2454,11 @@ class TestStillHandlerRegistry:
         handler = _resolve_still_handler("fal-ai/ideogram/character")
         assert isinstance(handler, IdeogramCharacterHandler)
 
+    def test_resolve_handler_flux_dev_returns_flux_handler(self):
+        """Flux Dev routes to FluxHandler fallback (#88)."""
+        handler = _resolve_still_handler("fal-ai/flux-dev")
+        assert isinstance(handler, FluxHandler)
+
     def test_resolve_handler_unknown_model_returns_flux_handler(self):
         handler = _resolve_still_handler("fal-ai/some-unknown-model")
         assert isinstance(handler, FluxHandler)
@@ -2502,8 +2507,16 @@ class TestStillHandlerMatch:
     def test_flux2_match_negative_flux_general(self):
         assert not Flux2Handler().match("fal-ai/flux-general")
 
+    def test_flux2_match_negative_flux_dev(self):
+        """fal-ai/flux-dev is Flux 1.x Dev, NOT Flux 2 Dev (#88)."""
+        assert not Flux2Handler().match("fal-ai/flux-dev")
+
     def test_flux_handler_always_matches(self):
         assert FluxHandler().match("anything-at-all")
+
+    def test_flux_handler_matches_flux_dev(self):
+        """FluxHandler (fallback) handles Flux Dev (#88)."""
+        assert FluxHandler().match("fal-ai/flux-dev")
 
 
 class TestStillHandlerSafetyDefaults:
@@ -2686,6 +2699,73 @@ class TestFlux2ProHandler:
         # Assert — should be /edit, NOT /edit/edit
         call_args = mock_fal.subscribe.call_args
         assert call_args.args[0] == "fal-ai/flux-2-pro/edit"
+
+
+class TestFluxDevSupport:
+    """Tests for FAL Flux Dev model support (#88)."""
+
+    def test_flux_dev_not_detected_as_flux2(self):
+        """fal-ai/flux-dev must NOT trigger _is_flux2 detection."""
+        from storyboard_gen.providers.fal import FalProvider
+
+        provider = FalProvider(model="fal-ai/flux-dev")
+        assert not provider._is_flux2
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux_dev_passes_reference_image_url(self, mock_fal, tmp_path):
+        """Flux Dev should pass reference_image_url (unlike Flux 2 which blocks it)."""
+        from storyboard_gen.providers.fal import FalProvider
+
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+
+        ref_path = tmp_path / "ref.png"
+        ref_path.write_bytes(b"fake-png")
+        output = tmp_path / "scene_01.png"
+
+        provider = FalProvider(model="fal-ai/flux-dev")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A boy in a field",
+                output_path=output,
+                aspect_ratio="9:16",
+                reference_images=[ref_path],
+            )
+
+        # Assert — reference_image_url should be present
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "reference_image_url" in arguments
+        assert arguments["reference_image_url"] == "https://fal.media/files/ref.png"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux_dev_text_to_image_appends_endpoint(self, mock_fal, tmp_path):
+        """Flux Dev text-to-image should use model as endpoint (no /text-to-image for FluxHandler)."""
+        from storyboard_gen.providers.fal import FalProvider
+
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        output = tmp_path / "scene_01.png"
+
+        provider = FalProvider(model="fal-ai/flux-dev")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A boy in a field",
+                output_path=output,
+                aspect_ratio="9:16",
+            )
+
+        # Assert — endpoint should be the model ID
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/flux-dev"
 
 
 class TestInstantCharacterHandler:

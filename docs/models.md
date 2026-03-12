@@ -1,4 +1,4 @@
-<!-- Version: 3.2 | Last updated: 2026-03-11 -->
+<!-- Version: 3.3 | Last updated: 2026-03-12 -->
 
 # Model Reference
 
@@ -100,6 +100,7 @@ FAL models are accessed via `fal-client`. Requires `FAL_KEY` in `.env`.
 |----------|------|-------------------|-------|
 | `fal-ai/flux-general` | Flux General | Yes (`reference_image_url`) | Supports LoRAs, ControlNets, reference images. Most versatile Flux model. |
 | `fal-ai/flux-pro/v1.1` | Flux Pro 1.1 | Yes (`reference_image_url`) | High quality text-to-image. |
+| `fal-ai/flux-dev` | Flux Dev | Yes (`reference_image_url`) | Non-commercial licence. Cheaper alternative to Flux Pro (~$0.025/image vs $0.04). |
 
 **Options:** `seed` (int), `num_inference_steps` (1–50), `guidance_scale` (0–20), `reference_strength` (float).
 
@@ -470,6 +471,7 @@ storyboard-gen checks for reference/model mismatches and logs warnings. These wa
 | Design with colour control | `fal-ai/recraft/v4/text-to-image` (FAL) | RGB palette control |
 | 4K resolution | `fal-ai/bytedance/seedream/v4.5/text-to-image` (FAL) | Supports `auto_4K` preset |
 | Fast iteration | `fal-ai/flux-2/turbo` (FAL) | Fastest generation time |
+| Budget with refs (non-commercial) | `fal-ai/flux-dev` (FAL) | ~$0.025/image, reference support, non-commercial licence |
 | No API key setup | `black-forest-labs/flux-dev` (Replicate) | Simple token-based auth |
 
 ### For clips
