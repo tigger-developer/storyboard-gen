@@ -30,9 +30,13 @@ class TestNormaliseUnit:
     def test_normalise_image_unchanged(self):
         assert _normalise_unit("image") == "image"
 
-    def test_normalise_megapixels_returns_none(self):
-        """Megapixel pricing is resolution-dependent; cannot estimate per-image."""
-        assert _normalise_unit("megapixels") is None
+    def test_normalise_megapixels_returns_megapixel(self):
+        """Megapixel pricing normalises to 'megapixel' for ~1MP estimation."""
+        assert _normalise_unit("megapixels") == "megapixel"
+
+    def test_normalise_megapixel_singular_returns_megapixel(self):
+        """Singular 'megapixel' also normalises."""
+        assert _normalise_unit("megapixel") == "megapixel"
 
     def test_normalise_seconds_to_second(self):
         assert _normalise_unit("seconds") == "second"
@@ -325,8 +329,8 @@ class TestFetchPrice:
         # Assert
         assert result is None
 
-    def test_fal_api_megapixel_unit_returns_none(self, monkeypatch):
-        """FAL API returning megapixel pricing is treated as unavailable."""
+    def test_fal_api_megapixel_unit_returns_pricing(self, monkeypatch):
+        """FAL API returning megapixel pricing is normalised to megapixel unit."""
         # Arrange
         monkeypatch.setenv("FAL_KEY", "test-key")
         from storyboard_gen.pricing import _price_cache
@@ -347,7 +351,11 @@ class TestFetchPrice:
             mock_urlopen.return_value = self._mock_response(response_data)
             result = fetch_price("fal-ai/flux-2/turbo")
 
-        assert result is None
+        # Assert
+        assert result is not None
+        assert result["unit_price"] == 0.008
+        assert result["unit"] == "megapixel"
+        assert result["currency"] == "USD"
 
     def test_fal_api_compute_seconds_unit_returns_none(self, monkeypatch):
         """FAL API returning compute-second pricing is treated as unavailable."""
@@ -490,6 +498,24 @@ class TestEstimateSceneCost:
         # Assert
         assert cost == pytest.approx(0.40)
 
+    def test_estimate_megapixel_scene_returns_flat_cost(self):
+        """Megapixel pricing treated as ~1MP per image = unit_price."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Test",
+            scene_type="still",
+            prompt="test",
+            duration=5,
+        )
+        pricing = {"unit_price": 0.008, "unit": "megapixel", "currency": "USD"}
+
+        # Act
+        cost = estimate_scene_cost(scene, pricing)
+
+        # Assert
+        assert cost == 0.008
+
     def test_estimate_scene_cost_returns_none_when_no_pricing(self):
         """Returns None when pricing is None."""
         # Arrange
@@ -554,6 +580,25 @@ class TestFormatCostLine:
         assert "$0.40" in line
         assert "8" in line
         assert "$0.05" in line
+
+    def test_format_cost_line_megapixel(self):
+        """Megapixel scene shows approximate cost indicator."""
+        # Arrange
+        scene = Scene(
+            number="1",
+            title="Test",
+            scene_type="still",
+            prompt="test",
+            duration=5,
+        )
+        pricing = {"unit_price": 0.008, "unit": "megapixel", "currency": "USD"}
+
+        # Act
+        line = format_cost_line(scene, pricing)
+
+        # Assert
+        assert "$0.01" in line
+        assert "~1MP" in line
 
     def test_format_cost_line_returns_unavailable_when_no_pricing(self):
         """Returns 'unavailable' when pricing is None."""

@@ -16,6 +16,9 @@ _price_cache: dict[str, dict | None] = {}
 # FAL-billed model prefixes (models routed through FAL's billing)
 _FAL_PREFIXES = ("fal-ai/", "xai/", "wan/")
 
+# Standard Flux output is ~1 megapixel (e.g. 1024x1024, 1344x768).
+_MEGAPIXELS_PER_IMAGE = 1.0
+
 # Static pricing defaults for models without a live pricing API.
 # Google pricing as of 2026-03 (Gemini API pricing page).
 # Replicate pricing as of 2026-03 (replicate.com/pricing).
@@ -80,27 +83,30 @@ def _normalise_unit(unit: str) -> str | None:
     """Normalise FAL API unit strings to canonical forms.
 
     The FAL pricing API returns varying unit names across models.
-    We normalise to "image" (flat per-generation) or "second"
-    (duration-based) for consistent downstream handling.
+    We normalise to "image" (flat per-generation), "second"
+    (duration-based), or "megapixel" (per-megapixel, estimated
+    at ~1MP per image for standard Flux outputs).
 
-    Units we cannot reliably convert (megapixels, compute seconds)
-    return None — the caller should treat these as unavailable.
+    Units we cannot reliably convert (compute seconds) return
+    None — the caller should treat these as unavailable.
 
     Args:
         unit: Raw unit string from the API.
 
     Returns:
-        Normalised unit: "image", "second", None for unsupported units,
-        or the original string for unknown units.
+        Normalised unit: "image", "second", "megapixel",
+        None for unsupported units, or the original string
+        for unknown units.
     """
     lower = unit.lower()
     if lower in ("image", "images"):
         return "image"
     if lower in ("second", "seconds"):
         return "second"
-    # Megapixel pricing depends on output resolution; compute seconds
-    # are not video seconds — both are unsuitable for cost estimation.
-    if lower in ("megapixels", "compute seconds"):
+    if lower in ("megapixel", "megapixels"):
+        return "megapixel"
+    # Compute seconds are not video seconds — unsuitable for cost estimation.
+    if lower == "compute seconds":
         return None
     return unit
 
@@ -213,6 +219,9 @@ def estimate_scene_cost(scene: Scene, pricing: dict | None) -> float | None:
 
     if unit == "second":
         return unit_price * scene.duration
+    # Megapixel: ~1MP per image for standard Flux outputs
+    if unit == "megapixel":
+        return unit_price * _MEGAPIXELS_PER_IMAGE
     # Flat per-image cost
     return unit_price
 
@@ -237,4 +246,6 @@ def format_cost_line(scene: Scene, pricing: dict | None) -> str:
 
     if unit == "second":
         return f"Estimated cost: ${cost:.2f} ({scene.duration:g}s \u00d7 ${unit_price:.2f}/s)"
+    if unit == "megapixel":
+        return f"Estimated cost: ${cost:.2f}/image (~1MP)"
     return f"Estimated cost: ${cost:.2f}/image"
