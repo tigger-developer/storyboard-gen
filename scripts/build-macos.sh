@@ -61,35 +61,35 @@ pip install --upgrade pip -q
 pip install pyinstaller -q
 pip install "${PROJECT_ROOT}[gui,all]" -q
 
-# Determine icon flag
-ICON_FLAG=()
+# Build .app bundle
+echo "Running PyInstaller..."
+cmd=(pyinstaller --windowed
+    --name "$APP_NAME"
+    --target-arch arm64
+    --osx-bundle-identifier "com.tigger04.storyboard-gen"
+    --hidden-import storyboard_gen.providers.google
+    --hidden-import storyboard_gen.providers.fal
+    --hidden-import storyboard_gen.providers.replicate
+    --exclude-module QtWebEngine
+    --exclude-module Qt3D
+    --exclude-module QtBluetooth
+    --exclude-module QtNfc
+    --exclude-module QtRemoteObjects
+    --exclude-module QtSensors
+    --exclude-module QtSerialPort
+    --exclude-module QtTest
+    --exclude-module QtPositioning
+    --noconfirm
+)
+
 ICON_PATH="$PROJECT_ROOT/resources/icon.icns"
 if [[ -f "$ICON_PATH" ]]; then
-    ICON_FLAG=(--icon "$ICON_PATH")
+    cmd+=(--icon "$ICON_PATH")
     echo "Using icon: $ICON_PATH"
 fi
 
-# Build .app bundle
-echo "Running PyInstaller..."
-pyinstaller --windowed \
-    --name "$APP_NAME" \
-    "${ICON_FLAG[@]}" \
-    --target-arch arm64 \
-    --osx-bundle-identifier "com.tigger04.storyboard-gen" \
-    --hidden-import storyboard_gen.providers.google \
-    --hidden-import storyboard_gen.providers.fal \
-    --hidden-import storyboard_gen.providers.replicate \
-    --exclude-module QtWebEngine \
-    --exclude-module Qt3D \
-    --exclude-module QtBluetooth \
-    --exclude-module QtNfc \
-    --exclude-module QtRemoteObjects \
-    --exclude-module QtSensors \
-    --exclude-module QtSerialPort \
-    --exclude-module QtTest \
-    --exclude-module QtPositioning \
-    --noconfirm \
-    "$PROJECT_ROOT/src/storyboard_gen/gui/__main__.py"
+cmd+=("$PROJECT_ROOT/src/storyboard_gen/gui/__main__.py")
+"${cmd[@]}"
 
 deactivate
 
