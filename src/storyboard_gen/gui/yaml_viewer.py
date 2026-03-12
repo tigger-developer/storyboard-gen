@@ -4,8 +4,18 @@
 import re
 from pathlib import Path
 
-from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
+from PySide6.QtCore import Signal
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QKeySequence,
+    QShortcut,
+    QSyntaxHighlighter,
+    QTextCharFormat,
+)
 from PySide6.QtWidgets import QTextEdit, QVBoxLayout, QWidget
+
+from storyboard_gen.gui.settings import MAX_FONT_SIZE, MIN_FONT_SIZE
 
 
 class YamlHighlighter(QSyntaxHighlighter):
@@ -69,6 +79,8 @@ class YamlHighlighter(QSyntaxHighlighter):
 class YamlViewer(QWidget):
     """Read-only viewer for YAML files with syntax highlighting."""
 
+    font_size_changed = Signal(int)
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
 
@@ -87,6 +99,14 @@ class YamlViewer(QWidget):
         )
 
         self._highlighter = YamlHighlighter(self.text_edit.document())
+
+        # Font size keyboard shortcuts (Ctrl maps to Cmd on macOS)
+        self._shortcut_zoom_in = QShortcut(QKeySequence("Ctrl+="), self)
+        self._shortcut_zoom_in.activated.connect(self._increase_font)
+        self._shortcut_zoom_in2 = QShortcut(QKeySequence("Ctrl+Shift+="), self)
+        self._shortcut_zoom_in2.activated.connect(self._increase_font)
+        self._shortcut_zoom_out = QShortcut(QKeySequence("Ctrl+-"), self)
+        self._shortcut_zoom_out.activated.connect(self._decrease_font)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -112,3 +132,26 @@ class YamlViewer(QWidget):
             text: YAML content to display.
         """
         self.text_edit.setPlainText(text)
+
+    def set_font_size(self, size: int) -> None:
+        """Set the viewer font size, clamped to MIN_FONT_SIZE–MAX_FONT_SIZE.
+
+        Args:
+            size: Desired font point size.
+        """
+        clamped = max(MIN_FONT_SIZE, min(MAX_FONT_SIZE, size))
+        font = self.text_edit.font()
+        font.setPointSize(clamped)
+        self.text_edit.setFont(font)
+
+    def _increase_font(self) -> None:
+        """Increase font size by 1pt and emit font_size_changed."""
+        new_size = self.text_edit.font().pointSize() + 1
+        self.set_font_size(new_size)
+        self.font_size_changed.emit(self.text_edit.font().pointSize())
+
+    def _decrease_font(self) -> None:
+        """Decrease font size by 1pt and emit font_size_changed."""
+        new_size = self.text_edit.font().pointSize() - 1
+        self.set_font_size(new_size)
+        self.font_size_changed.emit(self.text_edit.font().pointSize())

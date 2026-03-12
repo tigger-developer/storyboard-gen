@@ -647,13 +647,13 @@ class TestMainWindow:
         window = MainWindow()
         qtbot.addWidget(window)
 
-        # Assert — check toolbar button tooltips
-        assert window._btn_open.toolTip() == "Open Project"
-        assert window._btn_refresh.toolTip() == "Refresh"
-        assert window._btn_generate.toolTip() == "Generate"
-        assert window._btn_stop.toolTip() == "Stop"
-        assert window._btn_output.toolTip() == "Output"
-        assert window._btn_yaml_viewer.toolTip() == "View YAML"
+        # Assert — check toolbar button tooltips contain the base label
+        assert "Open Project" in window._btn_open.toolTip()
+        assert "Refresh" in window._btn_refresh.toolTip()
+        assert "Generate" in window._btn_generate.toolTip()
+        assert "Stop" in window._btn_stop.toolTip()
+        assert "Output" in window._btn_output.toolTip()
+        assert "View YAML" in window._btn_yaml_viewer.toolTip()
 
     def test_main_window_stop_button_disabled_initially(self, qtbot):
         """Stop button should be disabled when not generating."""
@@ -1395,8 +1395,8 @@ class TestMainWindowOutputAndRefresh:
         window = MainWindow()
         qtbot.addWidget(window)
 
-        assert window._btn_output.toolTip() == "Output"
-        assert window._btn_refresh.toolTip() == "Refresh"
+        assert "Output" in window._btn_output.toolTip()
+        assert "Refresh" in window._btn_refresh.toolTip()
 
     def test_main_window_refresh_reloads_project(
         self, qtbot, gui_project_dir_with_output
@@ -2049,7 +2049,7 @@ class TestMainWindowNewProject:
         window = MainWindow()
         qtbot.addWidget(window)
 
-        assert window._btn_new.toolTip() == "New Project"
+        assert "New Project" in window._btn_new.toolTip()
 
     def test_new_project_creates_and_opens_project(self, qtbot, tmp_path):
         """New Project should scaffold and open a new project."""
@@ -5157,13 +5157,14 @@ class TestToolbarIcons:
         assert isinstance(window._btn_stop, QToolButton)
 
     def test_toolbar_buttons_have_tooltips(self, qtbot):
-        """All toolbar buttons should have descriptive tooltips."""
+        """All toolbar buttons should have descriptive tooltips with shortcut hints."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
         qtbot.addWidget(window)
 
-        expected = {
+        # Tooltips now include shortcut hints — check the base label is present
+        expected_labels = {
             "_btn_open": "Open Project",
             "_btn_new": "New Project",
             "_btn_refresh": "Refresh",
@@ -5175,9 +5176,9 @@ class TestToolbarIcons:
             "_btn_console": "Console",
             "_btn_about": "About",
         }
-        for attr, tooltip in expected.items():
+        for attr, label in expected_labels.items():
             btn = getattr(window, attr)
-            assert btn.toolTip() == tooltip, f"{attr} tooltip mismatch"
+            assert label in btn.toolTip(), f"{attr} tooltip missing label '{label}'"
 
     def test_toolbar_has_about_button(self, qtbot):
         """Toolbar should have an About button."""
@@ -5195,3 +5196,231 @@ class TestToolbarIcons:
         qtbot.addWidget(window)
         assert not hasattr(window, "_btn_archive")
         assert not hasattr(window, "_action_archive")
+
+
+class TestKeyboardShortcuts:
+    """Test keyboard shortcuts for toolbar actions (#92)."""
+
+    def _get_modifier_label(self):
+        """Return the expected platform modifier label."""
+        import sys
+
+        return "Cmd" if sys.platform == "darwin" else "Ctrl"
+
+    def test_shortcut_open_project_exists(self, qtbot):
+        """Ctrl/Cmd+O shortcut should exist and map to Open Project."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Assert
+        assert hasattr(window, "_shortcut_open")
+        assert window._shortcut_open.key().toString() == "Ctrl+O"
+
+    def test_shortcut_new_project_exists(self, qtbot):
+        """Ctrl/Cmd+N shortcut should exist and map to New Project."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_shortcut_new")
+        assert window._shortcut_new.key().toString() == "Ctrl+N"
+
+    def test_shortcut_refresh_exists(self, qtbot):
+        """Ctrl/Cmd+R shortcut should exist and map to Refresh."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_shortcut_refresh")
+        assert window._shortcut_refresh.key().toString() == "Ctrl+R"
+
+    def test_shortcut_generate_exists(self, qtbot):
+        """Ctrl/Cmd+G shortcut should exist and map to Generate."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_shortcut_generate")
+        assert window._shortcut_generate.key().toString() == "Ctrl+G"
+
+    def test_shortcut_view_yaml_exists(self, qtbot):
+        """Ctrl/Cmd+Y shortcut should exist and map to View YAML."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_shortcut_yaml")
+        assert window._shortcut_yaml.key().toString() == "Ctrl+Y"
+
+    def test_shortcut_console_exists(self, qtbot):
+        """Ctrl/Cmd+L shortcut should exist and map to Console toggle."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_shortcut_console")
+        assert window._shortcut_console.key().toString() == "Ctrl+L"
+
+    def test_shortcut_about_exists(self, qtbot):
+        """Ctrl/Cmd+I shortcut should exist and map to About."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_shortcut_about")
+        assert window._shortcut_about.key().toString() == "Ctrl+I"
+
+    def test_shortcut_stop_exists(self, qtbot):
+        """Ctrl/Cmd+Shift+S shortcut should exist and map to Stop."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_shortcut_stop")
+        assert window._shortcut_stop.key().toString() == "Ctrl+Shift+S"
+
+    def test_shortcut_output_exists(self, qtbot):
+        """Ctrl/Cmd+Shift+O shortcut should exist and map to Output."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_shortcut_output")
+        assert window._shortcut_output.key().toString() == "Ctrl+Shift+O"
+
+    def test_shortcut_edit_yaml_exists(self, qtbot):
+        """Ctrl/Cmd+Shift+Y shortcut should exist and map to Edit YAML."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_shortcut_edit_yaml")
+        assert window._shortcut_edit_yaml.key().toString() == "Ctrl+Shift+Y"
+
+    def test_tooltips_include_shortcut_hints(self, qtbot):
+        """Toolbar tooltips should include keyboard shortcut hints (#92)."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        # Shortcut hint should appear in parentheses in the tooltip
+        assert "(" in window._btn_open.toolTip()
+        assert "(" in window._btn_new.toolTip()
+        assert "(" in window._btn_generate.toolTip()
+        assert "(" in window._btn_stop.toolTip()
+        assert "(" in window._btn_output.toolTip()
+        assert "(" in window._btn_console.toolTip()
+        assert "(" in window._btn_about.toolTip()
+        assert "(" in window._btn_yaml_viewer.toolTip()
+        assert "(" in window._btn_yaml_editor.toolTip()
+        assert "(" in window._btn_refresh.toolTip()
+
+    def test_tooltips_use_cmd_on_macos(self, qtbot):
+        """On macOS, tooltips should use Cmd, not Ctrl (#92)."""
+        import sys
+
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        mod = "Cmd" if sys.platform == "darwin" else "Ctrl"
+        assert mod in window._btn_open.toolTip()
+
+    def test_tooltips_use_ctrl_on_linux(self, qtbot):
+        """On non-macOS, tooltips should use Ctrl (#92)."""
+        import sys
+
+        from storyboard_gen.gui.app import _shortcut_modifier_label
+
+        # _shortcut_modifier_label should return correct string for platform
+        if sys.platform == "darwin":
+            assert _shortcut_modifier_label() == "Cmd"
+        else:
+            assert _shortcut_modifier_label() == "Ctrl"
+
+
+class TestYamlViewerFontSize:
+    """Test font size controls in YamlViewer (#92)."""
+
+    def test_set_font_size_changes_font(self, qtbot):
+        """set_font_size should change the viewer font point size."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+
+        # Act
+        viewer.set_font_size(18)
+
+        # Assert
+        assert viewer.text_edit.font().pointSize() == 18
+
+    def test_set_font_size_clamped_min(self, qtbot):
+        """Font size below MIN_FONT_SIZE should be clamped."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+
+        viewer.set_font_size(4)
+        assert viewer.text_edit.font().pointSize() == 8
+
+    def test_set_font_size_clamped_max(self, qtbot):
+        """Font size above MAX_FONT_SIZE should be clamped."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+
+        viewer.set_font_size(50)
+        assert viewer.text_edit.font().pointSize() == 32
+
+    def test_increase_font_emits_signal(self, qtbot):
+        """Increasing font should emit font_size_changed signal."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+        viewer.set_font_size(11)
+
+        # Act
+        with qtbot.waitSignal(viewer.font_size_changed, timeout=1000):
+            viewer._increase_font()
+
+        assert viewer.text_edit.font().pointSize() == 12
+
+    def test_decrease_font_emits_signal(self, qtbot):
+        """Decreasing font should emit font_size_changed signal."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+        viewer.set_font_size(11)
+
+        with qtbot.waitSignal(viewer.font_size_changed, timeout=1000):
+            viewer._decrease_font()
+
+        assert viewer.text_edit.font().pointSize() == 10
+
+    def test_viewer_has_font_size_shortcuts(self, qtbot):
+        """YamlViewer should have Cmd+=/- keyboard shortcuts for font size."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+
+        assert hasattr(viewer, "_shortcut_zoom_in")
+        assert hasattr(viewer, "_shortcut_zoom_out")

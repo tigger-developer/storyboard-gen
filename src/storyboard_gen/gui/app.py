@@ -43,6 +43,11 @@ logger = logging.getLogger(__name__)
 APP_TITLE = "storyboard-gen"
 
 
+def _shortcut_modifier_label() -> str:
+    """Return the platform-appropriate modifier key label for tooltips."""
+    return "Cmd" if sys.platform == "darwin" else "Ctrl"
+
+
 class MainWindow(QMainWindow):
     """Main application window for storyboard-gen GUI."""
 
@@ -128,56 +133,65 @@ class MainWindow(QMainWindow):
 
     def _setup_toolbar(self) -> None:
         """Create the toolbar with icon buttons, progress spinner, and label."""
+        mod = _shortcut_modifier_label()
         self.toolbar = QToolBar("Main")
         self.toolbar.setMovable(False)
         self.addToolBar(self.toolbar)
 
         self._btn_open = self._make_toolbar_button(
-            "📂", "Open Project", self._on_open_project
+            "📂", f"Open Project ({mod}+O)", self._on_open_project
         )
         self.toolbar.addWidget(self._btn_open)
 
         self._btn_new = self._make_toolbar_button(
-            "➕", "New Project", self._on_new_project
+            "➕", f"New Project ({mod}+N)", self._on_new_project
         )
         self.toolbar.addWidget(self._btn_new)
 
-        self._btn_refresh = self._make_toolbar_button("🔄", "Refresh", self._on_refresh)
+        self._btn_refresh = self._make_toolbar_button(
+            "🔄", f"Refresh ({mod}+R)", self._on_refresh
+        )
         self.toolbar.addWidget(self._btn_refresh)
 
         self.toolbar.addSeparator()
 
         self._btn_generate = self._make_toolbar_button(
-            "🚀", "Generate", self._on_generate
+            "🚀", f"Generate ({mod}+G)", self._on_generate
         )
         self.toolbar.addWidget(self._btn_generate)
 
-        self._btn_stop = self._make_toolbar_button("⏹", "Stop", self._on_stop_all)
+        self._btn_stop = self._make_toolbar_button(
+            "⏹", f"Stop ({mod}+Shift+S)", self._on_stop_all
+        )
         self.toolbar.addWidget(self._btn_stop)
 
         self.toolbar.addSeparator()
 
-        self._btn_output = self._make_toolbar_button("🎞", "Output", self._on_output)
+        self._btn_output = self._make_toolbar_button(
+            "🎞", f"Output ({mod}+Shift+O)", self._on_output
+        )
         self.toolbar.addWidget(self._btn_output)
 
         self.toolbar.addSeparator()
 
         self._btn_yaml_viewer = self._make_toolbar_button(
-            "📄", "View YAML", self._on_view_yaml
+            "📄", f"View YAML ({mod}+Y)", self._on_view_yaml
         )
         self.toolbar.addWidget(self._btn_yaml_viewer)
 
         self._btn_yaml_editor = self._make_toolbar_button(
-            "✏️", "Edit YAML", self._on_toggle_yaml
+            "✏️", f"Edit YAML ({mod}+Shift+Y)", self._on_toggle_yaml
         )
         self.toolbar.addWidget(self._btn_yaml_editor)
 
         self._btn_console = self._make_toolbar_button(
-            "🖥", "Console", self._on_toggle_console
+            "🖥", f"Console ({mod}+L)", self._on_toggle_console
         )
         self.toolbar.addWidget(self._btn_console)
 
-        self._btn_about = self._make_toolbar_button("ℹ️", "About", self._on_about)
+        self._btn_about = self._make_toolbar_button(
+            "ℹ️", f"About ({mod}+I)", self._on_about
+        )
         self.toolbar.addWidget(self._btn_about)
 
         # Progress spinner and label in the toolbar
@@ -202,12 +216,40 @@ class MainWindow(QMainWindow):
         self.toolbar.addWidget(self._progress_label)
 
     def _setup_shortcuts(self) -> None:
-        """Create global keyboard shortcuts."""
+        """Create global keyboard shortcuts.
+
+        Qt maps Ctrl to Cmd on macOS automatically, so Ctrl+X in code
+        becomes Cmd+X on macOS and Ctrl+X on Linux/Windows.
+        """
         # Scene navigation: Cmd+[ (previous) and Cmd+] (next)
         self._shortcut_prev = QShortcut(QKeySequence("Ctrl+["), self)
         self._shortcut_prev.activated.connect(self.scene_list.select_previous)
         self._shortcut_next = QShortcut(QKeySequence("Ctrl+]"), self)
         self._shortcut_next.activated.connect(self.scene_list.select_next)
+
+        # Toolbar action shortcuts (Ctrl maps to Cmd on macOS)
+        self._shortcut_open = QShortcut(QKeySequence("Ctrl+O"), self)
+        self._shortcut_open.activated.connect(self._on_open_project)
+        self._shortcut_new = QShortcut(QKeySequence("Ctrl+N"), self)
+        self._shortcut_new.activated.connect(self._on_new_project)
+        self._shortcut_refresh = QShortcut(QKeySequence("Ctrl+R"), self)
+        self._shortcut_refresh.activated.connect(self._on_refresh)
+        self._shortcut_generate = QShortcut(QKeySequence("Ctrl+G"), self)
+        self._shortcut_generate.activated.connect(self._on_generate)
+        self._shortcut_yaml = QShortcut(QKeySequence("Ctrl+Y"), self)
+        self._shortcut_yaml.activated.connect(self._on_view_yaml)
+        self._shortcut_console = QShortcut(QKeySequence("Ctrl+L"), self)
+        self._shortcut_console.activated.connect(self._on_toggle_console)
+        self._shortcut_about = QShortcut(QKeySequence("Ctrl+I"), self)
+        self._shortcut_about.activated.connect(self._on_about)
+
+        # Shift shortcuts
+        self._shortcut_stop = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
+        self._shortcut_stop.activated.connect(self._on_stop_all)
+        self._shortcut_output = QShortcut(QKeySequence("Ctrl+Shift+O"), self)
+        self._shortcut_output.activated.connect(self._on_output)
+        self._shortcut_edit_yaml = QShortcut(QKeySequence("Ctrl+Shift+Y"), self)
+        self._shortcut_edit_yaml.activated.connect(self._on_toggle_yaml)
 
     def _setup_logging(self, verbose: bool = False) -> None:
         """Attach a Qt log handler to route log messages to the console.
