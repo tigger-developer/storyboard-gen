@@ -1,4 +1,4 @@
-<!-- Version: 2.3 | Last updated: 2026-03-11 -->
+<!-- Version: 2.4 | Last updated: 2026-03-12 -->
 
 # project.yaml Specification
 
@@ -299,6 +299,13 @@ scenes:
 | `ken_burns` | string | no | `null` | Ken Burns effect for stills (ignored for clips) |
 | `characters` | list | no | `[]` | Character IDs from the `characters` section |
 | `provider` | object | no | `null` | Per-scene provider override (same format as `providers.still`) |
+| `model` | string | no | `null` | Shorthand model override — alternative to a full `provider:` block |
+| `reference` | list | no | `[]` | Per-scene reference image paths (overrides character refs) |
+| `source_frame` | string | no | `null` | Path to first frame for image-to-video generation (clips only) |
+| `last_frame` | string | no | `null` | Path to end frame for interpolation (clips only, requires `source_frame`) |
+| `extend_from` | string | no | `null` | Scene number to extend from (clips only, mutually exclusive with `source_frame`) |
+| `seed` | int | no | `null` | Reproducibility seed passed to the model |
+| `variants` | int | no | `1` | Number of video takes to generate (1–4, clips only) |
 
 ### `type`
 
@@ -341,6 +348,107 @@ Standard camera values are automatically injected into the AI prompt as descript
 | `null` (omitted) | No camera phrasing injected. |
 
 The camera phrasing is inserted between the `style_prefix` and character descriptions in the assembled prompt. Prompt assembly order: **style prefix → camera → characters → scene prompt**.
+
+### `model`
+
+Shorthand for overriding only the model on a single scene, without specifying a full `provider:` block. Cannot be combined with `provider:` on the same scene — use one or the other.
+
+```yaml
+  - number: 9
+    type: still
+    model: "fal-ai/flux/dev"
+    prompt: >
+      A single tiger prawn, arched dramatically.
+```
+
+Equivalent to:
+
+```yaml
+    provider:
+      backend: fal
+      model: "fal-ai/flux/dev"
+```
+
+### `reference`
+
+Per-scene reference image paths. These override any character-level references for this scene. Must be a list (bare strings produce a `ConfigError`). Paths are relative to the project directory.
+
+```yaml
+  - number: 5
+    type: still
+    reference:
+      - "references/style_sample.png"
+      - "references/pose_guide.jpg"
+    prompt: >
+      A figure standing in a doorway.
+```
+
+### `source_frame`
+
+Path to a still image used as the first frame for image-to-video clip generation. Only valid on `type: clip` scenes. The clip model receives this image and animates from it.
+
+```yaml
+  - number: 16
+    type: clip
+    duration: 4
+    source_frame: "output/stills/scene_15.png"
+    prompt: >
+      The machine's tubing pulses with a slow mechanical rhythm.
+```
+
+Kling clip endpoints auto-route: if the model is configured as `text-to-video` but `source_frame` is set, storyboard-gen automatically switches to the `image-to-video` endpoint (and vice versa).
+
+### `last_frame`
+
+Path to an end frame for interpolation-style clip generation. Only valid on `type: clip` scenes and requires `source_frame` to also be set. The model generates a clip that transitions from `source_frame` to `last_frame`.
+
+```yaml
+  - number: 10
+    type: clip
+    duration: 3
+    source_frame: "output/stills/scene_9.png"
+    last_frame: "output/stills/scene_11.png"
+    prompt: >
+      Smooth transition from the first pose to the second.
+```
+
+### `extend_from`
+
+Scene number of a previously generated clip to extend. Only valid on `type: clip` scenes. Mutually exclusive with `source_frame` — you cannot set both. The model continues the video from where the referenced scene left off.
+
+```yaml
+  - number: 4
+    type: clip
+    duration: 5
+    extend_from: "3"
+    prompt: >
+      The chase continues around the corner.
+```
+
+### `seed`
+
+Integer seed for reproducible generation. When set, the same prompt and seed produce the same output (provider permitting). Useful for iterating on prompts while keeping the composition stable.
+
+```yaml
+  - number: 7
+    type: still
+    seed: 42
+    prompt: >
+      A clock face with Roman numerals.
+```
+
+### `variants`
+
+Number of video takes to generate for a clip scene (1–4, default 1). Only meaningful for clips. When set to more than 1, multiple candidate clips are generated so you can pick the best take.
+
+```yaml
+  - number: 2
+    type: clip
+    duration: 6
+    variants: 3
+    prompt: >
+      The hero turns to look behind him.
+```
 
 ---
 
@@ -424,6 +532,37 @@ scenes:
       Medium shot. The guide stands at the far end of the bridge,
       silhouetted against the brightening sky. She holds a wooden
       walking stick and a lantern that still glows faintly.
+
+  - number: 4
+    title: "Bridge close-up"
+    camera: "ECU"
+    type: still
+    duration: 3
+    ken_burns: "zoom_in"
+    seed: 42                           # reproducible generation
+    reference:                         # per-scene reference images
+      - "references/stone_texture.jpg"
+    prompt: >
+      Extreme close-up of ancient stonework on the bridge parapet.
+      Moss in the crevices. Morning dew on the surface.
+
+  - number: 5
+    title: "Chase begins"
+    camera: "CLOSE"
+    type: clip
+    duration: 6
+    source_frame: "output/stills/scene_2.png"  # animate from still
+    characters: [hero]
+    prompt: >
+      The hero breaks into a run across the bridge.
+
+  - number: 6
+    title: "Chase continues"
+    type: clip
+    duration: 5
+    extend_from: "5"                   # continue from previous clip
+    prompt: >
+      The chase continues, the hero leaping over fallen stones.
 ```
 
 ---
@@ -439,6 +578,13 @@ Run `storyboard-gen validate` to check your `project.yaml` for errors before gen
 - Invalid `ken_burns` value
 - Scene references a character ID not defined in `characters`
 - Invalid provider `backend` (must be `google`, `fal`, or `replicate`)
+- Both `model` and `provider` set on the same scene (use one or the other)
+- `reference` is a bare string instead of a list
+- `source_frame` or `last_frame` on a non-clip scene
+- `last_frame` without `source_frame`
+- `extend_from` on a non-clip scene
+- `extend_from` and `source_frame` both set (mutually exclusive)
+- `variants` outside the range 1–4
 
 ## CLI commands
 

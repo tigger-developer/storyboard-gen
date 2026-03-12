@@ -30,8 +30,9 @@ class TestNormaliseUnit:
     def test_normalise_image_unchanged(self):
         assert _normalise_unit("image") == "image"
 
-    def test_normalise_megapixels_to_image(self):
-        assert _normalise_unit("megapixels") == "image"
+    def test_normalise_megapixels_returns_none(self):
+        """Megapixel pricing is resolution-dependent; cannot estimate per-image."""
+        assert _normalise_unit("megapixels") is None
 
     def test_normalise_seconds_to_second(self):
         assert _normalise_unit("seconds") == "second"
@@ -39,8 +40,9 @@ class TestNormaliseUnit:
     def test_normalise_second_unchanged(self):
         assert _normalise_unit("second") == "second"
 
-    def test_normalise_compute_seconds_to_second(self):
-        assert _normalise_unit("compute seconds") == "second"
+    def test_normalise_compute_seconds_returns_none(self):
+        """Compute seconds ≠ video seconds; cannot estimate duration cost."""
+        assert _normalise_unit("compute seconds") is None
 
     def test_normalise_unknown_returns_as_is(self):
         assert _normalise_unit("tokens") == "tokens"
@@ -321,6 +323,54 @@ class TestFetchPrice:
         result = fetch_price("fal-ai/flux-general")
 
         # Assert
+        assert result is None
+
+    def test_fal_api_megapixel_unit_returns_none(self, monkeypatch):
+        """FAL API returning megapixel pricing is treated as unavailable."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        from storyboard_gen.pricing import _price_cache
+
+        _price_cache.clear()
+        response_data = {
+            "prices": [
+                {
+                    "endpoint_id": "fal-ai/flux-2/turbo",
+                    "unit_price": 0.008,
+                    "unit": "megapixels",
+                    "currency": "USD",
+                }
+            ],
+        }
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+            result = fetch_price("fal-ai/flux-2/turbo")
+
+        assert result is None
+
+    def test_fal_api_compute_seconds_unit_returns_none(self, monkeypatch):
+        """FAL API returning compute-second pricing is treated as unavailable."""
+        # Arrange
+        monkeypatch.setenv("FAL_KEY", "test-key")
+        from storyboard_gen.pricing import _price_cache
+
+        _price_cache.clear()
+        response_data = {
+            "prices": [
+                {
+                    "endpoint_id": "fal-ai/wan/v1/text-to-video",
+                    "unit_price": 0.00017,
+                    "unit": "compute seconds",
+                    "currency": "USD",
+                }
+            ],
+        }
+
+        with patch("storyboard_gen.pricing.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_response(response_data)
+            result = fetch_price("fal-ai/wan/v1/text-to-video")
+
         assert result is None
 
     def test_fal_api_network_error_returns_none(self, monkeypatch):
