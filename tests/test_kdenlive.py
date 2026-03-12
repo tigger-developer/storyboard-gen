@@ -824,13 +824,15 @@ class TestAudioProducer:
         output_dir = project_dir / "output"
         mlt = _build_mlt(project, output_dir, 30, None)
 
-        # Assert
+        # Assert — no producer should have audio-only video_index=-1
+        # Still producers may have kdenlive:clip_type=2 (image), which is not audio
         for producer in mlt.findall("producer"):
             pid = producer.get("id")
             if pid == "black_track":
                 continue
             assert _get_prop(producer, "video_index") is None
-            assert _get_prop(producer, "kdenlive:clip_type") is None
+            clip_type = _get_prop(producer, "kdenlive:clip_type")
+            assert clip_type != "1"  # 1 = audio; 2 = image is acceptable
 
 
 class TestZeroDurationScene:
@@ -1044,7 +1046,7 @@ class TestSubtitleTrack:
         assert _get_prop(filt, "av.alpha") == "1"
 
     def test_subtitle_filter_filename_is_ass(self, tmp_path):
-        """Subtitle filter av.filename should reference the ASS file, not the input (#89)."""
+        """Subtitle filter av.filename should reference the ASS file as a relative path (#89, #91)."""
         # Arrange — _build_mlt always receives a pre-converted ASS path
         ass_file = tmp_path / "test.ass"
         ass_file.write_text(
@@ -1056,11 +1058,12 @@ class TestSubtitleTrack:
         # Act
         mlt = self._build(tmp_path, subtitles_path=ass_file)
 
-        # Assert
+        # Assert — relative filename only (no path separators)
         seq = mlt.find("tractor[@id='sequence_tractor']")
         filt = seq.find("filter[@id='subtitle_filter']")
         filename = _get_prop(filt, "av.filename")
         assert filename.endswith(".ass")
+        assert "/" not in filename
 
     def test_subtitle_filter_is_child_of_sequence_tractor(self, tmp_path):
         # Arrange
@@ -1101,7 +1104,7 @@ class TestSubtitleTrack:
         assert "Hello" in content
 
     def test_subtitles_list_property_present(self, tmp_path):
-        """Sequence tractor must have subtitlesList JSON property (#89)."""
+        """Sequence tractor must have subtitlesList JSON property with relative path (#89, #91)."""
         # Arrange — _build_mlt always receives a pre-converted ASS path
         ass_file = tmp_path / "test.ass"
         ass_file.write_text(
@@ -1124,6 +1127,7 @@ class TestSubtitleTrack:
         assert subs_list[0]["id"] == 0
         assert subs_list[0]["name"] == "Subtitles"
         assert subs_list[0]["file"].endswith(".ass")
+        assert "/" not in subs_list[0]["file"]
 
     def test_hide_subtitle_property(self, tmp_path):
         """Sequence tractor must have hidesubtitle=0 when subtitles present (#89)."""
@@ -1189,6 +1193,299 @@ class TestSubtitleTrack:
         expected_ass = Path(str(result) + ".ass")
         assert expected_ass.exists()
         assert expected_ass.read_text() == ass_content
+
+
+class TestKdenliveStructuralAlignment:
+    """Tests for structural alignment with native Kdenlive projects (#91).
+
+    These tests verify properties that Kdenlive expects on transitions,
+    filters, producers, and tractors based on comparison with a reference
+    project created natively in Kdenlive.
+    """
+
+    def _build(self, tmp_path, subtitles_path=None, audio_path=None, **kwargs):
+        """Build an MLT document from a test project."""
+        project_dir = _make_project_dir(tmp_path, **kwargs)
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+        return _build_mlt(
+            project, output_dir, 30, audio_path, subtitles_path=subtitles_path
+        )
+
+    def _find_producer(self, mlt, scene_number):
+        """Find a producer element by scene number."""
+        return mlt.find(f"producer[@id='producer_{scene_number}']")
+
+    # --- Item 1: kdenlive_id on transitions ---
+
+    def test_mix_transition_has_kdenlive_id(self, tmp_path):
+        """Internal mix transitions must have kdenlive_id=mix (#91 item 1)."""
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+        transitions = video_tractor.findall("transition")
+        mix = [t for t in transitions if _get_prop(t, "mlt_service") == "mix"]
+
+        # Assert
+        assert len(mix) == 1
+        assert _get_prop(mix[0], "kdenlive_id") == "mix"
+
+    def test_qtblend_transition_has_kdenlive_id(self, tmp_path):
+        """Internal qtblend transitions must have kdenlive_id=qtblend (#91 item 1)."""
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+        transitions = video_tractor.findall("transition")
+        qtblend = [t for t in transitions if _get_prop(t, "mlt_service") == "qtblend"]
+
+        # Assert
+        assert len(qtblend) == 1
+        assert _get_prop(qtblend[0], "kdenlive_id") == "qtblend"
+
+    # --- Item 2: qtblend compositing properties ---
+
+    def test_qtblend_transition_has_compositing_properties(self, tmp_path):
+        """Internal qtblend transitions need compositing=0, distort=0, rotate_center=0 (#91 item 2)."""
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+        transitions = video_tractor.findall("transition")
+        qtblend = [t for t in transitions if _get_prop(t, "mlt_service") == "qtblend"]
+
+        # Assert
+        assert len(qtblend) == 1
+        assert _get_prop(qtblend[0], "compositing") == "0"
+        assert _get_prop(qtblend[0], "distort") == "0"
+        assert _get_prop(qtblend[0], "rotate_center") == "0"
+
+    # --- Item 3: relative subtitle paths ---
+
+    def test_subtitle_filter_filename_is_relative(self, tmp_path):
+        """Subtitle av.filename must be relative (just filename) for portability (#91 item 3)."""
+        # Arrange
+        ass_file = tmp_path / "test.ass"
+        ass_file.write_text(
+            "[Script Info]\n\n[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Hello\n"
+        )
+
+        # Act
+        mlt = self._build(tmp_path, subtitles_path=ass_file)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filt = seq.find("filter[@id='subtitle_filter']")
+        filename = _get_prop(filt, "av.filename")
+        assert "/" not in filename
+        assert filename == "test.ass"
+
+    def test_subtitles_list_file_is_relative(self, tmp_path):
+        """subtitlesList JSON file field must be relative (#91 item 3)."""
+        # Arrange
+        ass_file = tmp_path / "test.ass"
+        ass_file.write_text(
+            "[Script Info]\n\n[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Hello\n"
+        )
+
+        # Act
+        mlt = self._build(tmp_path, subtitles_path=ass_file)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        subs_list_raw = _get_prop(seq, "kdenlive:sequenceproperties.subtitlesList")
+        subs_list = json.loads(subs_list_raw)
+        assert "/" not in subs_list[0]["file"]
+        assert subs_list[0]["file"] == "test.ass"
+
+    # --- Item 4: volume and panner filters ---
+
+    def test_sequence_tractor_has_volume_filter(self, tmp_path):
+        """Sequence tractor must have a disabled volume filter (#91 item 4)."""
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filters = seq.findall("filter")
+        volume = [f for f in filters if _get_prop(f, "mlt_service") == "volume"]
+        assert len(volume) == 1
+        assert _get_prop(volume[0], "internal_added") == "237"
+        assert _get_prop(volume[0], "disable") == "1"
+        assert _get_prop(volume[0], "window") == "75"
+        assert _get_prop(volume[0], "max_gain") == "20dB"
+
+    def test_sequence_tractor_has_panner_filter(self, tmp_path):
+        """Sequence tractor must have a disabled panner filter (#91 item 4)."""
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert
+        seq = mlt.find("tractor[@id='sequence_tractor']")
+        filters = seq.findall("filter")
+        panner = [f for f in filters if _get_prop(f, "mlt_service") == "panner"]
+        assert len(panner) == 1
+        assert _get_prop(panner[0], "internal_added") == "237"
+        assert _get_prop(panner[0], "disable") == "1"
+        assert _get_prop(panner[0], "start") == "0.5"
+
+    # --- Item 5: rotate_center on Ken Burns filters ---
+
+    def test_ken_burns_filter_has_rotate_center(self, tmp_path):
+        """Ken Burns qtblend filters must have rotate_center=0 (#91 item 5)."""
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Zoom In",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "zoom_in",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+        transform = None
+        for f in producer.findall("filter"):
+            if _get_prop(f, "mlt_service") == "qtblend":
+                transform = f
+                break
+
+        # Assert
+        assert transform is not None
+        assert _get_prop(transform, "rotate_center") == "0"
+
+    # --- Item 6: still producer properties ---
+
+    def test_still_producer_has_eof_pause(self, tmp_path):
+        """Still image producers must have eof=pause (#91 item 6)."""
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Still",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "zoom_in",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+
+        # Assert
+        assert _get_prop(producer, "eof") == "pause"
+
+    def test_still_producer_has_qimage_service(self, tmp_path):
+        """Still image producers must have mlt_service=qimage (#91 item 6)."""
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Still",
+                "type": "still",
+                "duration": 5,
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+
+        # Assert
+        assert _get_prop(producer, "mlt_service") == "qimage"
+
+    def test_still_producer_has_clip_type_image(self, tmp_path):
+        """Still image producers must have kdenlive:clip_type=2 (#91 item 6)."""
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Still",
+                "type": "still",
+                "duration": 5,
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+
+        # Assert
+        assert _get_prop(producer, "kdenlive:clip_type") == "2"
+
+    def test_clip_producer_has_eof_pause(self, tmp_path):
+        """Clip (non-still) producers must also have eof=pause (#91 item 6)."""
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Clip",
+                "type": "clip",
+                "duration": 5,
+                "prompt": "Action.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+
+        # Assert
+        assert _get_prop(producer, "eof") == "pause"
+
+    def test_clip_producer_no_qimage_service(self, tmp_path):
+        """Clip producers must NOT have mlt_service=qimage (#91 item 6)."""
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Clip",
+                "type": "clip",
+                "duration": 5,
+                "prompt": "Action.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+
+        # Assert
+        assert _get_prop(producer, "mlt_service") is None
+
+    # --- Item 7: track tractor UI metadata ---
+
+    def test_video_tractor_has_track_name(self, tmp_path):
+        """Video tractor must have kdenlive:track_name=Video (#91 item 7)."""
+        # Arrange & Act
+        mlt = self._build(tmp_path)
+
+        # Assert
+        video_tractor = mlt.find("tractor[@id='video_tractor']")
+        assert _get_prop(video_tractor, "kdenlive:track_name") == "Video"
+
+    def test_audio_tractor_has_track_name(self, tmp_path):
+        """Audio tractor must have kdenlive:track_name=Audio (#91 item 7)."""
+        # Arrange
+        audio_file = tmp_path / "audio.m4a"
+        audio_file.write_bytes(b"fake-audio")
+
+        # Act
+        mlt = self._build(tmp_path, audio_path=audio_file)
+
+        # Assert
+        audio_tractor = mlt.find("tractor[@id='audio_tractor']")
+        assert _get_prop(audio_tractor, "kdenlive:track_name") == "Audio"
 
 
 class TestProbeAudio:

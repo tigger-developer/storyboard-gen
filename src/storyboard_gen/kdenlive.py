@@ -247,8 +247,11 @@ def _add_scene_producer(
     _set_prop(producer, "resource", str(path))
     if length_frames > 0:
         _set_prop(producer, "length", str(length_frames))
+    _set_prop(producer, "eof", "pause")
     if is_still:
         _set_prop(producer, "loop", "1")
+        _set_prop(producer, "mlt_service", "qimage")
+        _set_prop(producer, "kdenlive:clip_type", "2")
     _set_prop(producer, "kdenlive:id", str(kdenlive_id))
     _set_prop(producer, "kdenlive:clipname", clip_name)
     return producer
@@ -273,6 +276,7 @@ def _build_video_track(mlt: ET.Element, producers: list[ProducerInfo]) -> None:
 
     # Video track tractor
     tractor = ET.SubElement(mlt, "tractor", id="video_tractor")
+    _set_prop(tractor, "kdenlive:track_name", "Video")
     ET.SubElement(tractor, "track", hide="audio", producer="playlist0")
     ET.SubElement(tractor, "track", hide="audio", producer="playlist1")
 
@@ -296,6 +300,7 @@ def _build_audio_track(mlt: ET.Element, audio_info: ProducerInfo) -> None:
 
     tractor = ET.SubElement(mlt, "tractor", id="audio_tractor")
     _set_prop(tractor, "kdenlive:audio_track", "1")
+    _set_prop(tractor, "kdenlive:track_name", "Audio")
     ET.SubElement(tractor, "track", hide="video", producer="audio_playlist0")
     ET.SubElement(tractor, "track", hide="video", producer="audio_playlist1")
 
@@ -345,18 +350,32 @@ def _build_sequence_tractor(
     # qtblend transition for video compositing over black
     _add_internal_qtblend(tractor, "seq_blend_video", a_track=0, b_track=track_index)
 
+    # Internal audio filters expected by Kdenlive's mixing UI
+    vol_filt = ET.SubElement(tractor, "filter")
+    _set_prop(vol_filt, "window", "75")
+    _set_prop(vol_filt, "max_gain", "20dB")
+    _set_prop(vol_filt, "channel_mask", "-1")
+    _set_prop(vol_filt, "mlt_service", "volume")
+    _set_prop(vol_filt, "internal_added", "237")
+    _set_prop(vol_filt, "disable", "1")
+
+    pan_filt = ET.SubElement(tractor, "filter")
+    _set_prop(pan_filt, "channel", "-1")
+    _set_prop(pan_filt, "mlt_service", "panner")
+    _set_prop(pan_filt, "internal_added", "237")
+    _set_prop(pan_filt, "start", "0.5")
+    _set_prop(pan_filt, "disable", "1")
+
     # Kdenlive native subtitle track (if configured)
     if subtitles_path is not None:
         filt = ET.SubElement(tractor, "filter", id="subtitle_filter")
         _set_prop(filt, "mlt_service", "avfilter.subtitles")
         _set_prop(filt, "internal_added", "237")
         _set_prop(filt, "av.alpha", "1")
-        _set_prop(filt, "av.filename", str(subtitles_path.resolve()))
+        _set_prop(filt, "av.filename", subtitles_path.name)
 
         # Subtitle track metadata required by Kdenlive
-        subs_list = [
-            {"file": str(subtitles_path.resolve()), "id": 0, "name": "Subtitles"}
-        ]
+        subs_list = [{"file": subtitles_path.name, "id": 0, "name": "Subtitles"}]
         _set_prop(
             tractor,
             "kdenlive:sequenceproperties.subtitlesList",
@@ -526,6 +545,7 @@ def _add_ken_burns_filter(
 
     rect_value = f"0={start};{last_frame}={end}"
     filt = ET.SubElement(producer, "filter")
+    _set_prop(filt, "rotate_center", "0")
     _set_prop(filt, "mlt_service", "qtblend")
     _set_prop(filt, "kdenlive_id", "qtblend")
     _set_prop(filt, "rect", rect_value)
@@ -542,6 +562,7 @@ def _add_internal_mix(
     _set_prop(transition, "a_track", str(a_track))
     _set_prop(transition, "b_track", str(b_track))
     _set_prop(transition, "mlt_service", "mix")
+    _set_prop(transition, "kdenlive_id", "mix")
     _set_prop(transition, "internal_added", "237")
     _set_prop(transition, "always_active", "1")
     _set_prop(transition, "accepts_blanks", "1")
@@ -556,6 +577,10 @@ def _add_internal_qtblend(
     _set_prop(transition, "a_track", str(a_track))
     _set_prop(transition, "b_track", str(b_track))
     _set_prop(transition, "mlt_service", "qtblend")
+    _set_prop(transition, "kdenlive_id", "qtblend")
+    _set_prop(transition, "compositing", "0")
+    _set_prop(transition, "distort", "0")
+    _set_prop(transition, "rotate_center", "0")
     _set_prop(transition, "internal_added", "237")
     _set_prop(transition, "always_active", "1")
 
