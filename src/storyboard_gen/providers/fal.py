@@ -909,7 +909,9 @@ class FalProvider(ImageProvider):
         try:
             result = fal_client.subscribe(endpoint, arguments=arguments)
         except Exception as exc:
-            logger.error("FAL still API error for %s: %s", self.model, exc, exc_info=True)
+            logger.error(
+                "FAL still API error for %s: %s", self.model, exc, exc_info=True
+            )
             raise RuntimeError(f"FAL API error: {clean_api_error(str(exc))}") from exc
 
         images = result.get("images", [])
@@ -1320,7 +1322,9 @@ class FalProvider(ImageProvider):
         try:
             result = fal_client.subscribe(endpoint, arguments=arguments)
         except Exception as exc:
-            logger.error("FAL clip API error for %s: %s", self.model, exc, exc_info=True)
+            logger.error(
+                "FAL clip API error for %s: %s", self.model, exc, exc_info=True
+            )
             raise RuntimeError(f"FAL API error: {clean_api_error(str(exc))}") from exc
 
         video = result.get("video")

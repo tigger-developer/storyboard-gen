@@ -980,7 +980,9 @@ class TestCliRuntimeErrorHandling:
         """RuntimeError message should appear in log output without traceback."""
         from storyboard_gen.cli import main
 
-        mock_dispatch.side_effect = RuntimeError("Video generation timed out after 300s")
+        mock_dispatch.side_effect = RuntimeError(
+            "Video generation timed out after 300s"
+        )
 
         with caplog.at_level(logging.ERROR):
             main(["validate"])

@@ -5,11 +5,10 @@ import argparse
 import logging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 from dotenv import load_dotenv
 
 from storyboard_gen import __version__
+from storyboard_gen.assemble import assemble
 from storyboard_gen.config import ConfigError, load_project
 from storyboard_gen.generate import (
     check_reference_warnings,
@@ -17,15 +16,16 @@ from storyboard_gen.generate import (
     generate_still,
     resolve_provider_config,
 )
-from storyboard_gen.ken_burns import apply_ken_burns
-from storyboard_gen.assemble import assemble
 from storyboard_gen.kdenlive import generate_kdenlive
+from storyboard_gen.ken_burns import apply_ken_burns
 from storyboard_gen.models import CAMERA_PROMPTS, format_scene_number
 from storyboard_gen.pricing import (
     estimate_scene_cost,
     fetch_price,
     format_cost_line,
 )
+
+logger = logging.getLogger(__name__)
 
 
 HELP_EPILOG = """\
