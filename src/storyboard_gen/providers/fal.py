@@ -672,6 +672,12 @@ class FalProvider(ImageProvider):
                 "num_images": 1,
                 "output_format": "png",
             }
+        elif "flux-kontext" in self.model.lower():
+            # Kontext Dev (fal-ai/flux-kontext/dev) is i2i only
+            raise ValueError(
+                f"{self.model} requires a reference image "
+                "(image-to-image only, no text-to-image mode)"
+            )
         else:
             # Text-to-image: append /text-to-image, use image_size preset
             endpoint = self.model.rstrip("/") + "/text-to-image"

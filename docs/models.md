@@ -1,4 +1,4 @@
-<!-- Version: 3.4 | Last updated: 2026-03-14 -->
+<!-- Version: 3.5 | Last updated: 2026-03-14 -->
 
 # Model Reference
 
@@ -146,9 +146,9 @@ Instant Character takes a single reference image via `image_url`. If multiple re
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
-| `fal-ai/flux-pro/kontext` | Kontext | Yes (`image_url` for i2i) | Auto-routes: image-to-image with reference, text-to-image without. |
-| `fal-ai/flux-pro/kontext/max` | Kontext Max | Yes (`image_url` for i2i) | Higher quality variant. Same routing as Kontext. |
-| `fal-ai/flux-pro/kontext/dev` | Kontext Dev | Yes (`image_url` for i2i) | Development variant. Same routing as Kontext. |
+| `fal-ai/flux-pro/kontext` | Kontext Pro | Yes (`image_url` for i2i) | Auto-routes: image-to-image with reference, text-to-image without. |
+| `fal-ai/flux-pro/kontext/max` | Kontext Max | Yes (`image_url` for i2i) | Higher quality variant. Same routing as Kontext Pro. |
+| `fal-ai/flux-kontext/dev` | Kontext Dev | Yes (`image_url`, **required**) | Image-to-image only. Reference image is required — no text-to-image mode. Non-commercial licence. |
 
 **Options:** `seed` (int), `guidance_scale` (float).
 
@@ -465,7 +465,7 @@ storyboard-gen checks for reference/model mismatches and logs warnings. These wa
 | Character from single ref | `fal-ai/instant-character` (FAL) | Purpose-built for character consistency |
 | Multi-character consistency | `fal-ai/kling-image/o1` (FAL) | `@ImageN` mapping + `image_urls` |
 | Multi-ref, implicit mapping | `fal-ai/flux-pro/kontext/max/multi` (FAL) | Model infers associations |
-| Style transfer from a reference | `fal-ai/flux-pro/kontext` (FAL) | Purpose-built for image-to-image |
+| Style transfer from a reference | `fal-ai/flux-pro/kontext` (FAL) | Purpose-built for image-to-image (also supports text-to-image) |
 | Character + style refs | `fal-ai/ideogram/character` (FAL) | Dual-channel: identity + aesthetic |
 | Typography | `fal-ai/ideogram/v3` (FAL) | Best text rendering in images |
 | Design with colour control | `fal-ai/recraft/v4/text-to-image` (FAL) | RGB palette control |
