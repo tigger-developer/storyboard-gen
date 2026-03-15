@@ -2460,6 +2460,26 @@ class TestStillHandlerRegistry:
         handler = _resolve_still_handler("fal-ai/some-unknown-model")
         assert isinstance(handler, FluxHandler)
 
+    def test_resolve_handler_flux2_flash_returns_flux2_handler(self):
+        handler = _resolve_still_handler("fal-ai/flux-2/flash")
+        assert isinstance(handler, Flux2Handler)
+
+    def test_resolve_handler_flux2_flex_returns_flux2_handler(self):
+        handler = _resolve_still_handler("fal-ai/flux-2-flex")
+        assert isinstance(handler, Flux2Handler)
+
+    def test_resolve_handler_qwen_image_returns_edit_handler(self):
+        handler = _resolve_still_handler("fal-ai/qwen-image-2512")
+        assert isinstance(handler, EditHandler)
+
+    def test_resolve_handler_glm_image_returns_edit_handler(self):
+        handler = _resolve_still_handler("fal-ai/glm-image")
+        assert isinstance(handler, EditHandler)
+
+    def test_resolve_handler_nano_banana_returns_edit_handler(self):
+        handler = _resolve_still_handler("fal-ai/nano-banana-2")
+        assert isinstance(handler, EditHandler)
+
 
 class TestStillHandlerMatch:
     """Tests for individual handler match methods."""

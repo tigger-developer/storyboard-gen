@@ -490,6 +490,9 @@ _STILL_HANDLERS: list[StillHandler] = [
     EditHandler(
         ["recraft"], safety={"enable_safety_checker": False}, supports_edit=False
     ),
+    EditHandler(["qwen-image"], supports_edit=False),
+    EditHandler(["glm-image"], supports_edit=False),
+    EditHandler(["nano-banana"], sizing="aspect_ratio", supports_edit=False),
     InstantCharacterHandler(),
     Flux2ProHandler(),
     Flux2Handler(),

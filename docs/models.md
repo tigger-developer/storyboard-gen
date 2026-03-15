@@ -1,4 +1,4 @@
-<!-- Version: 3.5 | Last updated: 2026-03-14 -->
+<!-- Version: 3.6 | Last updated: 2026-03-15 -->
 
 # Model Reference
 
@@ -111,6 +111,8 @@ FAL models are accessed via `fal-client`. Requires `FAL_KEY` in `.env`.
 | `fal-ai/flux-2` | Flux 2 | **No** | Base Flux 2 model. Does not support `reference_image_url`. |
 | `fal-ai/flux-2/turbo` | Flux 2 Turbo | **No** | Faster variant. Does not support references. |
 | `fal-ai/flux-2/dev` | Flux 2 Dev | **No** | Development variant. Does not support references. |
+| `fal-ai/flux-2/flash` | Flux 2 Flash | **No** | Fast variant. `image_size` presets. |
+| `fal-ai/flux-2-flex` | Flux 2 Flex | **No** | Flexible variant. `image_size` presets. |
 
 **Options:** `seed` (int), `guidance_scale` (float), `acceleration` (string), `enable_prompt_expansion` (bool), `num_inference_steps` (int).
 
@@ -245,6 +247,30 @@ Hunyuan Image uses `image_size` presets. No reference image support. Supports de
 Recraft uses `image_size` presets. Notable for its colour control parameters.
 
 **Options:** `colors` (list of `{r, g, b}` RGB objects), `background_color` (`{r, g, b}` RGB object).
+
+### Qwen Image (stills) — Alibaba
+
+| Model ID | Name | Price | Reference support | Notes |
+|----------|------|-------|-------------------|-------|
+| `fal-ai/qwen-image-2512` | Qwen Image | TBC | No | `image_size` presets. |
+
+**Options:** `seed` (int), `num_images` (int).
+
+### GLM Image (stills) — Zhipu
+
+| Model ID | Name | Price | Reference support | Notes |
+|----------|------|-------|-------------------|-------|
+| `fal-ai/glm-image` | GLM Image | TBC | No | `image_size` presets. |
+
+**Options:** `seed` (int), `num_images` (int).
+
+### Nano Banana (stills)
+
+| Model ID | Name | Price | Reference support | Notes |
+|----------|------|-------|-------------------|-------|
+| `fal-ai/nano-banana-2` | Nano Banana 2 | TBC | No | Uses raw `aspect_ratio` strings. |
+
+**Options:** `resolution` (`"0.5K"` – `"4K"`), `safety_tolerance` (1–6), `seed` (int).
 
 ### Kling (clips)
 
