@@ -6738,3 +6738,280 @@ class TestEnvEditorDialog:
         assert env_path.exists()
         content = env_path.read_text()
         assert "FAL_KEY=brand-new-key" in content
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Window layout persistence (#119)
+# ---------------------------------------------------------------------------
+
+
+class TestLayoutPersistence:
+    """Test window geometry and splitter state persistence (#119)."""
+
+    def test_settings_has_window_geometry_property(self, qtbot):
+        """AppSettings should expose a window_geometry bytes property."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings._qs.remove("window/geometry")
+
+        # Default is None when not set
+        assert settings.window_geometry is None
+
+    def test_settings_window_geometry_round_trip(self, qtbot):
+        """window_geometry should persist and return bytes."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        data = b"\x01\x02\x03"
+        settings.window_geometry = data
+
+        assert settings.window_geometry == data
+
+        settings._qs.remove("window/geometry")
+
+    def test_settings_has_main_splitter_state(self, qtbot):
+        """AppSettings should expose main_splitter_state bytes property."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings._qs.remove("window/main_splitter")
+
+        assert settings.main_splitter_state is None
+
+    def test_settings_main_splitter_round_trip(self, qtbot):
+        """main_splitter_state should persist and return bytes."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        data = b"\x04\x05\x06"
+        settings.main_splitter_state = data
+
+        assert settings.main_splitter_state == data
+
+        settings._qs.remove("window/main_splitter")
+
+    def test_settings_has_content_splitter_state(self, qtbot):
+        """AppSettings should expose content_splitter_state bytes property."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings._qs.remove("window/content_splitter")
+
+        assert settings.content_splitter_state is None
+
+    def test_settings_content_splitter_round_trip(self, qtbot):
+        """content_splitter_state should persist and return bytes."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        data = b"\x07\x08\x09"
+        settings.content_splitter_state = data
+
+        assert settings.content_splitter_state == data
+
+        settings._qs.remove("window/content_splitter")
+
+    def test_settings_has_console_visible(self, qtbot):
+        """AppSettings should expose console_visible bool property."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings._qs.remove("window/console_visible")
+
+        # Default is False (console hidden by default)
+        assert settings.console_visible is False
+
+    def test_settings_console_visible_round_trip(self, qtbot):
+        """console_visible should persist."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings.console_visible = True
+
+        assert settings.console_visible is True
+
+        settings._qs.remove("window/console_visible")
+
+    def test_settings_has_yaml_editor_visible(self, qtbot):
+        """AppSettings should expose yaml_editor_visible bool property."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings._qs.remove("window/yaml_editor_visible")
+
+        assert settings.yaml_editor_visible is False
+
+    def test_settings_yaml_editor_visible_round_trip(self, qtbot):
+        """yaml_editor_visible should persist."""
+        from storyboard_gen.gui.settings import AppSettings
+
+        settings = AppSettings()
+        settings.yaml_editor_visible = True
+
+        assert settings.yaml_editor_visible is True
+
+        settings._qs.remove("window/yaml_editor_visible")
+
+    def test_close_saves_geometry(self, qtbot, gui_project_dir):
+        """closeEvent should save window geometry to settings."""
+        from PySide6.QtGui import QCloseEvent
+
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Act — close the window
+        event = QCloseEvent()
+        window.closeEvent(event)
+
+        # Assert — geometry saved
+        assert window._settings.window_geometry is not None
+
+        # Cleanup
+        window._settings._qs.remove("window/geometry")
+        window._settings._qs.remove("window/main_splitter")
+        window._settings._qs.remove("window/content_splitter")
+        window._settings._qs.remove("window/console_visible")
+        window._settings._qs.remove("window/yaml_editor_visible")
+
+    def test_close_saves_splitter_states(self, qtbot, gui_project_dir):
+        """closeEvent should save splitter states."""
+        from PySide6.QtGui import QCloseEvent
+
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Act
+        event = QCloseEvent()
+        window.closeEvent(event)
+
+        # Assert
+        assert window._settings.main_splitter_state is not None
+        assert window._settings.content_splitter_state is not None
+
+        # Cleanup
+        window._settings._qs.remove("window/geometry")
+        window._settings._qs.remove("window/main_splitter")
+        window._settings._qs.remove("window/content_splitter")
+        window._settings._qs.remove("window/console_visible")
+        window._settings._qs.remove("window/yaml_editor_visible")
+
+    def test_close_saves_panel_visibility(self, qtbot, gui_project_dir):
+        """closeEvent should save console and yaml editor visibility."""
+        from PySide6.QtGui import QCloseEvent
+
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Show console and yaml editor
+        window.console.setVisible(True)
+        window.yaml_editor.setVisible(True)
+
+        # Act
+        event = QCloseEvent()
+        window.closeEvent(event)
+
+        # Assert
+        assert window._settings.console_visible is True
+        assert window._settings.yaml_editor_visible is True
+
+        # Cleanup
+        window._settings._qs.remove("window/console_visible")
+        window._settings._qs.remove("window/yaml_editor_visible")
+        window._settings._qs.remove("window/geometry")
+        window._settings._qs.remove("window/main_splitter")
+        window._settings._qs.remove("window/content_splitter")
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Content splitter minimum height (#119)
+# ---------------------------------------------------------------------------
+
+
+class TestContentSplitterSizing:
+    """Test that the content splitter allows the console to grow (#119)."""
+
+    def test_content_splitter_has_minimum_height(self, qtbot):
+        """Content splitter should have an explicit minimum height."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert window._content_splitter.minimumHeight() <= 100
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: YAML viewer closes on save (#119)
+# ---------------------------------------------------------------------------
+
+
+class TestYamlViewerCloseOnSave:
+    """Test that the YAML viewer window closes after a successful save (#119)."""
+
+    def test_yaml_viewer_closes_on_form_saved(self, qtbot, gui_project_dir):
+        """YamlViewer should close when the form emits saved."""
+        from storyboard_gen.gui.yaml_viewer import YamlViewer
+
+        viewer = YamlViewer()
+        qtbot.addWidget(viewer)
+        viewer.load_project(gui_project_dir)
+        viewer.show()
+
+        # Verify it's visible first
+        assert viewer.isVisible()
+
+        # Act — simulate form save
+        viewer._on_form_saved()
+
+        # Assert — viewer should be closed
+        assert not viewer.isVisible()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: .env editor monospace and width (#119)
+# ---------------------------------------------------------------------------
+
+
+class TestEnvEditorStyling:
+    """Test that .env editor fields are monospaced and wide enough (#119)."""
+
+    def test_env_editor_fields_are_monospaced(self, qtbot, tmp_path):
+        """All QLineEdit fields should use a monospace font."""
+        from PySide6.QtGui import QFont
+
+        from storyboard_gen.gui.env_editor import EnvEditorDialog
+
+        env_path = tmp_path / ".env"
+        env_path.write_text("")
+        dialog = EnvEditorDialog(env_path=env_path)
+        qtbot.addWidget(dialog)
+
+        for key, field in dialog._fields.items():
+            style_hint = field.font().styleHint()
+            assert style_hint == QFont.StyleHint.Monospace, (
+                f"Field {key} should be monospaced"
+            )
+
+    def test_env_editor_fields_have_minimum_width(self, qtbot, tmp_path):
+        """All QLineEdit fields should have a minimum width for API keys."""
+        from storyboard_gen.gui.env_editor import EnvEditorDialog
+
+        env_path = tmp_path / ".env"
+        env_path.write_text("")
+        dialog = EnvEditorDialog(env_path=env_path)
+        qtbot.addWidget(dialog)
+
+        for key, field in dialog._fields.items():
+            assert field.minimumWidth() >= 400, (
+                f"Field {key} minimum width should be >= 400"
+            )

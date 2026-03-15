@@ -3,6 +3,7 @@
 
 from pathlib import Path
 
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -76,11 +77,17 @@ class EnvEditorDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
+        # Monospace font for API keys and credentials (#119)
+        mono_font = QFont("Menlo, Consolas, monospace")
+        mono_font.setStyleHint(QFont.StyleHint.Monospace)
+
         for group_name, keys in _ENV_GROUPS:
             group = QGroupBox(group_name)
             form = QFormLayout()
             for env_key, label in keys:
                 field = QLineEdit()
+                field.setFont(mono_font)
+                field.setMinimumWidth(400)
                 field.setText(values.get(env_key, ""))
                 field.setPlaceholderText(f"Enter {label.lower()}")
                 form.addRow(f"{label}:", field)

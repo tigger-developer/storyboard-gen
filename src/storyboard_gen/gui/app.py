@@ -101,6 +101,9 @@ class MainWindow(QMainWindow):
         # YAML editor hidden by default (toggleable like console)
         self.yaml_editor.setVisible(False)
 
+        # Allow the content area to shrink so the console can grow (#119)
+        self._content_splitter.setMinimumHeight(100)
+
         # Content + console stacked vertically (console hidden by default)
         self._main_splitter = QSplitter(Qt.Orientation.Vertical)
         self._main_splitter.addWidget(self._content_splitter)
@@ -768,7 +771,16 @@ class MainWindow(QMainWindow):
         self._update_progress()
 
     def closeEvent(self, event) -> None:
-        """Wait for running workers before closing to prevent QThread crashes."""
+        """Save window layout and wait for workers before closing."""
+        # Persist window geometry and splitter states (#119)
+        self._settings.window_geometry = bytes(self.saveGeometry())
+        self._settings.main_splitter_state = bytes(self._main_splitter.saveState())
+        self._settings.content_splitter_state = bytes(
+            self._content_splitter.saveState()
+        )
+        self._settings.console_visible = not self.console.isHidden()
+        self._settings.yaml_editor_visible = not self.yaml_editor.isHidden()
+
         if self._workers:
             self._stop_all_generation()
             for worker in list(self._workers.values()):
@@ -961,9 +973,33 @@ class MainWindow(QMainWindow):
     def restore_session(self) -> None:
         """Restore session state from persistent settings.
 
-        Reopens the last project if the directory still exists.
+        Restores window geometry, splitter positions, panel visibility,
+        and reopens the last project if the directory still exists.
         Called after the window is shown.
         """
+        # Restore window layout (#119)
+        geom = self._settings.window_geometry
+        if geom is not None:
+            from PySide6.QtCore import QByteArray
+
+            self.restoreGeometry(QByteArray(geom))
+        main_state = self._settings.main_splitter_state
+        if main_state is not None:
+            from PySide6.QtCore import QByteArray
+
+            self._main_splitter.restoreState(QByteArray(main_state))
+        content_state = self._settings.content_splitter_state
+        if content_state is not None:
+            from PySide6.QtCore import QByteArray
+
+            self._content_splitter.restoreState(QByteArray(content_state))
+
+        # Restore panel visibility
+        if self._settings.console_visible:
+            self.console.setVisible(True)
+        if self._settings.yaml_editor_visible:
+            self.yaml_editor.setVisible(True)
+
         last_project = self._settings.last_project
         if last_project:
             project_path = Path(last_project)

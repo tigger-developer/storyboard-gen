@@ -1,5 +1,5 @@
 # ABOUTME: Persistent GUI settings backed by QSettings.
-# ABOUTME: Stores editor font size, last project path, and last browsed directory.
+# ABOUTME: Stores editor font size, last project path, window layout, and last browsed directory.
 
 from PySide6.QtCore import QSettings
 
@@ -55,3 +55,66 @@ class AppSettings:
     @last_directory.setter
     def last_directory(self, path: str) -> None:
         self._qs.setValue("session/last_directory", path)
+
+    # --- Window layout persistence ---
+
+    @property
+    def window_geometry(self) -> bytes | None:
+        """Saved window geometry (position, size, maximized state)."""
+        val = self._qs.value("window/geometry")
+        if val is None:
+            return None
+        return bytes(val)
+
+    @window_geometry.setter
+    def window_geometry(self, data: bytes) -> None:
+        self._qs.setValue("window/geometry", data)
+
+    @property
+    def main_splitter_state(self) -> bytes | None:
+        """Saved main (vertical) splitter state."""
+        val = self._qs.value("window/main_splitter")
+        if val is None:
+            return None
+        return bytes(val)
+
+    @main_splitter_state.setter
+    def main_splitter_state(self, data: bytes) -> None:
+        self._qs.setValue("window/main_splitter", data)
+
+    @property
+    def content_splitter_state(self) -> bytes | None:
+        """Saved content (horizontal) splitter state."""
+        val = self._qs.value("window/content_splitter")
+        if val is None:
+            return None
+        return bytes(val)
+
+    @content_splitter_state.setter
+    def content_splitter_state(self, data: bytes) -> None:
+        self._qs.setValue("window/content_splitter", data)
+
+    @property
+    def console_visible(self) -> bool:
+        """Whether the console panel was visible when the window was last closed."""
+        val = self._qs.value("window/console_visible", False)
+        # QSettings may return string "true"/"false" on some platforms
+        if isinstance(val, str):
+            return val.lower() == "true"
+        return bool(val)
+
+    @console_visible.setter
+    def console_visible(self, visible: bool) -> None:
+        self._qs.setValue("window/console_visible", visible)
+
+    @property
+    def yaml_editor_visible(self) -> bool:
+        """Whether the YAML editor pane was visible when the window was last closed."""
+        val = self._qs.value("window/yaml_editor_visible", False)
+        if isinstance(val, str):
+            return val.lower() == "true"
+        return bool(val)
+
+    @yaml_editor_visible.setter
+    def yaml_editor_visible(self, visible: bool) -> None:
+        self._qs.setValue("window/yaml_editor_visible", visible)

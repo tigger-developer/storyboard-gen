@@ -160,11 +160,12 @@ class YamlViewer(QWidget):
         self.settings_form.load_project(project_dir)
 
     def _on_form_saved(self) -> None:
-        """Refresh YAML text after form saves and emit project_saved."""
+        """Refresh YAML text after form saves, emit project_saved, and close."""
         if self._project_dir:
             yaml_path = self._project_dir / "project.yaml"
             self.load_file(yaml_path)
         self.project_saved.emit()
+        self.close()
 
     def set_content(self, text: str) -> None:
         """Display YAML content from a string.
