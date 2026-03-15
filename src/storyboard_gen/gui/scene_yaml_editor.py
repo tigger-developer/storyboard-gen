@@ -1,14 +1,16 @@
 # ABOUTME: Editable per-scene YAML editor for storyboard-gen GUI.
-# ABOUTME: Extracts/replaces scene blocks from project.yaml preserving formatting.
+# ABOUTME: Extracts/replaces scene blocks from project.yaml with model override selector.
 
 import logging
 import re
 from pathlib import Path
 
 import yaml
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QComboBox,
+    QCompleter,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -18,8 +20,8 @@ from PySide6.QtWidgets import (
 )
 
 from storyboard_gen.gui.settings import MAX_FONT_SIZE, MIN_FONT_SIZE
-
 from storyboard_gen.gui.yaml_viewer import YamlHighlighter
+from storyboard_gen.model_registry import get_all_models
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +227,36 @@ class SceneYamlEditor(QWidget):
         self._shortcut_zoom_out = QShortcut(QKeySequence("Ctrl+-"), self)
         self._shortcut_zoom_out.activated.connect(self._decrease_font)
 
+        # --- Model override bar ---
+        model_bar = QHBoxLayout()
+        model_bar.addWidget(QLabel("Model:"))
+
+        self._model_combo = QComboBox()
+        self._model_combo.setEditable(True)
+        self._model_combo.setPlaceholderText("Project default")
+        all_model_ids = sorted(get_all_models().keys())
+        self._model_combo.addItems(all_model_ids)
+        self._model_combo.setCurrentText("")
+
+        completer = QCompleter(all_model_ids, self)
+        completer.setFilterMode(Qt.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self._model_combo.setCompleter(completer)
+        self._model_combo.currentTextChanged.connect(self._on_model_text_changed)
+
+        model_bar.addWidget(self._model_combo, stretch=1)
+
+        self._backend_label = QLabel("")
+        self._backend_label.setStyleSheet("color: #888; padding-left: 6px;")
+        self._backend_label.setFixedWidth(80)
+        model_bar.addWidget(self._backend_label)
+
+        self._clear_model_btn = QPushButton("Clear")
+        self._clear_model_btn.setFixedWidth(50)
+        self._clear_model_btn.setToolTip("Remove scene-level model override")
+        self._clear_model_btn.clicked.connect(self._on_clear_model)
+        model_bar.addWidget(self._clear_model_btn)
+
         # Save button and status label
         self._save_btn = QPushButton("Save")
         self._save_btn.setFixedWidth(80)
@@ -253,6 +285,7 @@ class SceneYamlEditor(QWidget):
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(model_bar)
         layout.addWidget(self.text_edit)
         layout.addLayout(bottom_bar)
         self.setLayout(layout)
@@ -304,6 +337,9 @@ class SceneYamlEditor(QWidget):
         self._original_text = block
         self._save_btn.setEnabled(True)
 
+        # Populate model combo from scene YAML (#120)
+        self._sync_model_combo_from_yaml(block)
+
     def is_dirty(self) -> bool:
         """Return True if the editor content differs from the loaded text."""
         return self.text_edit.toPlainText() != self._original_text
@@ -338,3 +374,164 @@ class SceneYamlEditor(QWidget):
         else:
             self._status_label.setText("Error: Scene not found")
             self._status_label.setStyleSheet("color: #f44; padding-left: 10px;")
+
+    # --- Model override bar (#120) ---
+
+    def _sync_model_combo_from_yaml(self, block: str) -> None:
+        """Parse model/provider from a scene YAML block and update the combo.
+
+        Looks for ``model:`` or ``provider: {backend, model}`` keys
+        in the scene block. Updates the combo without triggering
+        re-injection into the YAML text.
+        """
+        self._model_combo.blockSignals(True)
+        try:
+            parsed = yaml.safe_load(block)
+        except yaml.YAMLError:
+            self._model_combo.setCurrentText("")
+            self._backend_label.setText("")
+            self._model_combo.blockSignals(False)
+            return
+
+        # Scene block parses as a list with one dict (YAML list item)
+        if isinstance(parsed, list) and len(parsed) == 1:
+            parsed = parsed[0]
+        if not isinstance(parsed, dict):
+            self._model_combo.setCurrentText("")
+            self._backend_label.setText("")
+            self._model_combo.blockSignals(False)
+            return
+
+        model_id = None
+        # Check for provider: block first (has both backend and model)
+        provider = parsed.get("provider")
+        if isinstance(provider, dict) and provider.get("model"):
+            model_id = str(provider["model"])
+        # Then check for bare model: key
+        elif parsed.get("model"):
+            model_id = str(parsed["model"])
+
+        if model_id:
+            self._model_combo.setCurrentText(model_id)
+            self._update_backend_label(model_id)
+        else:
+            self._model_combo.setCurrentText("")
+            self._backend_label.setText("")
+        self._model_combo.blockSignals(False)
+
+    def _update_backend_label(self, model_text: str) -> None:
+        """Update the backend label to show the provider for the given model."""
+        all_models = get_all_models()
+        backend = all_models.get(model_text, "")
+        self._backend_label.setText(backend)
+
+    def _on_model_text_changed(self, text: str) -> None:
+        """Handle model combo text change — update backend label."""
+        self._update_backend_label(text)
+
+    def _on_model_selected(self, model_id: str) -> None:
+        """Inject or update the model override in the YAML text.
+
+        Sets ``model: <id>`` on the scene. If the model belongs to
+        a different backend than the scene's current provider, also
+        sets ``provider: {backend: X, model: Y}``.
+        """
+        text = self.text_edit.toPlainText()
+        lines = text.split("\n")
+
+        # Detect indentation from first content line
+        indent = "    "
+        for line in lines:
+            stripped = line.lstrip()
+            if (
+                stripped
+                and not stripped.startswith("#")
+                and not stripped.startswith("-")
+            ):
+                indent = line[: len(line) - len(stripped)]
+                break
+
+        # Remove existing model: and provider: lines
+        lines = self._remove_model_lines(lines)
+
+        # Find insertion point (after type: or duration: or title:, before prompt:)
+        insert_idx = len(lines)
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("prompt:"):
+                insert_idx = i
+                break
+
+        # Determine if we need a full provider: block
+        all_models = get_all_models()
+        backend = all_models.get(model_id, "")
+
+        if backend:
+            # Insert provider: block with backend and model
+            provider_lines = [
+                f"{indent}provider:",
+                f"{indent}  backend: {backend}",
+                f'{indent}  model: "{model_id}"',
+            ]
+            for j, pl in enumerate(provider_lines):
+                lines.insert(insert_idx + j, pl)
+        else:
+            # Unknown backend — just insert model:
+            lines.insert(insert_idx, f'{indent}model: "{model_id}"')
+
+        self.text_edit.setPlainText("\n".join(lines))
+        self._model_combo.blockSignals(True)
+        self._model_combo.setCurrentText(model_id)
+        self._model_combo.blockSignals(False)
+        self._update_backend_label(model_id)
+
+    def _on_clear_model(self) -> None:
+        """Remove model/provider override from the YAML text."""
+        text = self.text_edit.toPlainText()
+        lines = text.split("\n")
+        lines = self._remove_model_lines(lines)
+        self.text_edit.setPlainText("\n".join(lines))
+        self._model_combo.blockSignals(True)
+        self._model_combo.setCurrentText("")
+        self._model_combo.blockSignals(False)
+        self._backend_label.setText("")
+
+    @staticmethod
+    def _remove_model_lines(lines: list[str]) -> list[str]:
+        """Remove model: and provider: block lines from a scene YAML block.
+
+        Handles both ``model: X`` and multi-line ``provider:`` blocks
+        with indented ``backend:`` and ``model:`` children.
+        """
+        result: list[str] = []
+        skip_provider_block = False
+        provider_indent: int | None = None
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Track provider: block and skip its children
+            if skip_provider_block:
+                if stripped and not stripped.startswith("#"):
+                    line_indent = len(line) - len(line.lstrip())
+                    if provider_indent is not None and line_indent > provider_indent:
+                        continue  # Skip child of provider: block
+                skip_provider_block = False
+                provider_indent = None
+
+            if re.match(r"^\s+provider:\s*$", line):
+                # Multi-line provider: block
+                skip_provider_block = True
+                provider_indent = len(line) - len(line.lstrip())
+                continue
+
+            if re.match(r"^\s+provider:\s+\S", line):
+                # Inline provider: {backend: ..., model: ...}
+                continue
+
+            if re.match(r"^\s+model:\s+", line):
+                continue
+
+            result.append(line)
+
+        return result

@@ -7044,3 +7044,242 @@ class TestStylePrefixSizing:
 
         # Max height should allow substantial text (at least 100px, not capped at 60)
         assert form._style_edit.maximumHeight() >= 100
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Scene-level model selector (#120)
+# ---------------------------------------------------------------------------
+
+# YAML with a scene-level model override for testing
+YAML_WITH_MODEL_OVERRIDE = """\
+title: "Model Override Test"
+aspect_ratio: "16:9"
+style_prefix: "Test style."
+
+scenes:
+  - number: 1
+    title: "Override scene"
+    type: still
+    duration: 5
+    model: "fal-ai/flux-pro/v1.1"
+    prompt: >
+      A test scene.
+
+  - number: 2
+    title: "Default scene"
+    type: clip
+    duration: 6
+    prompt: >
+      Another test scene.
+
+  - number: 3
+    title: "Provider override"
+    type: still
+    duration: 4
+    provider:
+      backend: replicate
+      model: "black-forest-labs/flux-1.1-pro"
+    prompt: >
+      Third test scene.
+"""
+
+
+@pytest.fixture
+def model_override_project_dir(tmp_path):
+    """Create a project with scene-level model overrides."""
+    yaml_path = tmp_path / "project.yaml"
+    yaml_path.write_text(YAML_WITH_MODEL_OVERRIDE)
+    return tmp_path
+
+
+class TestSceneModelSelector:
+    """Test scene-level model selector in SceneYamlEditor (#120)."""
+
+    def test_editor_has_model_combo(self, qtbot):
+        """SceneYamlEditor should have a model combobox."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        assert hasattr(editor, "_model_combo")
+
+    def test_editor_has_backend_label(self, qtbot):
+        """SceneYamlEditor should have a backend label."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        assert hasattr(editor, "_backend_label")
+
+    def test_editor_has_clear_button(self, qtbot):
+        """SceneYamlEditor should have a clear override button."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        assert hasattr(editor, "_clear_model_btn")
+
+    def test_model_combo_has_fuzzy_completer(self, qtbot):
+        """Model combobox should have a substring-matching completer."""
+        from PySide6.QtCore import Qt
+
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        completer = editor._model_combo.completer()
+        assert completer is not None
+        assert completer.filterMode() == Qt.MatchContains
+
+    def test_load_scene_with_model_override_populates_combo(
+        self, qtbot, model_override_project_dir
+    ):
+        """Loading a scene with model: should populate the model combo."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        assert editor._model_combo.currentText() == "fal-ai/flux-pro/v1.1"
+
+    def test_load_scene_with_provider_override_populates_combo(
+        self, qtbot, model_override_project_dir
+    ):
+        """Loading a scene with provider: block should populate the model combo."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("3", yaml_path)
+
+        assert editor._model_combo.currentText() == "black-forest-labs/flux-1.1-pro"
+
+    def test_load_scene_without_override_shows_empty(
+        self, qtbot, model_override_project_dir
+    ):
+        """Loading a scene without model override should show empty combo."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("2", yaml_path)
+
+        assert editor._model_combo.currentText() == ""
+
+    def test_backend_label_updates_on_model_selection(self, qtbot):
+        """Backend label should update when a known model is selected."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        # Simulate selecting a FAL model
+        editor._model_combo.setCurrentText("fal-ai/flux-pro/v1.1")
+
+        assert "fal" in editor._backend_label.text().lower()
+
+    def test_backend_label_shows_unknown_for_custom_model(self, qtbot):
+        """Backend label should handle unknown models gracefully."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        editor._model_combo.setCurrentText("custom/unknown-model")
+
+        # Should not crash, label can show empty or unknown
+        assert editor._backend_label.text() is not None
+
+    def test_model_selection_updates_yaml_text(self, qtbot, model_override_project_dir):
+        """Selecting a model should inject model: into the YAML text."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("2", yaml_path)  # Scene without model override
+
+        # Act — select a model
+        editor._on_model_selected("fal-ai/flux-general")
+
+        # Assert — YAML text should now contain model:
+        text = editor.text_edit.toPlainText()
+        assert "model:" in text
+        assert "fal-ai/flux-general" in text
+
+    def test_clear_removes_model_from_yaml(self, qtbot, model_override_project_dir):
+        """Clear button should remove model: from the YAML text."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)  # Scene with model override
+
+        # Verify model is present
+        assert "model:" in editor.text_edit.toPlainText()
+
+        # Act — clear
+        editor._on_clear_model()
+
+        # Assert
+        text = editor.text_edit.toPlainText()
+        assert "model:" not in text
+        assert editor._model_combo.currentText() == ""
+
+    def test_clear_removes_provider_block_from_yaml(
+        self, qtbot, model_override_project_dir
+    ):
+        """Clear button should remove provider: block from the YAML text."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("3", yaml_path)  # Scene with provider: block
+
+        # Verify provider is present
+        assert "provider:" in editor.text_edit.toPlainText()
+
+        # Act — clear
+        editor._on_clear_model()
+
+        # Assert
+        text = editor.text_edit.toPlainText()
+        assert "provider:" not in text
+        assert "model:" not in text
+        assert editor._model_combo.currentText() == ""
+
+    def test_model_selection_marks_editor_dirty(
+        self, qtbot, model_override_project_dir
+    ):
+        """Selecting a model should mark the editor as dirty."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("2", yaml_path)
+
+        assert not editor.is_dirty()
+
+        # Act
+        editor._on_model_selected("fal-ai/flux-general")
+
+        # Assert
+        assert editor.is_dirty()
