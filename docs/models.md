@@ -1,4 +1,4 @@
-<!-- Version: 3.6 | Last updated: 2026-03-15 -->
+<!-- Version: 3.7 | Last updated: 2026-03-15 -->
 
 # Model Reference
 
@@ -108,22 +108,36 @@ FAL models are accessed via `fal-client`. Requires `FAL_KEY` in `.env`.
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
-| `fal-ai/flux-2` | Flux 2 | **No** | Base Flux 2 model. Does not support `reference_image_url`. |
-| `fal-ai/flux-2/turbo` | Flux 2 Turbo | **No** | Faster variant. Does not support references. |
-| `fal-ai/flux-2/dev` | Flux 2 Dev | **No** | Development variant. Does not support references. |
-| `fal-ai/flux-2/flash` | Flux 2 Flash | **No** | Fast variant. `image_size` presets. |
-| `fal-ai/flux-2-flex` | Flux 2 Flex | **No** | Flexible variant. `image_size` presets. |
+| `fal-ai/flux-2` | Flux 2 | Yes (via `/edit`) | Base Flux 2 model. Routes to `/edit` endpoint when refs present. |
+| `fal-ai/flux-2/edit` | Flux 2 Edit | Yes (`image_urls`) | Explicit edit endpoint. |
+| `fal-ai/flux-2/turbo` | Flux 2 Turbo | Yes (via `/edit`) | Faster variant. |
+| `fal-ai/flux-2/turbo/edit` | Flux 2 Turbo Edit | Yes (`image_urls`) | Explicit edit endpoint. |
+| `fal-ai/flux-2/dev` | Flux 2 Dev | Yes (via `/edit`) | Development variant. |
+| `fal-ai/flux-2/flash` | Flux 2 Flash | Yes (via `/edit`) | Fast variant. |
+| `fal-ai/flux-2/flash/edit` | Flux 2 Flash Edit | Yes (`image_urls`) | Explicit edit endpoint. |
+| `fal-ai/flux-2/klein/4b` | Flux 2 Klein 4B | Yes (via `/edit`) | Smaller Flux 2 variant. |
+| `fal-ai/flux-2/klein/4b/edit` | Flux 2 Klein 4B Edit | Yes (`image_urls`) | Explicit edit endpoint. |
+| `fal-ai/flux-2/klein/9b` | Flux 2 Klein 9B | Yes (via `/edit`) | Larger Klein variant. |
+| `fal-ai/flux-2/klein/9b/edit` | Flux 2 Klein 9B Edit | Yes (`image_urls`) | Explicit edit endpoint. |
+| `fal-ai/flux-2/klein/4b/base` | Flux 2 Klein 4B Base | Yes (via `/edit`) | Klein base variant. |
+| `fal-ai/flux-2/klein/4b/base/edit` | Flux 2 Klein 4B Base Edit | Yes (`image_urls`) | Explicit edit endpoint. |
+| `fal-ai/flux-2/klein/9b/base` | Flux 2 Klein 9B Base | Yes (via `/edit`) | Klein base variant. |
+| `fal-ai/flux-2/klein/9b/base/edit` | Flux 2 Klein 9B Base Edit | Yes (`image_urls`) | Explicit edit endpoint. |
+| `fal-ai/flux-2-flex` | Flux 2 Flex | Yes (via `/edit`) | Flexible variant. |
+| `fal-ai/flux-2-flex/edit` | Flux 2 Flex Edit | Yes (`image_urls`) | Explicit edit endpoint. |
 
 **Options:** `seed` (int), `guidance_scale` (float), `acceleration` (string), `enable_prompt_expansion` (bool), `num_inference_steps` (int).
 
-**Note:** If you provide reference images with a Flux 2 model, storyboard-gen logs a warning and proceeds without them. Use Flux 1.x (`flux-general`) or Kontext if you need reference support.
+Flux 2 models support references via the `/edit` endpoint. When characters with reference images are present, storyboard-gen uploads refs and routes to the `/edit` endpoint with `image_urls`. Without references, uses the base endpoint for text-to-image. You can also select the explicit `/edit` model ID to always use the edit endpoint.
 
 ### Flux 2 Pro / Max (stills)
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
 | `fal-ai/flux-2-pro` | Flux 2 Pro | Yes (multi-ref via `image_urls` + `/edit`) | Routes to `/edit` endpoint with refs; `@imageN` prompt syntax. |
+| `fal-ai/flux-2-pro/edit` | Flux 2 Pro Edit | Yes (`image_urls`, `@imageN`) | Explicit edit endpoint. |
 | `fal-ai/flux-2-max` | Flux 2 Max | Yes (multi-ref via `image_urls` + `/edit`) | Higher quality variant of Flux 2 Pro. Same reference mechanism. |
+| `fal-ai/flux-2-max/edit` | Flux 2 Max Edit | Yes (`image_urls`, `@imageN`) | Explicit edit endpoint. |
 
 Flux 2 Pro/Max support multi-reference stills via the `/edit` endpoint. When characters with reference images are present, storyboard-gen:
 1. Uploads all character references to CDN
@@ -222,9 +236,10 @@ When characters with reference images are present, storyboard-gen routes to the 
 |----------|------|-------|-------------------|-------|
 | `fal-ai/bytedance/seedream/v4.5/text-to-image` | Seedream 4.5 | ~$0.04/image | No (t2i) | Strong quality, 4K support (`auto_2K`, `auto_4K` presets). |
 | `fal-ai/bytedance/seedream/v4.5/edit` | Seedream 4.5 Edit | ~$0.04/image | Yes (`image_urls` up to 10) | Multi-reference editing. |
-| `fal-ai/bytedance/seedream/v5/lite/text-to-image` | Seedream v5 Lite | ~$0.04/image | No | Latest model. Web search + reasoning. |
+| `fal-ai/bytedance/seedream/v5/lite/text-to-image` | Seedream v5 Lite | ~$0.04/image | No (t2i) | Latest model. Web search + reasoning. |
+| `fal-ai/bytedance/seedream/v5/lite/edit` | Seedream v5 Lite Edit | ~$0.04/image | Yes (`image_urls` up to 10) | Multi-reference editing. |
 
-Seedream uses `image_size` presets. When characters with reference images are present, v4.5 routes to the `/edit` endpoint with `image_urls`. Seedream v5 Lite has no edit endpoint.
+Seedream uses `image_size` presets. When characters with reference images are present, routes to the `/edit` endpoint with `image_urls`.
 
 **Options:** `seed` (int), `num_images` (int), `max_images` (int).
 
@@ -248,11 +263,22 @@ Recraft uses `image_size` presets. Notable for its colour control parameters.
 
 **Options:** `colors` (list of `{r, g, b}` RGB objects), `background_color` (`{r, g, b}` RGB object).
 
+### FireRed (stills)
+
+| Model ID | Name | Price | Reference support | Notes |
+|----------|------|-------|-------------------|-------|
+| `fal-ai/firered-image-edit-v1.1` | FireRed Edit V1.1 | TBC | Yes (`image_urls`) | Image editing model. `image_size` presets. |
+
+FireRed is an edit-focused model. The model ID is the endpoint directly — no suffix routing.
+
+**Options:** `seed` (int), `num_images` (int), `output_format` (string).
+
 ### Qwen Image (stills) — Alibaba
 
 | Model ID | Name | Price | Reference support | Notes |
 |----------|------|-------|-------------------|-------|
 | `fal-ai/qwen-image-2512` | Qwen Image | TBC | No | `image_size` presets. |
+| `fal-ai/qwen-image-edit-2511` | Qwen Image Edit | TBC | Yes (`image_urls`) | Image editing variant. |
 
 **Options:** `seed` (int), `num_images` (int).
 
@@ -260,7 +286,10 @@ Recraft uses `image_size` presets. Notable for its colour control parameters.
 
 | Model ID | Name | Price | Reference support | Notes |
 |----------|------|-------|-------------------|-------|
-| `fal-ai/glm-image` | GLM Image | TBC | No | `image_size` presets. |
+| `fal-ai/glm-image` | GLM Image | TBC | No (t2i) | `image_size` presets. |
+| `fal-ai/glm-image/image-to-image` | GLM Image I2I | TBC | Yes (`image_urls`) | Image-to-image variant. |
+
+GLM Image routes to the `/image-to-image` endpoint when references are present.
 
 **Options:** `seed` (int), `num_images` (int).
 
@@ -268,9 +297,46 @@ Recraft uses `image_size` presets. Notable for its colour control parameters.
 
 | Model ID | Name | Price | Reference support | Notes |
 |----------|------|-------|-------------------|-------|
-| `fal-ai/nano-banana-2` | Nano Banana 2 | TBC | No | Uses raw `aspect_ratio` strings. |
+| `fal-ai/nano-banana-2` | Nano Banana 2 | TBC | Yes (via `/edit`) | Uses raw `aspect_ratio` strings. |
+| `fal-ai/nano-banana-2/edit` | Nano Banana 2 Edit | TBC | Yes (`image_urls`) | Explicit edit endpoint. |
+| `fal-ai/nano-banana-pro` | Nano Banana Pro | TBC | Yes (via `/edit`) | Higher quality variant. |
+| `fal-ai/nano-banana-pro/edit` | Nano Banana Pro Edit | TBC | Yes (`image_urls`) | Explicit edit endpoint. |
 
 **Options:** `resolution` (`"0.5K"` – `"4K"`), `safety_tolerance` (1–6), `seed` (int).
+
+### Emu 3.5 (stills) — Meta
+
+| Model ID | Name | Price | Reference support | Notes |
+|----------|------|-------|-------------------|-------|
+| `fal-ai/emu-3.5-image/text-to-image` | Emu 3.5 | TBC | No (t2i) | Uses raw `aspect_ratio` strings. |
+| `fal-ai/emu-3.5-image/edit-image` | Emu 3.5 Edit | TBC | Yes (`image_urls`) | Image editing via `/edit-image` endpoint. |
+
+Emu 3.5 uses raw `aspect_ratio` strings and a non-standard edit endpoint suffix (`/edit-image` instead of `/edit`).
+
+**Options:** `seed` (int), `num_images` (int).
+
+### GPT Image (stills) — OpenAI via FAL
+
+| Model ID | Name | Price | Reference support | Notes |
+|----------|------|-------|-------------------|-------|
+| `fal-ai/gpt-image-1.5` | GPT Image 1.5 | TBC | Yes (via `/edit`) | Fixed sizes: 1024x1024, 1536x1024, 1024x1536. |
+| `fal-ai/gpt-image-1.5/edit` | GPT Image 1.5 Edit | TBC | Yes (`image_urls`) | Explicit edit endpoint. Supports `mask_image_url`. |
+
+GPT Image uses `image_size` with fixed dimensions. Override via `options.image_size` if presets don't match.
+
+**Options:** `quality` (string), `background` (string), `seed` (int).
+
+### Reve (stills)
+
+| Model ID | Name | Price | Reference support | Notes |
+|----------|------|-------|-------------------|-------|
+| `fal-ai/reve/text-to-image` | Reve | TBC | Yes (via `/edit`) | Uses raw `aspect_ratio` strings. |
+| `fal-ai/reve/fast/edit` | Reve Fast Edit | TBC | Yes (`image_url`) | Fast edit variant. |
+| `fal-ai/reve/fast/remix` | Reve Fast Remix | TBC | Yes (`image_urls`, 1–6 refs) | Multi-reference remix. |
+
+Reve uses raw `aspect_ratio` strings. The remix endpoint takes multiple references via `image_urls`.
+
+**Options:** `seed` (int), `num_images` (int).
 
 ### Kling (clips)
 
@@ -422,6 +488,13 @@ storyboard-gen injects safety defaults before merging user options, so user `opt
 | Hunyuan Image | `enable_safety_checker: false` | `options.enable_safety_checker` |
 | Recraft | `enable_safety_checker: false` | `options.enable_safety_checker` |
 | Kontext / Kontext Multi | `safety_tolerance: "6"` | `options.safety_tolerance` |
+| FireRed | No default | — |
+| Qwen Image / Qwen Image Edit | No default | — |
+| GLM Image | No default | — |
+| Nano Banana | No default | — |
+| Emu 3.5 | No default | — |
+| GPT Image | No default | — |
+| Reve | No default | — |
 | Grok Image | No toggle | — |
 | Kling O1 Image | No toggle | — |
 | Ideogram Character / V3 | No toggle | — |
@@ -526,7 +599,7 @@ storyboard-gen checks for reference/model mismatches and logs warnings. These wa
 |-------------|-------------------|---------------|-------------|------|
 | Google Imagen | Yes (up to 3 refs) | No | N/A | GCP / API key |
 | FAL Flux 1.x | Yes (1 ref) | `enable_safety_checker` | `image_size` presets | FAL_KEY |
-| FAL Flux 2 | **No** | `enable_safety_checker` | `image_size` presets | FAL_KEY |
+| FAL Flux 2 / Klein | Yes (via `/edit`) | `enable_safety_checker` | `image_size` presets | FAL_KEY |
 | FAL Flux 2 Pro/Max | Yes (multi, `@imageN`) | `enable_safety_checker` | `image_size` presets | FAL_KEY |
 | FAL Kontext | Yes (1 ref, i2i) | `safety_tolerance` | Raw strings (i2i) / presets (t2i) | FAL_KEY |
 | FAL Kontext Multi | Yes (multi) | `safety_tolerance` | Raw strings | FAL_KEY |
@@ -538,6 +611,11 @@ storyboard-gen checks for reference/model mismatches and logs warnings. These wa
 | FAL Seedream (ByteDance) | Yes (edit, v4.5) | `enable_safety_checker` | `image_size` presets | FAL_KEY |
 | FAL Hunyuan Image (Tencent) | No | `enable_safety_checker` | `image_size` presets | FAL_KEY |
 | FAL Recraft | No | `enable_safety_checker` | `image_size` presets | FAL_KEY |
+| FAL FireRed | Yes (`image_urls`) | No | `image_size` presets | FAL_KEY |
+| FAL Nano Banana | Yes (via `/edit`) | No | Raw strings | FAL_KEY |
+| FAL Emu 3.5 (Meta) | Yes (via `/edit-image`) | No | Raw strings | FAL_KEY |
+| FAL GPT Image (OpenAI) | Yes (via `/edit`) | No | `image_size` (fixed) | FAL_KEY |
+| FAL Reve | Yes (via `/edit`, `/remix`) | No | Raw strings | FAL_KEY |
 | Replicate Flux | Yes (1 ref, some models) | `safety_tolerance` | N/A | Token |
 
 ### Clip models

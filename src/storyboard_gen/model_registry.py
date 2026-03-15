@@ -24,13 +24,27 @@ BACKEND_MODELS: dict[str, list[str]] = {
         "fal-ai/flux/dev",
         # Flux 2 stills
         "fal-ai/flux-2",
+        "fal-ai/flux-2/edit",
         "fal-ai/flux-2/turbo",
+        "fal-ai/flux-2/turbo/edit",
         "fal-ai/flux-2/dev",
         "fal-ai/flux-2/flash",
+        "fal-ai/flux-2/flash/edit",
+        "fal-ai/flux-2/klein/4b",
+        "fal-ai/flux-2/klein/4b/edit",
+        "fal-ai/flux-2/klein/9b",
+        "fal-ai/flux-2/klein/9b/edit",
+        "fal-ai/flux-2/klein/4b/base",
+        "fal-ai/flux-2/klein/4b/base/edit",
+        "fal-ai/flux-2/klein/9b/base",
+        "fal-ai/flux-2/klein/9b/base/edit",
         "fal-ai/flux-2-flex",
+        "fal-ai/flux-2-flex/edit",
         # Flux 2 Pro / Max stills
         "fal-ai/flux-2-pro",
+        "fal-ai/flux-2-pro/edit",
         "fal-ai/flux-2-max",
+        "fal-ai/flux-2-max/edit",
         # Instant Character stills
         "fal-ai/instant-character",
         # Kontext stills
@@ -50,16 +64,34 @@ BACKEND_MODELS: dict[str, list[str]] = {
         "fal-ai/bytedance/seedream/v4.5/text-to-image",
         "fal-ai/bytedance/seedream/v4.5/edit",
         "fal-ai/bytedance/seedream/v5/lite/text-to-image",
+        "fal-ai/bytedance/seedream/v5/lite/edit",
         # Hunyuan Image stills (Tencent)
         "fal-ai/hunyuan-image/v3/text-to-image",
         # Recraft stills
         "fal-ai/recraft/v4/text-to-image",
+        # FireRed stills
+        "fal-ai/firered-image-edit-v1.1",
         # Qwen Image stills (Alibaba)
         "fal-ai/qwen-image-2512",
+        "fal-ai/qwen-image-edit-2511",
         # GLM Image stills (Zhipu)
         "fal-ai/glm-image",
+        "fal-ai/glm-image/image-to-image",
         # Nano Banana stills
         "fal-ai/nano-banana-2",
+        "fal-ai/nano-banana-2/edit",
+        "fal-ai/nano-banana-pro",
+        "fal-ai/nano-banana-pro/edit",
+        # Emu 3.5 stills (Meta)
+        "fal-ai/emu-3.5-image/text-to-image",
+        "fal-ai/emu-3.5-image/edit-image",
+        # GPT Image stills (OpenAI via FAL)
+        "fal-ai/gpt-image-1.5",
+        "fal-ai/gpt-image-1.5/edit",
+        # Reve stills
+        "fal-ai/reve/text-to-image",
+        "fal-ai/reve/fast/edit",
+        "fal-ai/reve/fast/remix",
         # Kling clips
         "fal-ai/kling-video/v2.1/pro/text-to-video",
         "fal-ai/kling-video/v2.1/pro/image-to-video",

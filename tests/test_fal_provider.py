@@ -1354,12 +1354,8 @@ class TestFlux2ReferenceHandling:
         assert "reference_image_url" not in arguments
 
     @patch("storyboard_gen.providers.fal.fal_client")
-    def test_flux2_logs_warning_when_references_provided(
-        self, mock_fal, tmp_path, caplog
-    ):
-        """Flux 2 should log a warning when references are provided but skipped."""
-        import logging
-
+    def test_flux2_routes_to_edit_when_references_provided(self, mock_fal, tmp_path):
+        """Flux 2 should route to /edit endpoint when references are provided (#114)."""
         # Arrange
         ref_path = tmp_path / "ref.png"
         ref_path.write_bytes(b"fake-image")
@@ -1370,10 +1366,7 @@ class TestFlux2ReferenceHandling:
         }
         provider = FalProvider(model="fal-ai/flux-2/turbo")
 
-        with (
-            caplog.at_level(logging.WARNING),
-            patch("storyboard_gen.providers.fal._download_url") as mock_dl,
-        ):
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
             mock_dl.return_value = b"png-bytes"
 
             # Act
@@ -1384,11 +1377,11 @@ class TestFlux2ReferenceHandling:
                 reference_images=[ref_path],
             )
 
-        # Assert — warning logged about Flux 2 not supporting references
-        assert any(
-            "flux 2" in r.message.lower() and "reference" in r.message.lower()
-            for r in caplog.records
-        )
+        # Assert — routes to /edit endpoint with image_urls
+        endpoint = mock_fal.subscribe.call_args.args[0]
+        assert endpoint == "fal-ai/flux-2/turbo/edit"
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "image_urls" in arguments
 
 
 class TestFalSafetyDefaults:
@@ -2422,11 +2415,11 @@ class TestStillHandlerRegistry:
             ("fal-ai/flux-pro/v1.1", FluxHandler),
             ("fal-ai/flux-dev", FluxHandler),
             ("fal-ai/some-unknown-model", FluxHandler),
-            ("fal-ai/flux-2", Flux2Handler),
-            ("fal-ai/flux-2/turbo", Flux2Handler),
-            ("fal-ai/flux-2/dev", Flux2Handler),
-            ("fal-ai/flux-2/flash", Flux2Handler),
-            ("fal-ai/flux-2-flex", Flux2Handler),
+            ("fal-ai/flux-2", EditHandler),
+            ("fal-ai/flux-2/turbo", EditHandler),
+            ("fal-ai/flux-2/dev", EditHandler),
+            ("fal-ai/flux-2/flash", EditHandler),
+            ("fal-ai/flux-2-flex", EditHandler),
             ("fal-ai/flux-2-pro", Flux2ProHandler),
             ("fal-ai/flux-2-max", Flux2ProHandler),
             ("fal-ai/flux-pro/kontext", KontextHandler),
@@ -2435,15 +2428,44 @@ class TestStillHandlerRegistry:
             ("fal-ai/ideogram/character", IdeogramCharacterHandler),
             ("fal-ai/ideogram/v3", IdeogramV3Handler),
             ("fal-ai/instant-character", InstantCharacterHandler),
+            ("fal-ai/flux-2-pro/edit", Flux2ProHandler),
+            ("fal-ai/flux-2-max/edit", Flux2ProHandler),
+            ("fal-ai/flux-2/edit", EditHandler),
+            ("fal-ai/flux-2/turbo/edit", EditHandler),
+            ("fal-ai/flux-2/flash/edit", EditHandler),
+            ("fal-ai/flux-2/klein/4b", EditHandler),
+            ("fal-ai/flux-2/klein/4b/edit", EditHandler),
+            ("fal-ai/flux-2/klein/9b", EditHandler),
+            ("fal-ai/flux-2/klein/9b/edit", EditHandler),
+            ("fal-ai/flux-2/klein/4b/base", EditHandler),
+            ("fal-ai/flux-2/klein/4b/base/edit", EditHandler),
+            ("fal-ai/flux-2/klein/9b/base", EditHandler),
+            ("fal-ai/flux-2/klein/9b/base/edit", EditHandler),
+            ("fal-ai/flux-2-flex/edit", EditHandler),
             ("xai/grok-imagine-image", EditHandler),
             ("xai/grok-imagine-image/edit", EditHandler),
             ("fal-ai/bytedance/seedream/v4.5/text-to-image", EditHandler),
+            ("fal-ai/bytedance/seedream/v4.5/edit", EditHandler),
             ("fal-ai/bytedance/seedream/v5/lite/text-to-image", EditHandler),
+            ("fal-ai/bytedance/seedream/v5/lite/edit", EditHandler),
             ("fal-ai/hunyuan-image/v3/text-to-image", EditHandler),
             ("fal-ai/recraft/v4/text-to-image", EditHandler),
+            ("fal-ai/firered-image-edit-v1.1", EditHandler),
+            ("fal-ai/qwen-image-edit-2511", EditHandler),
             ("fal-ai/qwen-image-2512", EditHandler),
             ("fal-ai/glm-image", EditHandler),
+            ("fal-ai/glm-image/image-to-image", EditHandler),
             ("fal-ai/nano-banana-2", EditHandler),
+            ("fal-ai/nano-banana-2/edit", EditHandler),
+            ("fal-ai/nano-banana-pro", EditHandler),
+            ("fal-ai/nano-banana-pro/edit", EditHandler),
+            ("fal-ai/emu-3.5-image/text-to-image", EditHandler),
+            ("fal-ai/emu-3.5-image/edit-image", EditHandler),
+            ("fal-ai/gpt-image-1.5", EditHandler),
+            ("fal-ai/gpt-image-1.5/edit", EditHandler),
+            ("fal-ai/reve/text-to-image", EditHandler),
+            ("fal-ai/reve/fast/edit", EditHandler),
+            ("fal-ai/reve/fast/remix", EditHandler),
         ],
     )
     def test_resolves_to_handler(self, model_id, handler_type):
@@ -2566,6 +2588,45 @@ class TestStillHandlerIsABC:
         else:
             handler = handler_cls()
         assert isinstance(handler, StillHandler)
+
+
+class TestEditHandlerEditSuffix:
+    """Tests for EditHandler edit_suffix parameter (#114)."""
+
+    def test_default_edit_suffix_is_edit(self):
+        """Default edit_suffix should be /edit."""
+        h = EditHandler(["test"])
+        assert h._edit_suffix == "/edit"
+
+    def test_custom_edit_suffix(self):
+        """Custom edit_suffix should be stored."""
+        h = EditHandler(["test"], edit_suffix="/edit-image")
+        assert h._edit_suffix == "/edit-image"
+
+    def test_none_edit_suffix(self):
+        """None edit_suffix means model ID is the endpoint."""
+        h = EditHandler(["test"], edit_suffix=None)
+        assert h._edit_suffix is None
+
+    @pytest.mark.parametrize(
+        "model_id,handler_pattern",
+        [
+            ("fal-ai/firered-image-edit-v1.1", "firered"),
+            ("fal-ai/qwen-image-edit-2511", "qwen-image-edit"),
+            ("fal-ai/emu-3.5-image/text-to-image", "emu-3.5"),
+            ("fal-ai/emu-3.5-image/edit-image", "emu-3.5"),
+            ("fal-ai/gpt-image-1.5", "gpt-image"),
+            ("fal-ai/gpt-image-1.5/edit", "gpt-image"),
+            ("fal-ai/reve/text-to-image", "reve"),
+            ("fal-ai/reve/fast/edit", "reve"),
+            ("fal-ai/reve/fast/remix", "reve/fast/remix"),
+            ("fal-ai/glm-image/image-to-image", "glm-image"),
+        ],
+    )
+    def test_new_handler_matches_model(self, model_id, handler_pattern):
+        """New EditHandler entries should match their target models."""
+        h = EditHandler([handler_pattern])
+        assert h.match(model_id)
 
 
 class TestFlux2ProHandler:

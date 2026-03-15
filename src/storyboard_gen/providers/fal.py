@@ -359,11 +359,13 @@ class EditHandler(StillHandler):
         sizing: str = "image_size",
         safety: dict | None = None,
         supports_edit: bool = True,
+        edit_suffix: str | None = "/edit",
     ):
         self._patterns = patterns
         self._sizing = sizing
         self._safety = safety or {}
         self._supports_edit = supports_edit
+        self._edit_suffix = edit_suffix
 
     def match(self, model: str) -> bool:
         lower = model.lower()
@@ -382,10 +384,12 @@ class EditHandler(StillHandler):
         style_reference_images: list[Path] | None,
         project_dir: Path | None,
     ) -> tuple[str, dict]:
-        # Normalize base model: strip /edit or /text-to-image suffixes
-        base_model = re.sub(
-            r"/(edit|text-to-image)$", "", provider.model, flags=re.IGNORECASE
-        )
+        # Normalize base model: strip edit suffix and /text-to-image
+        base_model = provider.model
+        for suffix in [self._edit_suffix, "/text-to-image"]:
+            if suffix and base_model.lower().endswith(suffix.lower()):
+                base_model = base_model[: -len(suffix)]
+                break
 
         # Collect refs from characters or scene-level references (#106)
         image_urls = None
@@ -405,7 +409,10 @@ class EditHandler(StillHandler):
                 provider._save_cdn_cache(project_dir, cdn_cache)
 
         if image_urls:
-            endpoint = base_model.rstrip("/") + "/edit"
+            if self._edit_suffix:
+                endpoint = base_model.rstrip("/") + self._edit_suffix
+            else:
+                endpoint = provider.model
             arguments: dict = {
                 "prompt": prompt,
                 "image_urls": image_urls,
@@ -490,12 +497,18 @@ _STILL_HANDLERS: list[StillHandler] = [
     EditHandler(
         ["recraft"], safety={"enable_safety_checker": False}, supports_edit=False
     ),
+    EditHandler(["firered"], edit_suffix=None),
+    EditHandler(["qwen-image-edit"], edit_suffix=None),
     EditHandler(["qwen-image"], supports_edit=False),
-    EditHandler(["glm-image"], supports_edit=False),
-    EditHandler(["nano-banana"], sizing="aspect_ratio", supports_edit=False),
+    EditHandler(["glm-image"], edit_suffix="/image-to-image"),
+    EditHandler(["emu-3.5"], sizing="aspect_ratio", edit_suffix="/edit-image"),
+    EditHandler(["gpt-image"]),
+    EditHandler(["nano-banana"], sizing="aspect_ratio"),
+    EditHandler(["reve/fast/remix"], sizing="aspect_ratio", edit_suffix=None),
+    EditHandler(["reve"], sizing="aspect_ratio"),
     InstantCharacterHandler(),
     Flux2ProHandler(),
-    Flux2Handler(),
+    EditHandler(["flux-2"], safety={"enable_safety_checker": False}),
     FluxHandler(),
 ]
 
