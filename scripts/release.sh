@@ -247,12 +247,16 @@ main() {
         exit 1
     fi
 
-    # Run tests and lint
-    echo "Running tests..."
-    make test
+    # Run tests and lint (skippable when just verified)
+    if [[ "${SKIP_TESTS:-}" != "1" ]]; then
+        echo "Running tests..."
+        make test
 
-    echo "Running lint..."
-    make lint
+        echo "Running lint..."
+        make lint
+    else
+        echo "Skipping tests and lint (SKIP_TESTS=1)"
+    fi
 
     # Update version files
     echo "Updating version files..."
