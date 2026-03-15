@@ -6184,6 +6184,75 @@ class TestProjectSettingsForm:
         reloaded = load_yaml_roundtrip(settings_project_dir / "project.yaml")
         assert "style_prefix" not in reloaded
 
+    def test_model_completer_uses_all_models(self, qtbot):
+        """Model combo completer should contain models from all backends."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+        from storyboard_gen.model_registry import get_all_models
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+
+        completer = form._still_model.completer()
+        assert completer is not None
+        model = completer.model()
+        completer_items = [model.data(model.index(i, 0)) for i in range(model.rowCount())]
+        all_models = get_all_models()
+        # Should contain models from at least two different backends
+        backends_in_completer = set()
+        for item in completer_items:
+            if item in all_models:
+                backends_in_completer.add(all_models[item])
+        assert len(backends_in_completer) >= 2
+
+    def test_model_completer_matches_substring(self, qtbot):
+        """Completer should match substrings, not just prefixes."""
+        from PySide6.QtCore import Qt
+
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+
+        completer = form._still_model.completer()
+        assert completer is not None
+        assert completer.filterMode() & Qt.MatchContains
+
+    def test_model_selection_switches_backend(self, qtbot, settings_project_dir):
+        """Selecting a FAL model should auto-switch backend to fal."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        # Start with google backend
+        form._still_backend.setCurrentText("google")
+        assert form._still_backend.currentText() == "google"
+
+        # Type a FAL model into the model combo
+        form._still_model.setCurrentText("fal-ai/flux-2-pro")
+
+        # Backend should auto-switch to fal
+        assert form._still_backend.currentText() == "fal"
+
+    def test_clip_model_selection_switches_backend(self, qtbot, settings_project_dir):
+        """Selecting a Google clip model should auto-switch clip backend."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+        form.load_project(settings_project_dir)
+
+        # Start with fal backend
+        form._clip_backend.setCurrentText("fal")
+        assert form._clip_backend.currentText() == "fal"
+
+        # Type a Google model
+        form._clip_model.setCurrentText("veo-3.1-fast-generate-001")
+
+        # Backend should auto-switch to google
+        assert form._clip_backend.currentText() == "google"
+
 
 # ---------------------------------------------------------------------------
 # Tests: YAML Viewer with Settings Form — issue #93

@@ -6,9 +6,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
+    QCompleter,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -27,7 +28,11 @@ from storyboard_gen.gui.yaml_editor_helpers import (
     save_yaml_roundtrip,
     update_nested,
 )
-from storyboard_gen.model_registry import get_backends, get_models_for_backend
+from storyboard_gen.model_registry import (
+    get_all_models,
+    get_backends,
+    get_models_for_backend,
+)
 from storyboard_gen.models import VALID_ASPECT_RATIOS
 
 logger = logging.getLogger(__name__)
@@ -96,7 +101,8 @@ class ProjectSettingsForm(QWidget):
 
         self._still_model = QComboBox()
         self._still_model.setEditable(True)
-        self._still_model.currentTextChanged.connect(self._mark_dirty)
+        self._install_model_completer(self._still_model)
+        self._still_model.currentTextChanged.connect(self._on_still_model_changed)
         still_form.addRow("Model:", self._still_model)
 
         still_group.setLayout(still_form)
@@ -114,7 +120,8 @@ class ProjectSettingsForm(QWidget):
 
         self._clip_model = QComboBox()
         self._clip_model.setEditable(True)
-        self._clip_model.currentTextChanged.connect(self._mark_dirty)
+        self._install_model_completer(self._clip_model)
+        self._clip_model.currentTextChanged.connect(self._on_clip_model_changed)
         clip_form.addRow("Model:", self._clip_model)
 
         clip_group.setLayout(clip_form)
@@ -405,3 +412,36 @@ class ProjectSettingsForm(QWidget):
         """Reload form from disk, discarding unsaved changes."""
         if self._project_dir:
             self.load_project(self._project_dir)
+
+    @staticmethod
+    def _install_model_completer(combo: QComboBox) -> None:
+        """Install a substring-matching completer with all models across all backends."""
+        all_model_ids = sorted(get_all_models().keys())
+        completer = QCompleter(all_model_ids)
+        completer.setFilterMode(Qt.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        combo.setCompleter(completer)
+
+    def _auto_switch_backend(
+        self, model_text: str, backend_combo: QComboBox
+    ) -> None:
+        """Switch backend combo to match the model's registered backend."""
+        all_models = get_all_models()
+        if model_text in all_models:
+            expected_backend = all_models[model_text]
+            if backend_combo.currentText() != expected_backend:
+                backend_combo.blockSignals(True)
+                idx = backend_combo.findText(expected_backend)
+                if idx >= 0:
+                    backend_combo.setCurrentIndex(idx)
+                backend_combo.blockSignals(False)
+
+    def _on_still_model_changed(self, text: str) -> None:
+        """Handle still model text change: auto-switch backend and mark dirty."""
+        self._auto_switch_backend(text, self._still_backend)
+        self._mark_dirty()
+
+    def _on_clip_model_changed(self, text: str) -> None:
+        """Handle clip model text change: auto-switch backend and mark dirty."""
+        self._auto_switch_backend(text, self._clip_backend)
+        self._mark_dirty()
