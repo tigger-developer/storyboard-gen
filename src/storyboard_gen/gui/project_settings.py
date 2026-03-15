@@ -82,7 +82,7 @@ class ProjectSettingsForm(QWidget):
 
         # --- Style Prefix ---
         self._style_edit = QPlainTextEdit()
-        self._style_edit.setMaximumHeight(60)
+        self._style_edit.setMinimumHeight(100)
         self._style_edit.textChanged.connect(self._mark_dirty)
         title_form.addRow("Style Prefix:", self._style_edit)
 

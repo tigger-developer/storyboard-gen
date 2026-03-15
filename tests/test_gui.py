@@ -7015,3 +7015,32 @@ class TestEnvEditorStyling:
             assert field.minimumWidth() >= 400, (
                 f"Field {key} minimum width should be >= 400"
             )
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: Style prefix field sizing (#119)
+# ---------------------------------------------------------------------------
+
+
+class TestStylePrefixSizing:
+    """Test that the style_prefix field is large enough for paragraph text (#119)."""
+
+    def test_style_prefix_minimum_height(self, qtbot):
+        """Style prefix field should have a minimum height for paragraph text."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+
+        # Should be tall enough for multi-line text (at least 100px)
+        assert form._style_edit.minimumHeight() >= 100
+
+    def test_style_prefix_no_restrictive_max_height(self, qtbot):
+        """Style prefix field should not be constrained to a tiny max height."""
+        from storyboard_gen.gui.project_settings import ProjectSettingsForm
+
+        form = ProjectSettingsForm()
+        qtbot.addWidget(form)
+
+        # Max height should allow substantial text (at least 100px, not capped at 60)
+        assert form._style_edit.maximumHeight() >= 100
