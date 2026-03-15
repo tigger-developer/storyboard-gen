@@ -27,17 +27,17 @@ from storyboard_gen.providers.fal import (
 
 
 class TestMapAspectRatio:
-    def test_map_portrait_9_16(self):
-        assert _map_aspect_ratio("9:16") == "portrait_16_9"
-
-    def test_map_landscape_16_9(self):
-        assert _map_aspect_ratio("16:9") == "landscape_16_9"
-
-    def test_map_landscape_4_3(self):
-        assert _map_aspect_ratio("4:3") == "landscape_4_3"
-
-    def test_map_square_1_1(self):
-        assert _map_aspect_ratio("1:1") == "square_hd"
+    @pytest.mark.parametrize(
+        "input_ratio,expected",
+        [
+            ("9:16", "portrait_16_9"),
+            ("16:9", "landscape_16_9"),
+            ("4:3", "landscape_4_3"),
+            ("1:1", "square_hd"),
+        ],
+    )
+    def test_maps_known_ratio(self, input_ratio, expected):
+        assert _map_aspect_ratio(input_ratio) == expected
 
     def test_map_unknown_ratio_raises(self):
         with pytest.raises(ValueError, match="Unsupported aspect ratio"):
@@ -2415,220 +2415,166 @@ class TestO1ImageSafetyDefaults:
 class TestStillHandlerRegistry:
     """Tests for the still handler registry and model matching."""
 
-    def test_resolve_handler_flux_general_returns_flux_handler(self):
-        handler = _resolve_still_handler("fal-ai/flux-general")
-        assert isinstance(handler, FluxHandler)
-
-    def test_resolve_handler_flux_pro_returns_flux_handler(self):
-        handler = _resolve_still_handler("fal-ai/flux-pro/v1.1")
-        assert isinstance(handler, FluxHandler)
-
-    def test_resolve_handler_flux2_returns_flux2_handler(self):
-        handler = _resolve_still_handler("fal-ai/flux-2")
-        assert isinstance(handler, Flux2Handler)
-
-    def test_resolve_handler_flux2_turbo_returns_flux2_handler(self):
-        handler = _resolve_still_handler("fal-ai/flux-2/turbo")
-        assert isinstance(handler, Flux2Handler)
-
-    def test_resolve_handler_flux2_dev_returns_flux2_handler(self):
-        handler = _resolve_still_handler("fal-ai/flux-2/dev")
-        assert isinstance(handler, Flux2Handler)
-
-    def test_resolve_handler_kontext_returns_kontext_handler(self):
-        handler = _resolve_still_handler("fal-ai/flux-pro/kontext")
-        assert isinstance(handler, KontextHandler)
-
-    def test_resolve_handler_kontext_multi_returns_kontext_multi_handler(self):
-        handler = _resolve_still_handler("fal-ai/flux-pro/kontext/max/multi")
-        assert isinstance(handler, KontextMultiHandler)
-
-    def test_resolve_handler_o1_image_returns_o1_image_handler(self):
-        handler = _resolve_still_handler("fal-ai/kling-image/o1")
-        assert isinstance(handler, O1ImageHandler)
-
-    def test_resolve_handler_ideogram_character_returns_ideogram_handler(self):
-        handler = _resolve_still_handler("fal-ai/ideogram/character")
-        assert isinstance(handler, IdeogramCharacterHandler)
-
-    def test_resolve_handler_flux_dev_returns_flux_handler(self):
-        """Flux Dev routes to FluxHandler fallback (#88)."""
-        handler = _resolve_still_handler("fal-ai/flux-dev")
-        assert isinstance(handler, FluxHandler)
-
-    def test_resolve_handler_unknown_model_returns_flux_handler(self):
-        handler = _resolve_still_handler("fal-ai/some-unknown-model")
-        assert isinstance(handler, FluxHandler)
-
-    def test_resolve_handler_flux2_flash_returns_flux2_handler(self):
-        handler = _resolve_still_handler("fal-ai/flux-2/flash")
-        assert isinstance(handler, Flux2Handler)
-
-    def test_resolve_handler_flux2_flex_returns_flux2_handler(self):
-        handler = _resolve_still_handler("fal-ai/flux-2-flex")
-        assert isinstance(handler, Flux2Handler)
-
-    def test_resolve_handler_qwen_image_returns_edit_handler(self):
-        handler = _resolve_still_handler("fal-ai/qwen-image-2512")
-        assert isinstance(handler, EditHandler)
-
-    def test_resolve_handler_glm_image_returns_edit_handler(self):
-        handler = _resolve_still_handler("fal-ai/glm-image")
-        assert isinstance(handler, EditHandler)
-
-    def test_resolve_handler_nano_banana_returns_edit_handler(self):
-        handler = _resolve_still_handler("fal-ai/nano-banana-2")
-        assert isinstance(handler, EditHandler)
+    @pytest.mark.parametrize(
+        "model_id,handler_type",
+        [
+            ("fal-ai/flux-general", FluxHandler),
+            ("fal-ai/flux-pro/v1.1", FluxHandler),
+            ("fal-ai/flux-dev", FluxHandler),
+            ("fal-ai/some-unknown-model", FluxHandler),
+            ("fal-ai/flux-2", Flux2Handler),
+            ("fal-ai/flux-2/turbo", Flux2Handler),
+            ("fal-ai/flux-2/dev", Flux2Handler),
+            ("fal-ai/flux-2/flash", Flux2Handler),
+            ("fal-ai/flux-2-flex", Flux2Handler),
+            ("fal-ai/flux-2-pro", Flux2ProHandler),
+            ("fal-ai/flux-2-max", Flux2ProHandler),
+            ("fal-ai/flux-pro/kontext", KontextHandler),
+            ("fal-ai/flux-pro/kontext/max/multi", KontextMultiHandler),
+            ("fal-ai/kling-image/o1", O1ImageHandler),
+            ("fal-ai/ideogram/character", IdeogramCharacterHandler),
+            ("fal-ai/ideogram/v3", IdeogramV3Handler),
+            ("fal-ai/instant-character", InstantCharacterHandler),
+            ("xai/grok-imagine-image", EditHandler),
+            ("xai/grok-imagine-image/edit", EditHandler),
+            ("fal-ai/bytedance/seedream/v4.5/text-to-image", EditHandler),
+            ("fal-ai/bytedance/seedream/v5/lite/text-to-image", EditHandler),
+            ("fal-ai/hunyuan-image/v3/text-to-image", EditHandler),
+            ("fal-ai/recraft/v4/text-to-image", EditHandler),
+            ("fal-ai/qwen-image-2512", EditHandler),
+            ("fal-ai/glm-image", EditHandler),
+            ("fal-ai/nano-banana-2", EditHandler),
+        ],
+    )
+    def test_resolves_to_handler(self, model_id, handler_type):
+        handler = _resolve_still_handler(model_id)
+        assert isinstance(handler, handler_type)
 
 
 class TestStillHandlerMatch:
     """Tests for individual handler match methods."""
 
-    def test_ideogram_character_match_positive(self):
-        assert IdeogramCharacterHandler().match("fal-ai/ideogram/character")
+    @pytest.mark.parametrize(
+        "handler_cls,model_id",
+        [
+            (IdeogramCharacterHandler, "fal-ai/ideogram/character"),
+            (IdeogramCharacterHandler, "fal-ai/ideogram/character/edit"),
+            (O1ImageHandler, "fal-ai/kling-image/o1"),
+            (KontextMultiHandler, "fal-ai/flux-pro/kontext/max/multi"),
+            (KontextHandler, "fal-ai/flux-pro/kontext"),
+            (KontextHandler, "fal-ai/flux-pro/kontext/max/multi"),
+            (Flux2Handler, "fal-ai/flux-2"),
+            (Flux2Handler, "fal-ai/flux-2/turbo"),
+            (Flux2ProHandler, "fal-ai/flux-2-pro"),
+            (Flux2ProHandler, "fal-ai/flux-2-pro/edit"),
+            (Flux2ProHandler, "fal-ai/flux-2-max"),
+            (Flux2ProHandler, "fal-ai/flux-2-max/edit"),
+            (InstantCharacterHandler, "fal-ai/instant-character"),
+            (IdeogramV3Handler, "fal-ai/ideogram/v3"),
+            (FluxHandler, "anything-at-all"),
+            (FluxHandler, "fal-ai/flux-dev"),
+        ],
+    )
+    def test_handler_matches(self, handler_cls, model_id):
+        assert handler_cls().match(model_id)
 
-    def test_ideogram_character_match_edit(self):
-        assert IdeogramCharacterHandler().match("fal-ai/ideogram/character/edit")
-
-    def test_ideogram_character_match_negative_flux(self):
-        assert not IdeogramCharacterHandler().match("fal-ai/flux-general")
-
-    def test_o1_image_match_positive(self):
-        assert O1ImageHandler().match("fal-ai/kling-image/o1")
-
-    def test_o1_image_match_negative_kling_video(self):
-        assert not O1ImageHandler().match("fal-ai/kling-video/o3/standard")
-
-    def test_o1_image_match_negative_flux(self):
-        assert not O1ImageHandler().match("fal-ai/flux-general")
-
-    def test_kontext_multi_match_positive(self):
-        assert KontextMultiHandler().match("fal-ai/flux-pro/kontext/max/multi")
-
-    def test_kontext_multi_match_negative_plain_kontext(self):
-        assert not KontextMultiHandler().match("fal-ai/flux-pro/kontext")
-
-    def test_kontext_match_positive(self):
-        assert KontextHandler().match("fal-ai/flux-pro/kontext")
-
-    def test_kontext_match_also_matches_multi(self):
-        # KontextHandler matches any kontext, but KontextMulti is checked first
-        assert KontextHandler().match("fal-ai/flux-pro/kontext/max/multi")
-
-    def test_flux2_match_positive(self):
-        assert Flux2Handler().match("fal-ai/flux-2")
-
-    def test_flux2_match_turbo(self):
-        assert Flux2Handler().match("fal-ai/flux-2/turbo")
-
-    def test_flux2_match_negative_flux_general(self):
-        assert not Flux2Handler().match("fal-ai/flux-general")
-
-    def test_flux2_match_negative_flux_dev(self):
-        """fal-ai/flux-dev is Flux 1.x Dev, NOT Flux 2 Dev (#88)."""
-        assert not Flux2Handler().match("fal-ai/flux-dev")
-
-    def test_flux_handler_always_matches(self):
-        assert FluxHandler().match("anything-at-all")
-
-    def test_flux_handler_matches_flux_dev(self):
-        """FluxHandler (fallback) handles Flux Dev (#88)."""
-        assert FluxHandler().match("fal-ai/flux-dev")
+    @pytest.mark.parametrize(
+        "handler_cls,model_id",
+        [
+            (IdeogramCharacterHandler, "fal-ai/flux-general"),
+            (O1ImageHandler, "fal-ai/kling-video/o3/standard"),
+            (O1ImageHandler, "fal-ai/flux-general"),
+            (KontextMultiHandler, "fal-ai/flux-pro/kontext"),
+            (Flux2Handler, "fal-ai/flux-general"),
+            (Flux2Handler, "fal-ai/flux-dev"),
+            (Flux2ProHandler, "fal-ai/flux-2"),
+            (Flux2ProHandler, "fal-ai/flux-2/turbo"),
+            (Flux2ProHandler, "fal-ai/flux-general"),
+            (InstantCharacterHandler, "fal-ai/flux-general"),
+            (IdeogramV3Handler, "fal-ai/ideogram/character"),
+            (IdeogramV3Handler, "fal-ai/flux-general"),
+        ],
+    )
+    def test_handler_rejects(self, handler_cls, model_id):
+        assert not handler_cls().match(model_id)
 
 
 class TestStillHandlerSafetyDefaults:
     """Tests for model-family safety defaults."""
 
-    def test_flux_handler_safety_defaults_disable_safety_checker(self):
-        handler = FluxHandler()
-        assert handler.safety_defaults() == {"enable_safety_checker": False}
-
-    def test_flux2_handler_safety_defaults_disable_safety_checker(self):
-        handler = Flux2Handler()
-        assert handler.safety_defaults() == {"enable_safety_checker": False}
-
-    def test_kontext_handler_safety_defaults_tolerance_6(self):
-        handler = KontextHandler()
-        assert handler.safety_defaults() == {"safety_tolerance": "6"}
-
-    def test_kontext_multi_handler_safety_defaults_tolerance_6(self):
-        handler = KontextMultiHandler()
-        assert handler.safety_defaults() == {"safety_tolerance": "6"}
-
-    def test_o1_image_handler_no_safety_toggle(self):
-        handler = O1ImageHandler()
-        assert handler.safety_defaults() == {}
-
-    def test_ideogram_character_handler_no_safety_toggle(self):
-        handler = IdeogramCharacterHandler()
-        assert handler.safety_defaults() == {}
+    @pytest.mark.parametrize(
+        "handler,expected",
+        [
+            (FluxHandler(), {"enable_safety_checker": False}),
+            (Flux2Handler(), {"enable_safety_checker": False}),
+            (Flux2ProHandler(), {"enable_safety_checker": False}),
+            (InstantCharacterHandler(), {"enable_safety_checker": False}),
+            (KontextHandler(), {"safety_tolerance": "6"}),
+            (KontextMultiHandler(), {"safety_tolerance": "6"}),
+            (O1ImageHandler(), {}),
+            (IdeogramCharacterHandler(), {}),
+            (IdeogramV3Handler(), {}),
+            # EditHandler-based handlers
+            (EditHandler(["grok-imagine-image"], sizing="aspect_ratio"), {}),
+            (
+                EditHandler(["seedream"], safety={"enable_safety_checker": False}),
+                {"enable_safety_checker": False},
+            ),
+            (
+                EditHandler(
+                    ["hunyuan-image"],
+                    safety={"enable_safety_checker": False},
+                    supports_edit=False,
+                ),
+                {"enable_safety_checker": False},
+            ),
+            (
+                EditHandler(
+                    ["recraft"],
+                    safety={"enable_safety_checker": False},
+                    supports_edit=False,
+                ),
+                {"enable_safety_checker": False},
+            ),
+        ],
+    )
+    def test_safety_defaults(self, handler, expected):
+        assert handler.safety_defaults() == expected
 
 
 class TestStillHandlerIsABC:
     """Tests that all handlers inherit from StillHandler."""
 
-    def test_flux_handler_is_still_handler(self):
-        assert isinstance(FluxHandler(), StillHandler)
-
-    def test_flux2_handler_is_still_handler(self):
-        assert isinstance(Flux2Handler(), StillHandler)
-
-    def test_kontext_handler_is_still_handler(self):
-        assert isinstance(KontextHandler(), StillHandler)
-
-    def test_kontext_multi_handler_is_still_handler(self):
-        assert isinstance(KontextMultiHandler(), StillHandler)
-
-    def test_o1_image_handler_is_still_handler(self):
-        assert isinstance(O1ImageHandler(), StillHandler)
-
-    def test_ideogram_character_handler_is_still_handler(self):
-        assert isinstance(IdeogramCharacterHandler(), StillHandler)
-
-    def test_flux2_pro_handler_is_still_handler(self):
-        assert isinstance(Flux2ProHandler(), StillHandler)
-
-    def test_instant_character_handler_is_still_handler(self):
-        assert isinstance(InstantCharacterHandler(), StillHandler)
-
-    def test_ideogram_v3_handler_is_still_handler(self):
-        assert isinstance(IdeogramV3Handler(), StillHandler)
+    @pytest.mark.parametrize(
+        "handler_cls",
+        [
+            FluxHandler,
+            Flux2Handler,
+            Flux2ProHandler,
+            KontextHandler,
+            KontextMultiHandler,
+            O1ImageHandler,
+            IdeogramCharacterHandler,
+            IdeogramV3Handler,
+            InstantCharacterHandler,
+            EditHandler,
+        ],
+    )
+    def test_is_still_handler(self, handler_cls):
+        if handler_cls is EditHandler:
+            handler = EditHandler(["test"])
+        else:
+            handler = handler_cls()
+        assert isinstance(handler, StillHandler)
 
 
 class TestFlux2ProHandler:
-    """Tests for Flux 2 Pro handler (#72)."""
+    """Tests for Flux 2 Pro handler (#72).
 
-    def test_match_flux2_pro(self):
-        assert Flux2ProHandler().match("fal-ai/flux-2-pro")
-
-    def test_match_flux2_pro_edit(self):
-        assert Flux2ProHandler().match("fal-ai/flux-2-pro/edit")
-
-    def test_match_flux2_max(self):
-        assert Flux2ProHandler().match("fal-ai/flux-2-max")
-
-    def test_match_flux2_max_edit(self):
-        assert Flux2ProHandler().match("fal-ai/flux-2-max/edit")
-
-    def test_no_match_flux2_base(self):
-        assert not Flux2ProHandler().match("fal-ai/flux-2")
-
-    def test_no_match_flux2_turbo(self):
-        assert not Flux2ProHandler().match("fal-ai/flux-2/turbo")
-
-    def test_no_match_flux_general(self):
-        assert not Flux2ProHandler().match("fal-ai/flux-general")
-
-    def test_safety_defaults(self):
-        assert Flux2ProHandler().safety_defaults() == {"enable_safety_checker": False}
-
-    def test_resolve_handler_flux2_pro(self):
-        handler = _resolve_still_handler("fal-ai/flux-2-pro")
-        assert isinstance(handler, Flux2ProHandler)
-
-    def test_resolve_handler_flux2_max(self):
-        handler = _resolve_still_handler("fal-ai/flux-2-max")
-        assert isinstance(handler, Flux2ProHandler)
+    Match, safety, and resolve tests are in the centralized parametrized
+    classes (TestStillHandlerMatch, TestStillHandlerSafetyDefaults,
+    TestStillHandlerRegistry).
+    """
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_flux2_pro_with_refs_routes_to_edit_endpoint(self, mock_fal, tmp_path):
@@ -2786,22 +2732,11 @@ class TestFluxDevSupport:
 
 
 class TestInstantCharacterHandler:
-    """Tests for Instant Character handler (#72)."""
+    """Tests for Instant Character handler (#72).
 
-    def test_match_positive(self):
-        assert InstantCharacterHandler().match("fal-ai/instant-character")
-
-    def test_match_negative_flux(self):
-        assert not InstantCharacterHandler().match("fal-ai/flux-general")
-
-    def test_safety_defaults(self):
-        assert InstantCharacterHandler().safety_defaults() == {
-            "enable_safety_checker": False
-        }
-
-    def test_resolve_handler(self):
-        handler = _resolve_still_handler("fal-ai/instant-character")
-        assert isinstance(handler, InstantCharacterHandler)
+    Match, safety, and resolve tests are in the centralized parametrized
+    classes.
+    """
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_passes_image_url_from_reference(self, mock_fal, tmp_path):
@@ -2856,23 +2791,11 @@ class TestInstantCharacterHandler:
 
 
 class TestIdeogramV3Handler:
-    """Tests for Ideogram V3 handler (#72)."""
+    """Tests for Ideogram V3 handler (#72).
 
-    def test_match_positive(self):
-        assert IdeogramV3Handler().match("fal-ai/ideogram/v3")
-
-    def test_match_negative_character(self):
-        assert not IdeogramV3Handler().match("fal-ai/ideogram/character")
-
-    def test_match_negative_flux(self):
-        assert not IdeogramV3Handler().match("fal-ai/flux-general")
-
-    def test_safety_defaults(self):
-        assert IdeogramV3Handler().safety_defaults() == {}
-
-    def test_resolve_handler(self):
-        handler = _resolve_still_handler("fal-ai/ideogram/v3")
-        assert isinstance(handler, IdeogramV3Handler)
+    Match, safety, and resolve tests are in the centralized parametrized
+    classes.
+    """
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_uses_image_size_preset(self, mock_fal, tmp_path):
@@ -3011,36 +2934,11 @@ class TestMinimaxVideoModel:
 
 
 class TestGrokImageHandler:
-    """Tests for Grok Image handler (#79) — now backed by EditHandler."""
+    """Tests for Grok Image handler (#79) — now backed by EditHandler.
 
-    _handler = EditHandler(["grok-imagine-image"], sizing="aspect_ratio")
-
-    def test_match_positive(self):
-        assert self._handler.match("xai/grok-imagine-image")
-
-    def test_match_positive_edit(self):
-        assert self._handler.match("xai/grok-imagine-image/edit")
-
-    def test_match_negative_flux(self):
-        assert not self._handler.match("fal-ai/flux-general")
-
-    def test_match_negative_grok_video(self):
-        assert not self._handler.match("xai/grok-imagine-video/text-to-video")
-
-    def test_safety_defaults_empty(self):
-        """Grok Image has no safety toggle."""
-        assert self._handler.safety_defaults() == {}
-
-    def test_is_still_handler(self):
-        assert isinstance(self._handler, StillHandler)
-
-    def test_resolve_handler(self):
-        handler = _resolve_still_handler("xai/grok-imagine-image")
-        assert isinstance(handler, EditHandler)
-
-    def test_resolve_handler_edit(self):
-        handler = _resolve_still_handler("xai/grok-imagine-image/edit")
-        assert isinstance(handler, EditHandler)
+    Match, safety, isinstance, and resolve tests are in the centralized
+    parametrized classes.
+    """
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_uses_raw_aspect_ratio(self, mock_fal, tmp_path):
@@ -3185,42 +3083,11 @@ class TestGrokImageHandler:
 
 
 class TestSeedreamHandler:
-    """Tests for Seedream handler (#79) — now backed by EditHandler."""
+    """Tests for Seedream handler (#79) — now backed by EditHandler.
 
-    _handler = EditHandler(["seedream"], safety={"enable_safety_checker": False})
-
-    def test_match_v45(self):
-        assert self._handler.match("fal-ai/bytedance/seedream/v4.5/text-to-image")
-
-    def test_match_v45_edit(self):
-        assert self._handler.match("fal-ai/bytedance/seedream/v4.5/edit")
-
-    def test_match_v5_lite(self):
-        assert self._handler.match("fal-ai/bytedance/seedream/v5/lite/text-to-image")
-
-    def test_match_negative_flux(self):
-        assert not self._handler.match("fal-ai/flux-general")
-
-    def test_match_negative_seedance(self):
-        assert not self._handler.match(
-            "fal-ai/bytedance/seedance/v1.5/pro/text-to-video"
-        )
-
-    def test_safety_defaults_disable_safety_checker(self):
-        assert self._handler.safety_defaults() == {"enable_safety_checker": False}
-
-    def test_is_still_handler(self):
-        assert isinstance(self._handler, StillHandler)
-
-    def test_resolve_handler_v45(self):
-        handler = _resolve_still_handler("fal-ai/bytedance/seedream/v4.5/text-to-image")
-        assert isinstance(handler, EditHandler)
-
-    def test_resolve_handler_v5_lite(self):
-        handler = _resolve_still_handler(
-            "fal-ai/bytedance/seedream/v5/lite/text-to-image"
-        )
-        assert isinstance(handler, EditHandler)
+    Match, safety, isinstance, and resolve tests are in the centralized
+    parametrized classes.
+    """
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_uses_image_size_preset(self, mock_fal, tmp_path):
@@ -3303,30 +3170,11 @@ class TestSeedreamHandler:
 
 
 class TestHunyuanImageHandler:
-    """Tests for Hunyuan Image handler (#79) — now backed by EditHandler."""
+    """Tests for Hunyuan Image handler (#79) — now backed by EditHandler.
 
-    _handler = EditHandler(
-        ["hunyuan-image"], safety={"enable_safety_checker": False}, supports_edit=False
-    )
-
-    def test_match_positive(self):
-        assert self._handler.match("fal-ai/hunyuan-image/v3/text-to-image")
-
-    def test_match_negative_flux(self):
-        assert not self._handler.match("fal-ai/flux-general")
-
-    def test_match_negative_hunyuan_video(self):
-        assert not self._handler.match("fal-ai/hunyuan-video-v1.5/text-to-video")
-
-    def test_safety_defaults_disable_safety_checker(self):
-        assert self._handler.safety_defaults() == {"enable_safety_checker": False}
-
-    def test_is_still_handler(self):
-        assert isinstance(self._handler, StillHandler)
-
-    def test_resolve_handler(self):
-        handler = _resolve_still_handler("fal-ai/hunyuan-image/v3/text-to-image")
-        assert isinstance(handler, EditHandler)
+    Match, safety, isinstance, and resolve tests are in the centralized
+    parametrized classes.
+    """
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_uses_image_size_preset(self, mock_fal, tmp_path):
@@ -3356,27 +3204,11 @@ class TestHunyuanImageHandler:
 
 
 class TestRecraftHandler:
-    """Tests for Recraft handler (#79) — now backed by EditHandler."""
+    """Tests for Recraft handler (#79) — now backed by EditHandler.
 
-    _handler = EditHandler(
-        ["recraft"], safety={"enable_safety_checker": False}, supports_edit=False
-    )
-
-    def test_match_positive(self):
-        assert self._handler.match("fal-ai/recraft/v4/text-to-image")
-
-    def test_match_negative_flux(self):
-        assert not self._handler.match("fal-ai/flux-general")
-
-    def test_safety_defaults_disable_safety_checker(self):
-        assert self._handler.safety_defaults() == {"enable_safety_checker": False}
-
-    def test_is_still_handler(self):
-        assert isinstance(self._handler, StillHandler)
-
-    def test_resolve_handler(self):
-        handler = _resolve_still_handler("fal-ai/recraft/v4/text-to-image")
-        assert isinstance(handler, EditHandler)
+    Match, safety, isinstance, and resolve tests are in the centralized
+    parametrized classes.
+    """
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_uses_image_size_preset(self, mock_fal, tmp_path):
