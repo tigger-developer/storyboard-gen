@@ -15,6 +15,9 @@ from storyboard_gen.models import Project, Scene, format_scene_number
 
 logger = logging.getLogger(__name__)
 
+# Kdenlive uses this marker value on internally-added elements (transitions, filters)
+_KDENLIVE_INTERNAL_ADDED = "237"
+
 
 def generate_kdenlive(
     project: Project,
@@ -356,13 +359,13 @@ def _build_sequence_tractor(
     _set_prop(vol_filt, "max_gain", "20dB")
     _set_prop(vol_filt, "channel_mask", "-1")
     _set_prop(vol_filt, "mlt_service", "volume")
-    _set_prop(vol_filt, "internal_added", "237")
+    _set_prop(vol_filt, "internal_added", _KDENLIVE_INTERNAL_ADDED)
     _set_prop(vol_filt, "disable", "1")
 
     pan_filt = ET.SubElement(tractor, "filter")
     _set_prop(pan_filt, "channel", "-1")
     _set_prop(pan_filt, "mlt_service", "panner")
-    _set_prop(pan_filt, "internal_added", "237")
+    _set_prop(pan_filt, "internal_added", _KDENLIVE_INTERNAL_ADDED)
     _set_prop(pan_filt, "start", "0.5")
     _set_prop(pan_filt, "disable", "1")
 
@@ -370,7 +373,7 @@ def _build_sequence_tractor(
     if subtitles_path is not None:
         filt = ET.SubElement(tractor, "filter", id="subtitle_filter")
         _set_prop(filt, "mlt_service", "avfilter.subtitles")
-        _set_prop(filt, "internal_added", "237")
+        _set_prop(filt, "internal_added", _KDENLIVE_INTERNAL_ADDED)
         _set_prop(filt, "av.alpha", "1")
         _set_prop(filt, "av.filename", subtitles_path.name)
 
@@ -563,7 +566,7 @@ def _add_internal_mix(
     _set_prop(transition, "b_track", str(b_track))
     _set_prop(transition, "mlt_service", "mix")
     _set_prop(transition, "kdenlive_id", "mix")
-    _set_prop(transition, "internal_added", "237")
+    _set_prop(transition, "internal_added", _KDENLIVE_INTERNAL_ADDED)
     _set_prop(transition, "always_active", "1")
     _set_prop(transition, "accepts_blanks", "1")
     _set_prop(transition, "sum", "1")
@@ -581,7 +584,7 @@ def _add_internal_qtblend(
     _set_prop(transition, "compositing", "0")
     _set_prop(transition, "distort", "0")
     _set_prop(transition, "rotate_center", "0")
-    _set_prop(transition, "internal_added", "237")
+    _set_prop(transition, "internal_added", _KDENLIVE_INTERNAL_ADDED)
     _set_prop(transition, "always_active", "1")
 
 

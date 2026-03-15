@@ -2,6 +2,7 @@
 # ABOUTME: Subcommands: generate, assemble, kdenlive, validate, list, init, schema.
 
 import argparse
+import importlib.resources
 import logging
 from pathlib import Path
 
@@ -57,45 +58,8 @@ Use 'storyboard-gen <command> --help' for command-specific options.
 """
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Main entry point for storyboard-gen CLI.
-
-    Args:
-        argv: Command-line arguments. Defaults to sys.argv[1:].
-
-    Returns:
-        Exit code (0 for success, 1 for error).
-    """
-    if argv is None:
-        import sys
-
-        argv = sys.argv[1:]
-
-    # Handle --version / -V before argparse requires a subcommand
-    if argv in (["-V"], ["--version"]):
-        print(f"storyboard-gen {__version__}")
-        return 0
-
-    parser = argparse.ArgumentParser(
-        prog="storyboard-gen",
-        description=(
-            "Generate AI video storyboards. Define scenes in project.yaml, "
-            "generate stills and video clips via AI providers, apply Ken Burns "
-            "effects, and assemble everything into a final video."
-        ),
-        epilog=HELP_EPILOG,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Enable debug logging",
-    )
-
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # generate subcommand
+def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Add the 'generate' subcommand parser."""
     gen_parser = subparsers.add_parser(
         "generate",
         help="Generate stills and video clips from scene prompts",
@@ -133,7 +97,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     gen_group.add_argument("--all", action="store_true", help="Generate everything")
 
-    # assemble subcommand
+
+def _add_assemble_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Add the 'assemble' subcommand parser."""
     asm_parser = subparsers.add_parser(
         "assemble",
         help="Merge generated stills and clips into a final video",
@@ -164,7 +130,9 @@ def main(argv: list[str] | None = None) -> int:
         "--output", type=str, default="assembled.mp4", help="Output filename"
     )
 
-    # kdenlive subcommand
+
+def _add_kdenlive_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Add the 'kdenlive' subcommand parser."""
     kdenlive_parser = subparsers.add_parser(
         "kdenlive",
         help="Export a Kdenlive project for timeline editing",
@@ -205,21 +173,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Export without audio or subtitles",
     )
 
-    # validate subcommand
-    subparsers.add_parser(
-        "validate",
-        help="Validate project.yaml and show summary",
-        description="Parse and validate project.yaml, reporting any errors. Shows project summary on success.",
-    )
 
-    # list subcommand
-    subparsers.add_parser(
-        "list",
-        help="List all scenes with type, duration, and Ken Burns effect",
-        description="Display a table of all scenes with their type, duration, Ken Burns effect, and title.",
-    )
-
-    # init subcommand
+def _add_init_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Add the 'init' subcommand parser."""
     init_parser = subparsers.add_parser(
         "init",
         help="Scaffold a new project with template files",
@@ -241,13 +197,70 @@ def main(argv: list[str] | None = None) -> int:
         help="Directory to create project in (default: current directory)",
     )
 
-    # schema subcommand
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser with all subcommands."""
+    parser = argparse.ArgumentParser(
+        prog="storyboard-gen",
+        description=(
+            "Generate AI video storyboards. Define scenes in project.yaml, "
+            "generate stills and video clips via AI providers, apply Ken Burns "
+            "effects, and assemble everything into a final video."
+        ),
+        epilog=HELP_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    _add_generate_parser(subparsers)
+    _add_assemble_parser(subparsers)
+    _add_kdenlive_parser(subparsers)
+    subparsers.add_parser(
+        "validate",
+        help="Validate project.yaml and show summary",
+        description="Parse and validate project.yaml, reporting any errors. Shows project summary on success.",
+    )
+    subparsers.add_parser(
+        "list",
+        help="List all scenes with type, duration, and Ken Burns effect",
+        description="Display a table of all scenes with their type, duration, Ken Burns effect, and title.",
+    )
+    _add_init_parser(subparsers)
     subparsers.add_parser(
         "schema",
         help="Show project.yaml field reference",
         description="Display a complete reference of all project.yaml fields, valid values, and defaults.",
     )
 
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Main entry point for storyboard-gen CLI.
+
+    Args:
+        argv: Command-line arguments. Defaults to sys.argv[1:].
+
+    Returns:
+        Exit code (0 for success, 1 for error).
+    """
+    if argv is None:
+        import sys
+
+        argv = sys.argv[1:]
+
+    # Handle --version / -V before argparse requires a subcommand
+    if argv in (["-V"], ["--version"]):
+        print(f"storyboard-gen {__version__}")
+        return 0
+
+    parser = _build_parser()
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -624,205 +637,13 @@ KEN BURNS VALUES (stills only)
     return 0
 
 
-_TEMPLATE_PROJECT_YAML = """\
-title: "My Project"
-aspect_ratio: "9:16"
-
-# Optional: audio track to mux into assembled video
-# audio: "audio.m4a"
-
-# Uncomment and configure a provider (defaults to Google if omitted)
-# providers:
-#   still:
-#     backend: google            # google, fal, or replicate
-#     model: "imagen-4.0-generate-001"
-#     options: {}
-#   clip:
-#     backend: google
-#     model: "veo-3.1-fast-generate-001"
-#     options: {}
-
-# Optional: style reference images for Ideogram Character model
-# These are passed as aesthetic/style references (image_urls), separate
-# from character references. Only used by fal-ai/ideogram/character.
-# style_reference:
-#   - "references/style_ref.jpg"
-
-style_prefix: >
-  Describe your visual style here. Be specific: art style, colour
-  palette, lighting, setting details. This is prepended to every
-  scene prompt for consistency.
-
-characters:
-  character_one:
-    description: >
-      Physical description for prompt consistency. Include clothing,
-      hair, distinguishing features.
-    reference:
-      - "references/character_one.jpg"
-
-  character_two:
-    description: >
-      Another character. Omit reference or use empty list if no
-      reference images are available.
-    reference: []
-
-scenes:
-  # Camera values (injected into AI prompt automatically):
-  #   EWS      — extreme wide establishing shot
-  #   WIDE     — wide shot, full body in environment
-  #   MEDIUM   — waist up
-  #   MCU      — chest up (medium close-up)
-  #   CLOSE    — face, tightly framed
-  #   ECU      — extreme close-up, single detail
-  #   POV      — first-person point of view
-  #   LOW      — low angle, looking up
-  #   HIGH     — high angle, looking down
-  #   OVERHEAD — bird's-eye, straight down
-  #   OTS      — over-the-shoulder
-  #   DUTCH    — tilted camera, unease
-
-  # === ACT 1 ===
-
-  - number: 1
-    title: "Opening shot"
-    camera: "EWS"
-    type: still
-    duration: 8
-    ken_burns: "zoom_in"
-    characters: [character_one]
-    prompt: >
-      Describe the opening scene. Include character positions,
-      expressions, background, lighting, mood.
-
-  - number: 2
-    title: "Second scene"
-    camera: "CLOSE"
-    type: still
-    duration: 6
-    ken_burns: "pan_ltr"
-    characters: [character_one, character_two]
-    prompt: >
-      Describe the second scene in detail.
-
-  - number: 3
-    title: "Action sequence"
-    camera: "MEDIUM"
-    type: clip
-    duration: 7
-    characters: [character_one, character_two]
-    prompt: >
-      Clips generate video — describe the motion and action
-      you want. Ken Burns is not used for clips.
-
-  # === PER-SCENE PROVIDER EXAMPLES (uncomment to use) ===
-
-  # Multi-character still with Kling O1 Image:
-  # Uses @character_id tokens mapped to @ImageN references.
-  # - number: 4
-  #   title: "Group portrait (O1 Image)"
-  #   camera: "WIDE"
-  #   type: still
-  #   duration: 5
-  #   ken_burns: "static"
-  #   characters: [character_one, character_two]
-  #   provider:
-  #     backend: fal
-  #     model: "fal-ai/kling-image/o1"
-  #   prompt: >
-  #     @character_one and @character_two stand side by side.
-
-  # Multi-character still with Kontext Max Multi:
-  # Accepts multiple reference images; model infers associations.
-  # No @character_id mapping needed — just describe naturally.
-  # - number: 5
-  #   title: "Group portrait (Kontext Multi)"
-  #   camera: "MEDIUM"
-  #   type: still
-  #   duration: 5
-  #   ken_burns: "zoom_in"
-  #   characters: [character_one, character_two]
-  #   provider:
-  #     backend: fal
-  #     model: "fal-ai/flux-pro/kontext/max/multi"
-  #   prompt: >
-  #     Two characters standing together in a field at sunset.
-
-  # Ideogram Character with separate style + character references:
-  # Character refs → reference_image_urls (identity).
-  # Style refs → image_urls (aesthetic). Requires style_reference at top level.
-  # - number: 6
-  #   title: "Portrait (Ideogram Character)"
-  #   camera: "CLOSE"
-  #   type: still
-  #   duration: 5
-  #   ken_burns: "static"
-  #   characters: [character_one]
-  #   provider:
-  #     backend: fal
-  #     model: "fal-ai/ideogram/character"
-  #   prompt: >
-  #     A portrait of character_one in a warm studio setting.
-
-  # Multi-character clip with Kling O3 (video):
-  # Uses @character_id tokens mapped to @ElementN references.
-  # - number: 7
-  #   title: "Chase sequence (O3)"
-  #   camera: "MEDIUM"
-  #   type: clip
-  #   duration: 5
-  #   characters: [character_one, character_two]
-  #   provider:
-  #     backend: fal
-  #     model: "fal-ai/kling-video/o3/standard/image-to-video"
-  #   prompt: >
-  #     @character_one chases @character_two through a garden.
-"""
-
-_TEMPLATE_ENV = """\
-# Google Vertex AI backend (recommended if you have a GCP project)
-USE_VERTEX=true
-GOOGLE_CLOUD_PROJECT=your-project-id
-GOOGLE_CLOUD_LOCATION=us-central1
-GCS_OUTPUT_BUCKET=gs://your-bucket/
-
-# OR Google Gemini Developer API backend (simpler setup)
-# GEMINI_API_KEY=your-api-key
-
-# FAL.ai backend (for Flux models)
-# FAL_KEY=your-fal-key
-
-# Replicate backend (for Flux models)
-# REPLICATE_API_TOKEN=your-replicate-token
-"""
-
-_TEMPLATE_GITIGNORE = """\
-# Secrets
-.env
-
-# Operation logs (crash recovery, not needed in source control)
-logs/
-
-# Generated video (large, regenerable from stills + project.yaml)
-output/intermediate/
-output/clips/
-
-# Assembled video output
-*.mp4
-*.mov
-*.avi
-*.mkv
-*.webm
-
-# Keep generated stills (expensive API calls to regenerate)
-!output/stills/
-
-# Keep Kdenlive project files (small XML)
-!*.kdenlive
-
-# macOS
-.DS_Store
-"""
+def _load_template(name: str) -> str:
+    """Load a scaffolding template from the templates package directory."""
+    return (
+        importlib.resources.files("storyboard_gen.templates")
+        .joinpath(name)
+        .read_text(encoding="utf-8")
+    )
 
 
 def init_project(target: Path) -> None:
@@ -843,16 +664,18 @@ def init_project(target: Path) -> None:
     if project_yaml.exists():
         raise FileExistsError(f"project.yaml already exists in {target}")
 
+    template_yaml = _load_template("project.yaml")
+
     # Extract title from template for use in README
     title = "My Project"
-    for line in _TEMPLATE_PROJECT_YAML.splitlines():
+    for line in template_yaml.splitlines():
         if line.startswith("title:"):
             title = line.split(":", 1)[1].strip().strip('"').strip("'")
             break
 
-    project_yaml.write_text(_TEMPLATE_PROJECT_YAML)
-    (target / ".env").write_text(_TEMPLATE_ENV)
-    (target / ".gitignore").write_text(_TEMPLATE_GITIGNORE)
+    project_yaml.write_text(template_yaml)
+    (target / ".env").write_text(_load_template("env"))
+    (target / ".gitignore").write_text(_load_template("gitignore"))
     (target / "README.md").write_text(
         f"# {title}\n"
         "\n"

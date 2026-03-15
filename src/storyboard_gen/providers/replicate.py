@@ -10,7 +10,7 @@ from storyboard_gen.providers.base import ImageProvider
 try:
     import replicate
 except ImportError:
-    replicate = None  # type: ignore[assignment]
+    replicate = None  # type: ignore[assignment] — optional SDK; checked at runtime
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class ReplicateProvider(ImageProvider):
                 )
             for ref_path in reference_images:
                 if ref_path.exists():
-                    input_args["image"] = open(ref_path, "rb")  # noqa: SIM115
+                    input_args["image"] = open(ref_path, "rb")  # noqa: SIM115 — handle passed to SDK which manages lifecycle
                     logger.info("Reference image: %s", ref_path)
                     break
 
@@ -90,7 +90,9 @@ class ReplicateProvider(ImageProvider):
 
         try:
             output = replicate.run(self.model, input=input_args)
-        except Exception as exc:
+        except (
+            Exception
+        ) as exc:  # Replicate SDK may raise any type; log trace, re-raise clean
             logger.error(
                 "Replicate API error for %s: %s", self.model, exc, exc_info=True
             )

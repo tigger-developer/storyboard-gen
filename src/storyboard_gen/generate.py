@@ -17,6 +17,9 @@ from storyboard_gen.providers.google import (
 
 logger = logging.getLogger(__name__)
 
+# Skip aspect-ratio crop if source is within ~1% of the target
+_ASPECT_RATIO_TOLERANCE = 0.01
+
 
 def check_reference_warnings(
     scene: Scene, project: Project, provider_cfg: ProviderConfig
@@ -143,7 +146,7 @@ def crop_to_aspect_ratio(img: PILImage.Image, aspect_ratio: str) -> PILImage.Ima
     src_w, src_h = img.size
     src_ratio = src_w / src_h
 
-    if abs(src_ratio - target_ratio) < 0.01:
+    if abs(src_ratio - target_ratio) < _ASPECT_RATIO_TOLERANCE:
         return img
 
     if src_ratio > target_ratio:

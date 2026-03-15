@@ -11,6 +11,7 @@ setup(
     license="MIT",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
+    package_data={"storyboard_gen": ["templates/*"]},
     python_requires=">=3.12",
     install_requires=[
         "google-genai>=1.0.0",

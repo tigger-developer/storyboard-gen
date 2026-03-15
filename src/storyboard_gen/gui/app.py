@@ -41,6 +41,10 @@ from storyboard_gen.models import Project, Scene, format_scene_number
 logger = logging.getLogger(__name__)
 
 APP_TITLE = "storyboard-gen"
+_DEFAULT_WINDOW_WIDTH = 1400
+_DEFAULT_WINDOW_HEIGHT = 800
+_TOOLBAR_BUTTON_SIZE = 36
+_TOOLBAR_FONT_SIZE_PT = 18
 
 
 def _shortcut_modifier_label() -> str:
@@ -54,7 +58,7 @@ class MainWindow(QMainWindow):
     def __init__(self, parent: QWidget | None = None, verbose: bool = False):
         super().__init__(parent)
         self.setWindowTitle(APP_TITLE)
-        self.resize(1400, 800)
+        self.resize(_DEFAULT_WINDOW_WIDTH, _DEFAULT_WINDOW_HEIGHT)
 
         self._project: Project | None = None
         self._project_dir: Path | None = None
@@ -127,8 +131,8 @@ class MainWindow(QMainWindow):
         btn = QToolButton()
         btn.setText(emoji)
         btn.setToolTip(tooltip)
-        btn.setFixedSize(36, 36)
-        btn.setStyleSheet("font-size: 18pt;")
+        btn.setFixedSize(_TOOLBAR_BUTTON_SIZE, _TOOLBAR_BUTTON_SIZE)
+        btn.setStyleSheet(f"font-size: {_TOOLBAR_FONT_SIZE_PT}pt;")
         btn.clicked.connect(callback)
         return btn
 

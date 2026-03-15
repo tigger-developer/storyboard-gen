@@ -145,40 +145,21 @@ class GoogleProvider(ImageProvider):
 
         return response.generated_images[0].image.image_bytes
 
-    def generate_clip(
+    def _build_clip_config(
         self,
         prompt: str,
-        output_path: Path,
         aspect_ratio: str,
         duration: float,
-        reference_images: list[Path] | None = None,
-        options: dict | None = None,
-        *,
-        source_frame: Path | None = None,
-        last_frame: Path | None = None,
-        extend_from_video: Path | None = None,
-        seed: int | None = None,
-        number_of_videos: int = 1,
-        scene_characters: list | None = None,
-        client: object | None = None,
-        poll_interval: int = 10,
-        max_wait: int = 600,
-        project_dir: Path | None = None,
-        scene_number: str | None = None,
-    ) -> list[bytes]:
-        """Generate a video clip via Veo.
-
-        Builds a GenerateVideosConfig with aspect_ratio, reference_images,
-        last_frame, seed, and number_of_videos. Optionally passes
-        source_frame as image= or extend_from_video as video=.
-
-        When project_dir and scene_number are provided, writes operation
-        log entries to logs/operations.jsonl for crash recovery.
-        """
+        reference_images: list[Path] | None,
+        scene_characters: list | None,
+        source_frame: Path | None,
+        last_frame: Path | None,
+        extend_from_video: Path | None,
+        seed: int | None,
+        number_of_videos: int,
+    ) -> tuple[str, dict]:
+        """Build Veo config and kwargs for generate_videos."""
         from google.genai import types
-
-        if client is None:
-            client = self._get_client()
 
         # Strip @character_id tokens from prompt (#37)
         if scene_characters:
@@ -189,9 +170,45 @@ class GoogleProvider(ImageProvider):
                     rf"@{re.escape(char.id)}\b", char.id, prompt, flags=re.IGNORECASE
                 )
 
-        # Build reference images list for config.
-        # Veo requires VideoGenerationReferenceImage wrappers (not bare Image).
-        # reference_images is not supported when image= or video= is set.
+        ref_images = self._build_clip_references(
+            types, reference_images, source_frame, extend_from_video
+        )
+
+        config = types.GenerateVideosConfig(
+            aspect_ratio=aspect_ratio,
+            reference_images=ref_images or None,
+            number_of_videos=number_of_videos,
+            duration_seconds=int(duration),
+            generate_audio=False,
+        )
+        if self._gcs_bucket:
+            config.output_gcs_uri = self._gcs_bucket
+        if last_frame is not None:
+            config.last_frame = types.Image.from_file(location=str(last_frame))
+        if seed is not None:
+            config.seed = seed
+
+        gen_kwargs: dict = {
+            "model": self.model,
+            "prompt": prompt,
+            "config": config,
+        }
+        if source_frame is not None:
+            gen_kwargs["image"] = types.Image.from_file(location=str(source_frame))
+            logger.info("Image-to-video source frame: %s", source_frame)
+        if extend_from_video is not None:
+            gen_kwargs["video"] = types.Video(
+                video_bytes=extend_from_video.read_bytes()
+            )
+            logger.info("Extending from video: %s", extend_from_video)
+
+        return prompt, gen_kwargs
+
+    @staticmethod
+    def _build_clip_references(
+        types, reference_images, source_frame, extend_from_video
+    ):
+        """Build Veo reference image wrappers, respecting mode constraints."""
         ref_images = []
         if reference_images and source_frame is None and extend_from_video is None:
             for ref_path in reference_images:
@@ -218,41 +235,12 @@ class GoogleProvider(ImageProvider):
                 MAX_VEO_REFS,
             )
             ref_images = ref_images[:MAX_VEO_REFS]
+        return ref_images
 
-        # Build config — pass duration as-is; Veo returns a clear error
-        # if the value is unsupported for the given mode.
-        config = types.GenerateVideosConfig(
-            aspect_ratio=aspect_ratio,
-            reference_images=ref_images or None,
-            number_of_videos=number_of_videos,
-            duration_seconds=int(duration),
-            generate_audio=False,
-        )
-        if self._gcs_bucket:
-            config.output_gcs_uri = self._gcs_bucket
-        if last_frame is not None:
-            config.last_frame = types.Image.from_file(location=str(last_frame))
-        if seed is not None:
-            config.seed = seed
-
-        # Build generate_videos kwargs
-        gen_kwargs = {
-            "model": self.model,
-            "prompt": prompt,
-            "config": config,
-        }
-
-        if source_frame is not None:
-            gen_kwargs["image"] = types.Image.from_file(location=str(source_frame))
-            logger.info("Image-to-video source frame: %s", source_frame)
-
-        if extend_from_video is not None:
-            video_bytes = extend_from_video.read_bytes()
-            gen_kwargs["video"] = types.Video(video_bytes=video_bytes)
-            logger.info("Extending from video: %s", extend_from_video)
-
-        operation = client.models.generate_videos(**gen_kwargs)
-
+    def _poll_operation(
+        self, client, operation, project_dir, scene_number, poll_interval, max_wait
+    ):
+        """Poll a Veo operation until completion, with operation logging."""
         op_id = getattr(operation, "name", None) or "unknown"
         if project_dir and scene_number:
             from storyboard_gen.operation_log import log_operation
@@ -296,11 +284,13 @@ class GoogleProvider(ImageProvider):
                 operation_id=op_id,
                 status="completed",
             )
+        return operation
 
-        # SDK sets both 'response' and 'result' to the same GenerateVideosResponse
+    @staticmethod
+    def _extract_clip_results(operation, output_path: Path) -> list[bytes]:
+        """Extract video bytes from a completed Veo operation."""
         video_response = operation.response or operation.result
 
-        # Surface operation errors (quota, invalid request, etc.)
         if hasattr(operation, "error") and operation.error:
             logger.error("Google Veo operation error: %s", operation.error)
             raise RuntimeError(
@@ -308,7 +298,6 @@ class GoogleProvider(ImageProvider):
             )
 
         if not video_response or not video_response.generated_videos:
-            # Check for RAI (safety) filter rejection
             rai_count = getattr(video_response, "rai_media_filtered_count", None)
             rai_reasons = getattr(video_response, "rai_media_filtered_reasons", None)
             if rai_count or rai_reasons:
@@ -337,8 +326,64 @@ class GoogleProvider(ImageProvider):
                     results.append(output_path.read_bytes())
                     continue
             raise RuntimeError("Unexpected video response format")
-
         return results
+
+    def generate_clip(
+        self,
+        prompt: str,
+        output_path: Path,
+        aspect_ratio: str,
+        duration: float,
+        reference_images: list[Path] | None = None,
+        options: dict | None = None,
+        *,
+        source_frame: Path | None = None,
+        last_frame: Path | None = None,
+        extend_from_video: Path | None = None,
+        seed: int | None = None,
+        number_of_videos: int = 1,
+        scene_characters: list | None = None,
+        client: object | None = None,
+        poll_interval: int = 10,
+        max_wait: int = 600,
+        project_dir: Path | None = None,
+        scene_number: str | None = None,
+    ) -> list[bytes]:
+        """Generate a video clip via Veo.
+
+        Builds a GenerateVideosConfig with aspect_ratio, reference_images,
+        last_frame, seed, and number_of_videos. Optionally passes
+        source_frame as image= or extend_from_video as video=.
+
+        When project_dir and scene_number are provided, writes operation
+        log entries to logs/operations.jsonl for crash recovery.
+        """
+        if client is None:
+            client = self._get_client()
+
+        _prompt, gen_kwargs = self._build_clip_config(
+            prompt,
+            aspect_ratio,
+            duration,
+            reference_images,
+            scene_characters,
+            source_frame,
+            last_frame,
+            extend_from_video,
+            seed,
+            number_of_videos,
+        )
+
+        operation = client.models.generate_videos(**gen_kwargs)
+        operation = self._poll_operation(
+            client,
+            operation,
+            project_dir,
+            scene_number,
+            poll_interval,
+            max_wait,
+        )
+        return self._extract_clip_results(operation, output_path)
 
 
 def _download_gcs(uri: str, dest: Path) -> None:

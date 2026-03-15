@@ -9,28 +9,31 @@ from storyboard_gen.models import Scene, format_scene_number
 
 logger = logging.getLogger(__name__)
 
+# Upscale width for FFmpeg zoompan — large enough for smooth pan/zoom without pixelation
+_UPSCALE_WIDTH = 8000
+
 # FFmpeg filter expressions for each Ken Burns type.
 # These assume the input image is larger than the output frame
 # to allow for zooming/panning without black borders.
 KEN_BURNS_FILTERS = {
     "zoom_in": (
-        "scale=8000:-1,"
+        f"scale={_UPSCALE_WIDTH}:-1,"
         "zoompan=z='min(zoom+0.0015,1.5)':x='iw/2-(iw/zoom/2)':"
         "y='ih/2-(ih/zoom/2)':d={frames}:s={width}x{height}:fps={fps}"
     ),
     "zoom_out": (
-        "scale=8000:-1,"
+        f"scale={_UPSCALE_WIDTH}:-1,"
         "zoompan=z='if(lte(zoom,1.0),1.5,max(1.001,zoom-0.0015))':"
         "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
         "d={frames}:s={width}x{height}:fps={fps}"
     ),
     "pan_ltr": (
-        "scale=8000:-1,"
+        f"scale={_UPSCALE_WIDTH}:-1,"
         "zoompan=z='1.2':x='(iw-iw/zoom)*on/{frames}':"
         "y='ih/2-(ih/zoom/2)':d={frames}:s={width}x{height}:fps={fps}"
     ),
     "pan_rtl": (
-        "scale=8000:-1,"
+        f"scale={_UPSCALE_WIDTH}:-1,"
         "zoompan=z='1.2':x='(iw-iw/zoom)*(1-on/{frames})':"
         "y='ih/2-(ih/zoom/2)':d={frames}:s={width}x{height}:fps={fps}"
     ),

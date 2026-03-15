@@ -206,6 +206,108 @@ def _parse_characters(raw: dict, project_dir: Path) -> dict[str, Character]:
     return characters
 
 
+def _validate_scene_fields(
+    scene_data: dict, label: str, characters: dict[str, Character]
+) -> tuple[str, str | None, str | None, list[str]]:
+    """Validate and extract core scene fields (type, ken_burns, camera, characters)."""
+    scene_type = scene_data.get("type", "still")
+    if scene_type not in VALID_SCENE_TYPES:
+        raise ConfigError(
+            f"{label}: invalid type '{scene_type}'. "
+            f"Must be one of: {', '.join(sorted(VALID_SCENE_TYPES))}"
+        )
+
+    ken_burns = scene_data.get("ken_burns")
+    if ken_burns not in VALID_KEN_BURNS:
+        raise ConfigError(
+            f"{label}: invalid ken_burns '{ken_burns}'. "
+            f"Must be one of: {', '.join(str(v) for v in sorted(VALID_KEN_BURNS, key=str))}"
+        )
+
+    camera_raw = scene_data.get("camera")
+    camera = camera_raw.upper() if isinstance(camera_raw, str) else camera_raw
+    if camera not in VALID_CAMERAS:
+        valid_names = sorted(v for v in VALID_CAMERAS if v is not None)
+        raise ConfigError(
+            f"{label}: invalid camera '{camera_raw}'. "
+            f"Must be one of: {', '.join(valid_names)}"
+        )
+
+    char_ids = scene_data.get("characters", [])
+    for cid in char_ids:
+        if cid not in characters:
+            raise ConfigError(f"{label}: references unknown character '{cid}'")
+
+    return scene_type, ken_burns, camera, char_ids
+
+
+def _parse_scene_provider(
+    scene_data: dict, label: str
+) -> tuple[ProviderConfig | None, str | None]:
+    """Parse per-scene provider and model overrides."""
+    scene_provider = None
+    raw_provider = scene_data.get("provider")
+    if isinstance(raw_provider, dict):
+        scene_provider = _parse_provider_config(raw_provider, f"{label} provider")
+
+    scene_model = scene_data.get("model")
+
+    if scene_model and scene_provider:
+        raise ConfigError(f"{label}: cannot specify both 'model' and 'provider'")
+
+    return scene_provider, scene_model
+
+
+def _parse_scene_references(
+    scene_data: dict, label: str, project_dir: Path, scene_type: str
+) -> tuple[list[Path], Path | None, Path | None, str | None]:
+    """Parse reference images, source/last frame, and extend_from for a scene."""
+    ref_raw = scene_data.get("reference")
+    if ref_raw is not None:
+        if isinstance(ref_raw, str):
+            raise ConfigError(
+                f"{label}: 'reference' must be a list "
+                f"since v0.29.0. "
+                f'Change:\n  reference: "{ref_raw}"\n'
+                f"to:\n  reference:\n"
+                f'    - "{ref_raw}"'
+            )
+        if not isinstance(ref_raw, list):
+            raise ConfigError(f"{label}: 'reference' must be a list")
+        scene_reference = [project_dir / r for r in ref_raw]
+    else:
+        scene_reference = []
+
+    source_frame = None
+    source_frame_str = scene_data.get("source_frame")
+    if source_frame_str:
+        if scene_type != "clip":
+            raise ConfigError(f"{label}: source_frame is only valid on clip scenes")
+        source_frame = project_dir / source_frame_str
+
+    last_frame = None
+    last_frame_str = scene_data.get("last_frame")
+    if last_frame_str:
+        if scene_type != "clip":
+            raise ConfigError(f"{label}: last_frame is only valid on clip scenes")
+        if not source_frame_str:
+            raise ConfigError(f"{label}: last_frame requires source_frame to be set")
+        last_frame = project_dir / last_frame_str
+
+    extend_from = None
+    extend_from_raw = scene_data.get("extend_from")
+    if extend_from_raw is not None:
+        if scene_type != "clip":
+            raise ConfigError(f"{label}: extend_from is only valid on clip scenes")
+        if source_frame_str:
+            raise ConfigError(
+                f"{label}: extend_from and source_frame are mutually exclusive"
+            )
+        extend_from = str(extend_from_raw)
+
+    return scene_reference, source_frame, last_frame, extend_from
+
+
 def _parse_scenes(
     raw: list, characters: dict[str, Character], project_dir: Path
 ) -> list[Scene]:
@@ -218,102 +320,14 @@ def _parse_scenes(
         if not isinstance(scene_data, dict):
             raise ConfigError(f"Scene {i + 1} must be a mapping")
 
-        scene_type = scene_data.get("type", "still")
-        if scene_type not in VALID_SCENE_TYPES:
-            raise ConfigError(
-                f"Scene {i + 1}: invalid type '{scene_type}'. "
-                f"Must be one of: {', '.join(sorted(VALID_SCENE_TYPES))}"
-            )
-
-        ken_burns = scene_data.get("ken_burns")
-        if ken_burns not in VALID_KEN_BURNS:
-            raise ConfigError(
-                f"Scene {i + 1}: invalid ken_burns '{ken_burns}'. "
-                f"Must be one of: {', '.join(str(v) for v in sorted(VALID_KEN_BURNS, key=str))}"
-            )
-
-        camera_raw = scene_data.get("camera")
-        camera = camera_raw.upper() if isinstance(camera_raw, str) else camera_raw
-        if camera not in VALID_CAMERAS:
-            valid_names = sorted(v for v in VALID_CAMERAS if v is not None)
-            raise ConfigError(
-                f"Scene {i + 1}: invalid camera '{camera_raw}'. "
-                f"Must be one of: {', '.join(valid_names)}"
-            )
-
-        char_ids = scene_data.get("characters", [])
-        for cid in char_ids:
-            if cid not in characters:
-                raise ConfigError(
-                    f"Scene {i + 1}: references unknown character '{cid}'"
-                )
-
-        scene_provider = None
-        raw_provider = scene_data.get("provider")
-        if isinstance(raw_provider, dict):
-            scene_provider = _parse_provider_config(
-                raw_provider, f"scene {i + 1} provider"
-            )
-
-        scene_model = scene_data.get("model")
-
-        if scene_model and scene_provider:
-            raise ConfigError(
-                f"Scene {i + 1}: cannot specify both 'model' and 'provider'"
-            )
-
-        ref_raw = scene_data.get("reference")
-        if ref_raw is not None:
-            if isinstance(ref_raw, str):
-                raise ConfigError(
-                    f"Scene {i + 1}: 'reference' must be a list "
-                    f"since v0.29.0. "
-                    f'Change:\n  reference: "{ref_raw}"\n'
-                    f"to:\n  reference:\n"
-                    f'    - "{ref_raw}"'
-                )
-            if not isinstance(ref_raw, list):
-                raise ConfigError(f"Scene {i + 1}: 'reference' must be a list")
-            scene_reference = [project_dir / r for r in ref_raw]
-        else:
-            scene_reference = []
-
-        # Veo 3.1 clip generation fields
-        source_frame = None
-        source_frame_str = scene_data.get("source_frame")
-        if source_frame_str:
-            if scene_type != "clip":
-                raise ConfigError(
-                    f"Scene {i + 1}: source_frame is only valid on clip scenes"
-                )
-            source_frame = project_dir / source_frame_str
-
-        last_frame = None
-        last_frame_str = scene_data.get("last_frame")
-        if last_frame_str:
-            if scene_type != "clip":
-                raise ConfigError(
-                    f"Scene {i + 1}: last_frame is only valid on clip scenes"
-                )
-            if not source_frame_str:
-                raise ConfigError(
-                    f"Scene {i + 1}: last_frame requires source_frame to be set"
-                )
-            last_frame = project_dir / last_frame_str
-
-        extend_from = None
-        extend_from_raw = scene_data.get("extend_from")
-        if extend_from_raw is not None:
-            if scene_type != "clip":
-                raise ConfigError(
-                    f"Scene {i + 1}: extend_from is only valid on clip scenes"
-                )
-            if source_frame_str:
-                raise ConfigError(
-                    f"Scene {i + 1}: extend_from and source_frame are "
-                    f"mutually exclusive"
-                )
-            extend_from = str(extend_from_raw)
+        label = f"Scene {i + 1}"
+        scene_type, ken_burns, camera, char_ids = _validate_scene_fields(
+            scene_data, label, characters
+        )
+        scene_provider, scene_model = _parse_scene_provider(scene_data, label)
+        reference, source_frame, last_frame, extend_from = _parse_scene_references(
+            scene_data, label, project_dir, scene_type
+        )
 
         seed = None
         seed_raw = scene_data.get("seed")
@@ -326,7 +340,7 @@ def _parse_scenes(
             variants = int(variants_raw)
             if variants < 1 or variants > 4:
                 raise ConfigError(
-                    f"Scene {i + 1}: variants must be between 1 and 4, got {variants}"
+                    f"{label}: variants must be between 1 and 4, got {variants}"
                 )
 
         scenes.append(
@@ -341,7 +355,7 @@ def _parse_scenes(
                 characters=char_ids,
                 provider=scene_provider,
                 model=scene_model,
-                reference=scene_reference,
+                reference=reference,
                 source_frame=source_frame,
                 last_frame=last_frame,
                 extend_from=extend_from,

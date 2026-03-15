@@ -9,20 +9,17 @@ import pytest
 
 from storyboard_gen.models import Character
 from storyboard_gen.providers.fal import (
+    EditHandler,
     FalProvider,
     Flux2Handler,
     Flux2ProHandler,
     FluxHandler,
-    GrokImageHandler,
-    HunyuanImageHandler,
     IdeogramCharacterHandler,
     IdeogramV3Handler,
     InstantCharacterHandler,
     KontextHandler,
     KontextMultiHandler,
     O1ImageHandler,
-    RecraftHandler,
-    SeedreamHandler,
     StillHandler,
     _map_aspect_ratio,
     _resolve_still_handler,
@@ -2994,34 +2991,36 @@ class TestMinimaxVideoModel:
 
 
 class TestGrokImageHandler:
-    """Tests for Grok Image handler (#79)."""
+    """Tests for Grok Image handler (#79) — now backed by EditHandler."""
+
+    _handler = EditHandler(["grok-imagine-image"], sizing="aspect_ratio")
 
     def test_match_positive(self):
-        assert GrokImageHandler().match("xai/grok-imagine-image")
+        assert self._handler.match("xai/grok-imagine-image")
 
     def test_match_positive_edit(self):
-        assert GrokImageHandler().match("xai/grok-imagine-image/edit")
+        assert self._handler.match("xai/grok-imagine-image/edit")
 
     def test_match_negative_flux(self):
-        assert not GrokImageHandler().match("fal-ai/flux-general")
+        assert not self._handler.match("fal-ai/flux-general")
 
     def test_match_negative_grok_video(self):
-        assert not GrokImageHandler().match("xai/grok-imagine-video/text-to-video")
+        assert not self._handler.match("xai/grok-imagine-video/text-to-video")
 
     def test_safety_defaults_empty(self):
         """Grok Image has no safety toggle."""
-        assert GrokImageHandler().safety_defaults() == {}
+        assert self._handler.safety_defaults() == {}
 
     def test_is_still_handler(self):
-        assert isinstance(GrokImageHandler(), StillHandler)
+        assert isinstance(self._handler, StillHandler)
 
     def test_resolve_handler(self):
         handler = _resolve_still_handler("xai/grok-imagine-image")
-        assert isinstance(handler, GrokImageHandler)
+        assert isinstance(handler, EditHandler)
 
     def test_resolve_handler_edit(self):
         handler = _resolve_still_handler("xai/grok-imagine-image/edit")
-        assert isinstance(handler, GrokImageHandler)
+        assert isinstance(handler, EditHandler)
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_uses_raw_aspect_ratio(self, mock_fal, tmp_path):
@@ -3134,44 +3133,74 @@ class TestGrokImageHandler:
         call_args = mock_fal.subscribe.call_args
         assert call_args.args[0] == "xai/grok-imagine-image/edit"
 
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_reference_images_also_route_to_edit(self, mock_fal, tmp_path):
+        """Scene-level reference_images (not just scene_characters) trigger /edit (#106)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        provider = FalProvider(model="xai/grok-imagine-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act — pass reference_images, NOT scene_characters
+            provider.generate_still(
+                prompt="A boy running",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+                reference_images=[ref_img],
+                project_dir=tmp_path,
+            )
+
+        # Assert — should route to /edit with image_urls
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "xai/grok-imagine-image/edit"
+        arguments = call_args.kwargs["arguments"]
+        assert "image_urls" in arguments
+
 
 class TestSeedreamHandler:
-    """Tests for Seedream handler (#79)."""
+    """Tests for Seedream handler (#79) — now backed by EditHandler."""
+
+    _handler = EditHandler(["seedream"], safety={"enable_safety_checker": False})
 
     def test_match_v45(self):
-        assert SeedreamHandler().match("fal-ai/bytedance/seedream/v4.5/text-to-image")
+        assert self._handler.match("fal-ai/bytedance/seedream/v4.5/text-to-image")
 
     def test_match_v45_edit(self):
-        assert SeedreamHandler().match("fal-ai/bytedance/seedream/v4.5/edit")
+        assert self._handler.match("fal-ai/bytedance/seedream/v4.5/edit")
 
     def test_match_v5_lite(self):
-        assert SeedreamHandler().match(
-            "fal-ai/bytedance/seedream/v5/lite/text-to-image"
-        )
+        assert self._handler.match("fal-ai/bytedance/seedream/v5/lite/text-to-image")
 
     def test_match_negative_flux(self):
-        assert not SeedreamHandler().match("fal-ai/flux-general")
+        assert not self._handler.match("fal-ai/flux-general")
 
     def test_match_negative_seedance(self):
-        assert not SeedreamHandler().match(
+        assert not self._handler.match(
             "fal-ai/bytedance/seedance/v1.5/pro/text-to-video"
         )
 
     def test_safety_defaults_disable_safety_checker(self):
-        assert SeedreamHandler().safety_defaults() == {"enable_safety_checker": False}
+        assert self._handler.safety_defaults() == {"enable_safety_checker": False}
 
     def test_is_still_handler(self):
-        assert isinstance(SeedreamHandler(), StillHandler)
+        assert isinstance(self._handler, StillHandler)
 
     def test_resolve_handler_v45(self):
         handler = _resolve_still_handler("fal-ai/bytedance/seedream/v4.5/text-to-image")
-        assert isinstance(handler, SeedreamHandler)
+        assert isinstance(handler, EditHandler)
 
     def test_resolve_handler_v5_lite(self):
         handler = _resolve_still_handler(
             "fal-ai/bytedance/seedream/v5/lite/text-to-image"
         )
-        assert isinstance(handler, SeedreamHandler)
+        assert isinstance(handler, EditHandler)
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_uses_image_size_preset(self, mock_fal, tmp_path):
@@ -3248,36 +3277,36 @@ class TestSeedreamHandler:
                 aspect_ratio="16:9",
             )
 
-        # Assert
+        # Assert — EditHandler normalizes by stripping /text-to-image suffix
         call_args = mock_fal.subscribe.call_args
-        assert call_args.args[0] == "fal-ai/bytedance/seedream/v5/lite/text-to-image"
+        assert call_args.args[0] == "fal-ai/bytedance/seedream/v5/lite"
 
 
 class TestHunyuanImageHandler:
-    """Tests for Hunyuan Image handler (#79)."""
+    """Tests for Hunyuan Image handler (#79) — now backed by EditHandler."""
+
+    _handler = EditHandler(
+        ["hunyuan-image"], safety={"enable_safety_checker": False}, supports_edit=False
+    )
 
     def test_match_positive(self):
-        assert HunyuanImageHandler().match("fal-ai/hunyuan-image/v3/text-to-image")
+        assert self._handler.match("fal-ai/hunyuan-image/v3/text-to-image")
 
     def test_match_negative_flux(self):
-        assert not HunyuanImageHandler().match("fal-ai/flux-general")
+        assert not self._handler.match("fal-ai/flux-general")
 
     def test_match_negative_hunyuan_video(self):
-        assert not HunyuanImageHandler().match(
-            "fal-ai/hunyuan-video-v1.5/text-to-video"
-        )
+        assert not self._handler.match("fal-ai/hunyuan-video-v1.5/text-to-video")
 
     def test_safety_defaults_disable_safety_checker(self):
-        assert HunyuanImageHandler().safety_defaults() == {
-            "enable_safety_checker": False
-        }
+        assert self._handler.safety_defaults() == {"enable_safety_checker": False}
 
     def test_is_still_handler(self):
-        assert isinstance(HunyuanImageHandler(), StillHandler)
+        assert isinstance(self._handler, StillHandler)
 
     def test_resolve_handler(self):
         handler = _resolve_still_handler("fal-ai/hunyuan-image/v3/text-to-image")
-        assert isinstance(handler, HunyuanImageHandler)
+        assert isinstance(handler, EditHandler)
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_uses_image_size_preset(self, mock_fal, tmp_path):
@@ -3307,23 +3336,27 @@ class TestHunyuanImageHandler:
 
 
 class TestRecraftHandler:
-    """Tests for Recraft handler (#79)."""
+    """Tests for Recraft handler (#79) — now backed by EditHandler."""
+
+    _handler = EditHandler(
+        ["recraft"], safety={"enable_safety_checker": False}, supports_edit=False
+    )
 
     def test_match_positive(self):
-        assert RecraftHandler().match("fal-ai/recraft/v4/text-to-image")
+        assert self._handler.match("fal-ai/recraft/v4/text-to-image")
 
     def test_match_negative_flux(self):
-        assert not RecraftHandler().match("fal-ai/flux-general")
+        assert not self._handler.match("fal-ai/flux-general")
 
     def test_safety_defaults_disable_safety_checker(self):
-        assert RecraftHandler().safety_defaults() == {"enable_safety_checker": False}
+        assert self._handler.safety_defaults() == {"enable_safety_checker": False}
 
     def test_is_still_handler(self):
-        assert isinstance(RecraftHandler(), StillHandler)
+        assert isinstance(self._handler, StillHandler)
 
     def test_resolve_handler(self):
         handler = _resolve_still_handler("fal-ai/recraft/v4/text-to-image")
-        assert isinstance(handler, RecraftHandler)
+        assert isinstance(handler, EditHandler)
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_uses_image_size_preset(self, mock_fal, tmp_path):

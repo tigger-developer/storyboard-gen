@@ -1,0 +1,25 @@
+# Secrets
+.env
+
+# Operation logs (crash recovery, not needed in source control)
+logs/
+
+# Generated video (large, regenerable from stills + project.yaml)
+output/intermediate/
+output/clips/
+
+# Assembled video output
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+
+# Keep generated stills (expensive API calls to regenerate)
+!output/stills/
+
+# Keep Kdenlive project files (small XML)
+!*.kdenlive
+
+# macOS
+.DS_Store

@@ -1,4 +1,4 @@
-<!-- Version: 2.11 | Last updated: 2026-03-12 -->
+<!-- Version: 2.12 | Last updated: 2026-03-15 -->
 
 # Architecture: storyboard-gen
 
@@ -10,7 +10,7 @@ storyboard-gen is a Python CLI tool with an optional GUI. It reads a `project.ya
 
 ### CLI layer (`cli.py`, `__main__.py`)
 
-Parses command-line arguments and dispatches to the appropriate module. Subcommands: `generate`, `assemble`, `kdenlive`, `validate`, `list`.
+Parses command-line arguments and dispatches to the appropriate module. Subcommands: `generate`, `assemble`, `kdenlive`, `validate`, `list`. Argparse setup is decomposed into per-subcommand helpers (`_add_generate_parser()`, `_add_assemble_parser()`, etc.) coordinated by `_build_parser()`. The `init` subcommand scaffolds new projects using template files loaded via `importlib.resources` from the `templates/` package.
 
 ### Configuration layer (`config.py`)
 
@@ -25,8 +25,8 @@ Pure dataclasses: `Project`, `Scene`, `Character`, `ProviderConfig`. No behaviou
 Pluggable image/video generation backends. Each provider implements the `ImageProvider` ABC:
 
 - `providers/base.py` — Abstract base class defining `generate_still()` and `generate_clip()` interface.
-- `providers/google.py` — Google Vertex AI / Gemini (Imagen for stills, Veo for clips).
-- `providers/fal.py` — FAL.ai (Flux 1.x, Flux 2, Kontext, O1 Image, Grok, Seedream, Hunyuan Image, Recraft models for stills; Kling, Grok Video, Seedance, Hunyuan Video, Wan, MiniMax models for clips). Uses a `StillHandler` strategy pattern with model-family registry for still generation: each model family has a dedicated handler class responsible for argument building, reference upload, and prompt rewriting. The `_resolve_still_handler()` registry matches model IDs to handlers in specificity order, with `FluxHandler` as fallback. Kontext models auto-route to image-to-image (with reference) or text-to-image (without). Flux 2 models do not support reference images. Kling O3 clips and O1 Image stills support character elements and `@character_id` prompt rewriting (`@ElementN`/`@ImageN`). Kontext Max Multi accepts multiple references without explicit mapping. Grok Image and Seedream v4.5 route to `/edit` endpoints when references are provided. Video models use detection properties (`_is_grok_video`, `_is_seedance`, `_is_hunyuan_video`, `_is_wan`, `_is_minimax`) for model-specific argument building. Safety defaults are injected per handler before user options merge.
+- `providers/google.py` — Google Vertex AI / Gemini (Imagen for stills, Veo for clips). Clip generation is decomposed into `_build_clip_config()`, `_build_clip_references()`, `_poll_operation()`, and `_extract_clip_results()`.
+- `providers/fal.py` — FAL.ai (Flux 1.x, Flux 2, Kontext, O1 Image, Grok, Seedream, Hunyuan Image, Recraft models for stills; Kling, Grok Video, Seedance, Hunyuan Video, Wan, MiniMax models for clips). Uses a `StillHandler` strategy pattern with model-family registry for still generation. Specialized handlers exist for models with unique argument construction (Ideogram, O1 Image, Kontext, Flux 2, Instant Character), while `EditHandler` provides a generic configurable handler for models that share the `image_urls` + `/edit` endpoint pattern (Grok Image, Seedream, Hunyuan Image, Recraft) — configurable via `patterns`, `sizing`, `safety`, and `supports_edit` params. The `_resolve_still_handler()` registry matches model IDs to handlers in specificity order, with `FluxHandler` as fallback. Kontext models auto-route to image-to-image (with reference) or text-to-image (without). Flux 2 models do not support reference images. Kling O3 clips and O1 Image stills support character elements and `@character_id` prompt rewriting (`@ElementN`/`@ImageN`). Kontext Max Multi accepts multiple references without explicit mapping. EditHandler checks both `scene_characters` and `reference_images` for refs, routing to `/edit` when either is present. Clip generation is decomposed into `_build_clip_args()` (model-specific argument building) and `_auto_route_clip_endpoint()` (t2v/i2v auto-routing), with model detection via `_is_grok_video`, `_is_seedance`, etc. Safety defaults are injected per handler before user options merge.
 - `providers/replicate.py` — Replicate (Flux models for stills).
 - `providers/__init__.py` — Registry and factory. Uses lazy imports so unused SDKs are not required.
 
