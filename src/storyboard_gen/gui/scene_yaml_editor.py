@@ -243,6 +243,8 @@ class SceneYamlEditor(QWidget):
         completer.setCaseSensitivity(Qt.CaseInsensitive)
         self._model_combo.setCompleter(completer)
         self._model_combo.currentTextChanged.connect(self._on_model_text_changed)
+        # Inject model into YAML when user picks from completer popup
+        completer.activated.connect(self._on_model_selected)
 
         model_bar.addWidget(self._model_combo, stretch=1)
 
@@ -252,7 +254,6 @@ class SceneYamlEditor(QWidget):
         model_bar.addWidget(self._backend_label)
 
         self._clear_model_btn = QPushButton("Clear")
-        self._clear_model_btn.setFixedWidth(50)
         self._clear_model_btn.setToolTip("Remove scene-level model override")
         self._clear_model_btn.clicked.connect(self._on_clear_model)
         model_bar.addWidget(self._clear_model_btn)
@@ -345,9 +346,26 @@ class SceneYamlEditor(QWidget):
         return self.text_edit.toPlainText() != self._original_text
 
     def _save(self) -> None:
-        """Save the edited YAML block back to project.yaml."""
+        """Save the edited YAML block back to project.yaml.
+
+        Syncs the model combo state to the YAML text before saving:
+        if the combo is empty, any model/provider override is removed;
+        if it contains a model ID, the override is injected.
+        """
         if not self._yaml_path or not self._scene_number:
             return
+
+        # Sync model combo to YAML text before saving (#120)
+        combo_text = self._model_combo.currentText().strip()
+        text = self.text_edit.toPlainText()
+        has_model = bool(re.search(r"^\s+(model|provider):", text, re.MULTILINE))
+
+        if not combo_text and has_model:
+            # Combo cleared — remove override from YAML
+            self._on_clear_model()
+        elif combo_text and combo_text != self._get_current_yaml_model():
+            # Combo changed — inject new override
+            self._on_model_selected(combo_text)
 
         new_text = self.text_edit.toPlainText()
 
@@ -418,6 +436,24 @@ class SceneYamlEditor(QWidget):
             self._model_combo.setCurrentText("")
             self._backend_label.setText("")
         self._model_combo.blockSignals(False)
+
+    def _get_current_yaml_model(self) -> str | None:
+        """Extract the current model ID from the YAML text, or None."""
+        text = self.text_edit.toPlainText()
+        try:
+            parsed = yaml.safe_load(text)
+        except yaml.YAMLError:
+            return None
+        if isinstance(parsed, list) and len(parsed) == 1:
+            parsed = parsed[0]
+        if not isinstance(parsed, dict):
+            return None
+        provider = parsed.get("provider")
+        if isinstance(provider, dict) and provider.get("model"):
+            return str(provider["model"])
+        if parsed.get("model"):
+            return str(parsed["model"])
+        return None
 
     def _update_backend_label(self, model_text: str) -> None:
         """Update the backend label to show the provider for the given model."""

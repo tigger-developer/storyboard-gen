@@ -7283,3 +7283,46 @@ class TestSceneModelSelector:
 
         # Assert
         assert editor.is_dirty()
+
+    def test_completer_activation_injects_into_yaml(
+        self, qtbot, model_override_project_dir
+    ):
+        """Selecting from the completer popup should inject model into YAML."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("2", yaml_path)  # No model override
+
+        # Simulate completer activation (what happens when user picks from popup)
+        completer = editor._model_combo.completer()
+        completer.activated.emit("fal-ai/flux-general")
+
+        # Assert — model should be injected into YAML text
+        text = editor.text_edit.toPlainText()
+        assert "fal-ai/flux-general" in text
+
+    def test_save_with_empty_combo_clears_model_from_yaml(
+        self, qtbot, model_override_project_dir
+    ):
+        """Clearing the combo text and saving should remove model from file."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)  # Has model: override
+
+        # Verify model is present in YAML text
+        assert "model:" in editor.text_edit.toPlainText()
+
+        # Act — clear combo text, then save
+        editor._model_combo.setCurrentText("")
+        editor._save()
+
+        # Assert — model override removed from the saved file
+        saved_block = editor.text_edit.toPlainText()
+        assert "model:" not in saved_block
