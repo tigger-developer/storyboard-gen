@@ -113,8 +113,8 @@ def _write_ass_subtitle(
     ass_dest.write_text(ass_content, encoding="utf-8")
 
 
-# ProducerInfo: (producer_id, length_frames, kdenlive_id, clip_name)
-ProducerInfo = tuple[str, int, int, str]
+# ProducerInfo: (producer_id, length_frames, kdenlive_id, clip_name, ken_burns)
+ProducerInfo = tuple[str, int, int, str, str | None]
 
 
 def _build_mlt(
@@ -150,7 +150,7 @@ def _build_mlt(
         length = _frames(scene.duration, fps)
         producer_id = f"producer_{scene.number}"
         is_still = scene.scene_type == "still"
-        producer_el = _add_scene_producer(
+        _add_scene_producer(
             mlt,
             producer_id,
             clip_path.resolve(),
@@ -159,9 +159,8 @@ def _build_mlt(
             scene.title,
             is_still=is_still,
         )
-        if is_still:
-            _add_ken_burns_filter(producer_el, scene.ken_burns, width, height, length)
-        producers.append((producer_id, length, kdenlive_id, scene.title))
+        ken_burns = scene.ken_burns if is_still else None
+        producers.append((producer_id, length, kdenlive_id, scene.title, ken_burns))
         kdenlive_id += 1
 
     # Audio producer
@@ -173,11 +172,11 @@ def _build_mlt(
         _set_prop(audio_producer, "video_index", "-1")
         _set_prop(audio_producer, "audio_index", "0")
         _set_prop(audio_producer, "kdenlive:clip_type", "1")
-        audio_info = ("audio_producer", 0, kdenlive_id, "Audio")
+        audio_info = ("audio_producer", 0, kdenlive_id, "Audio", None)
         kdenlive_id += 1
 
     # Video track
-    _build_video_track(mlt, producers)
+    _build_video_track(mlt, producers, width, height)
 
     # Audio track (if configured)
     has_audio = audio_info is not None
@@ -260,10 +259,12 @@ def _add_scene_producer(
     return producer
 
 
-def _build_video_track(mlt: ET.Element, producers: list[ProducerInfo]) -> None:
+def _build_video_track(
+    mlt: ET.Element, producers: list[ProducerInfo], width: int, height: int
+) -> None:
     """Build sequential video playlists wrapped in a tractor."""
     playlist0 = ET.SubElement(mlt, "playlist", id="playlist0")
-    for producer_id, length, kdenlive_id, _name in producers:
+    for producer_id, length, kdenlive_id, _name, ken_burns in producers:
         if length <= 0:
             continue
         entry = ET.SubElement(
@@ -273,6 +274,8 @@ def _build_video_track(mlt: ET.Element, producers: list[ProducerInfo]) -> None:
             **{"in": "0", "out": str(length - 1)},
         )
         _set_prop(entry, "kdenlive:id", str(kdenlive_id))
+        if ken_burns:
+            _add_ken_burns_filter(entry, ken_burns, width, height, length)
 
     # Empty B playlist (Kdenlive expects A/B pair per track)
     ET.SubElement(mlt, "playlist", id="playlist1")
@@ -290,7 +293,7 @@ def _build_video_track(mlt: ET.Element, producers: list[ProducerInfo]) -> None:
 
 def _build_audio_track(mlt: ET.Element, audio_info: ProducerInfo) -> None:
     """Build an audio track with A/B playlists wrapped in a tractor."""
-    producer_id, _length, kdenlive_id, _name = audio_info
+    producer_id, _length, kdenlive_id, _name, _ken_burns = audio_info
 
     playlist_a = ET.SubElement(mlt, "playlist", id="audio_playlist0")
     _set_prop(playlist_a, "kdenlive:audio_track", "1")
@@ -406,7 +409,7 @@ def _build_main_bin(
     _set_prop(main_bin, "xml_retain", "1")
 
     # Register all scene producers
-    for producer_id, length, _kid, _name in producers:
+    for producer_id, length, _kid, _name, _kb in producers:
         attrs = {"producer": producer_id}
         if length > 0:
             attrs["in"] = "0"
@@ -505,7 +508,7 @@ _KB_SCALE = 1.2
 
 
 def _add_ken_burns_filter(
-    producer: ET.Element,
+    parent: ET.Element,
     ken_burns: str | None,
     width: int,
     height: int,
@@ -516,6 +519,9 @@ def _add_ken_burns_filter(
     The qtblend filter's rect property defines keyframed output rectangles:
     ``frame=x y w h opacity``. Scaling the image beyond the canvas
     dimensions and shifting it creates zoom and pan effects.
+
+    The parent element is typically a playlist ``<entry>`` (timeline level),
+    keeping the project bin clip clean for reuse without baked-in effects.
     """
     if ken_burns is None or ken_burns == "static":
         return
@@ -547,8 +553,10 @@ def _add_ken_burns_filter(
         return
 
     rect_value = f"0={start};{last_frame}={end}"
-    filt = ET.SubElement(producer, "filter")
+    filt = ET.SubElement(parent, "filter")
     _set_prop(filt, "rotate_center", "0")
+    _set_prop(filt, "compositing", "0")
+    _set_prop(filt, "distort", "0")
     _set_prop(filt, "mlt_service", "qtblend")
     _set_prop(filt, "kdenlive_id", "qtblend")
     _set_prop(filt, "rect", rect_value)

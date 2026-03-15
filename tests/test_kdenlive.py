@@ -515,7 +515,11 @@ class TestCliKdenlive:
 
 
 class TestKenBurnsFilter:
-    """Tests for Ken Burns effects via Kdenlive's native qtblend transform filter."""
+    """Tests for Ken Burns effects via Kdenlive's native qtblend transform filter.
+
+    Ken Burns filters are applied to playlist entries (timeline level),
+    NOT to producers (bin level). This keeps the project bin clip clean.
+    """
 
     def _build(self, tmp_path, scenes=None, aspect_ratio="9:16"):
         """Build an MLT document from a test project."""
@@ -530,9 +534,17 @@ class TestKenBurnsFilter:
         """Find a producer element by scene number."""
         return mlt.find(f"producer[@id='producer_{scene_number}']")
 
-    def _find_transform_filter(self, producer):
-        """Find a qtblend transform filter child element of a producer."""
-        for f in producer.findall("filter"):
+    def _find_entry(self, mlt, scene_number):
+        """Find the playlist entry for a given scene number."""
+        playlist = mlt.find("playlist[@id='playlist0']")
+        for entry in playlist.findall("entry"):
+            if entry.get("producer") == f"producer_{scene_number}":
+                return entry
+        return None
+
+    def _find_transform_filter(self, parent):
+        """Find a qtblend transform filter child element."""
+        for f in parent.findall("filter"):
             if _get_prop(f, "mlt_service") == "qtblend":
                 return f
         return None
@@ -591,8 +603,8 @@ class TestKenBurnsFilter:
 
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
-        producer = self._find_producer(mlt, 1)
-        transform = self._find_transform_filter(producer)
+        entry = self._find_entry(mlt, 1)
+        transform = self._find_transform_filter(entry)
 
         # Assert — start full, end 1.2x centered
         # 1080*1.2=1296, 1920*1.2=2304
@@ -616,8 +628,8 @@ class TestKenBurnsFilter:
 
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
-        producer = self._find_producer(mlt, 1)
-        transform = self._find_transform_filter(producer)
+        entry = self._find_entry(mlt, 1)
+        transform = self._find_transform_filter(entry)
 
         # Assert — start 1.2x centered, end full
         assert transform is not None
@@ -639,8 +651,8 @@ class TestKenBurnsFilter:
 
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
-        producer = self._find_producer(mlt, 1)
-        transform = self._find_transform_filter(producer)
+        entry = self._find_entry(mlt, 1)
+        transform = self._find_transform_filter(entry)
 
         # Assert — 1.2x scale, pan from left edge to right edge
         # At start: x=0, y centered at -192
@@ -664,8 +676,8 @@ class TestKenBurnsFilter:
 
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
-        producer = self._find_producer(mlt, 1)
-        transform = self._find_transform_filter(producer)
+        entry = self._find_entry(mlt, 1)
+        transform = self._find_transform_filter(entry)
 
         # Assert — 1.2x scale, pan from right edge to left edge
         assert transform is not None
@@ -687,8 +699,8 @@ class TestKenBurnsFilter:
 
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
-        producer = self._find_producer(mlt, 1)
-        transform = self._find_transform_filter(producer)
+        entry = self._find_entry(mlt, 1)
+        transform = self._find_transform_filter(entry)
 
         # Assert — static means no pan/zoom animation
         assert transform is None
@@ -707,8 +719,8 @@ class TestKenBurnsFilter:
 
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
-        producer = self._find_producer(mlt, 1)
-        transform = self._find_transform_filter(producer)
+        entry = self._find_entry(mlt, 1)
+        transform = self._find_transform_filter(entry)
 
         # Assert
         assert transform is None
@@ -727,8 +739,8 @@ class TestKenBurnsFilter:
 
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
-        producer = self._find_producer(mlt, 1)
-        transform = self._find_transform_filter(producer)
+        entry = self._find_entry(mlt, 1)
+        transform = self._find_transform_filter(entry)
 
         # Assert
         assert transform is None
@@ -749,12 +761,58 @@ class TestKenBurnsFilter:
 
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
-        producer = self._find_producer(mlt, 1)
-        transform = self._find_transform_filter(producer)
+        entry = self._find_entry(mlt, 1)
+        transform = self._find_transform_filter(entry)
 
         # Assert — kdenlive_id is required for Kdenlive GUI recognition
         assert transform is not None
         assert _get_prop(transform, "kdenlive_id") == "qtblend"
+
+    def test_producer_has_no_transform_filter(self, tmp_path):
+        """Producer (bin clip) must NOT have Ken Burns filter (#104)."""
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Zoom In",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "zoom_in",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        producer = self._find_producer(mlt, 1)
+        transform = self._find_transform_filter(producer)
+
+        # Assert — filter should be on the entry, not the producer
+        assert transform is None
+
+    def test_transform_has_compositing_properties(self, tmp_path):
+        """Ken Burns qtblend filter should have compositing=0 and distort=0 (#104)."""
+        # Arrange
+        scenes = [
+            {
+                "number": 1,
+                "title": "Zoom In",
+                "type": "still",
+                "duration": 5,
+                "ken_burns": "zoom_in",
+                "prompt": "A scene.",
+            },
+        ]
+
+        # Act
+        mlt = self._build(tmp_path, scenes=scenes)
+        entry = self._find_entry(mlt, 1)
+        transform = self._find_transform_filter(entry)
+
+        # Assert
+        assert transform is not None
+        assert _get_prop(transform, "compositing") == "0"
+        assert _get_prop(transform, "distort") == "0"
 
     def test_transform_keyframes_16_9_aspect(self, tmp_path):
         # Arrange — 16:9 → 1920x1080
@@ -771,8 +829,8 @@ class TestKenBurnsFilter:
 
         # Act
         mlt = self._build(tmp_path, scenes=scenes, aspect_ratio="16:9")
-        producer = self._find_producer(mlt, 1)
-        transform = self._find_transform_filter(producer)
+        entry = self._find_entry(mlt, 1)
+        transform = self._find_transform_filter(entry)
 
         # Assert — 1920*1.2=2304, 1080*1.2=1296
         # x_offset=(1920-2304)/2=-192, y_offset=(1080-1296)/2=-108
@@ -1349,9 +1407,9 @@ class TestKdenliveStructuralAlignment:
 
         # Act
         mlt = self._build(tmp_path, scenes=scenes)
-        producer = self._find_producer(mlt, 1)
+        entry = mlt.find("playlist[@id='playlist0']/entry[@producer='producer_1']")
         transform = None
-        for f in producer.findall("filter"):
+        for f in entry.findall("filter"):
             if _get_prop(f, "mlt_service") == "qtblend":
                 transform = f
                 break
