@@ -4,7 +4,7 @@
 import logging
 
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtGui import QColor, QTextCharFormat
+from PySide6.QtGui import QColor, QPalette, QTextCharFormat
 from PySide6.QtWidgets import QTextEdit, QVBoxLayout, QWidget
 
 
@@ -51,21 +51,29 @@ class ConsolePanel(QWidget):
         layout.addWidget(self.text_edit)
         self.setLayout(layout)
 
+    def _is_dark_background(self) -> bool:
+        """Return True if the text edit background is dark."""
+        bg = self.text_edit.palette().color(QPalette.ColorRole.Base)
+        return bg.lightness() < 128
+
     def append_message(self, text: str) -> None:
         """Append a log message and scroll to the bottom.
 
-        Error and warning lines are highlighted in red/amber for visibility.
+        Error and warning lines are highlighted for visibility.
+        Colours adapt to background brightness so text stays readable
+        in both light and dark modes.
         """
+        dark = self._is_dark_background()
         text_lower = text.lower()
         if "error" in text_lower:
             fmt = QTextCharFormat()
-            fmt.setForeground(QColor("#cc0000"))
+            fmt.setForeground(QColor("#ff6b6b") if dark else QColor("#cc0000"))
             cursor = self.text_edit.textCursor()
             cursor.movePosition(cursor.MoveOperation.End)
             cursor.insertText(text + "\n", fmt)
         elif "warning" in text_lower:
             fmt = QTextCharFormat()
-            fmt.setForeground(QColor("#cc8800"))
+            fmt.setForeground(QColor("#ffaa33") if dark else QColor("#cc8800"))
             cursor = self.text_edit.textCursor()
             cursor.movePosition(cursor.MoveOperation.End)
             cursor.insertText(text + "\n", fmt)

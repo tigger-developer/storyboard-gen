@@ -277,18 +277,23 @@ class TestConsolePanel:
         assert "Hello world" in panel.text_edit.toPlainText()
 
     def test_console_panel_error_highlighted_red(self, qtbot):
-        """Error messages should be rendered in red text."""
-        from PySide6.QtGui import QColor
+        """Error messages should be rendered in dark red on light backgrounds."""
+        from PySide6.QtGui import QColor, QPalette
 
         from storyboard_gen.gui.console_panel import ConsolePanel
 
         panel = ConsolePanel()
         qtbot.addWidget(panel)
 
+        # Arrange — ensure light background
+        palette = panel.text_edit.palette()
+        palette.setColor(QPalette.ColorRole.Base, QColor("#ffffff"))
+        panel.text_edit.setPalette(palette)
+
         # Act
         panel.append_message("Error: something broke")
 
-        # Assert — check that the text colour is red
+        # Assert — check that the text colour is dark red
         cursor = panel.text_edit.textCursor()
         cursor.movePosition(cursor.MoveOperation.Start)
         cursor.movePosition(cursor.MoveOperation.Right)
@@ -296,13 +301,18 @@ class TestConsolePanel:
         assert fmt.foreground().color() == QColor("#cc0000")
 
     def test_console_panel_warning_highlighted_amber(self, qtbot):
-        """Warning messages should be rendered in amber text."""
-        from PySide6.QtGui import QColor
+        """Warning messages should be rendered in amber on light backgrounds."""
+        from PySide6.QtGui import QColor, QPalette
 
         from storyboard_gen.gui.console_panel import ConsolePanel
 
         panel = ConsolePanel()
         qtbot.addWidget(panel)
+
+        # Arrange — ensure light background
+        palette = panel.text_edit.palette()
+        palette.setColor(QPalette.ColorRole.Base, QColor("#ffffff"))
+        panel.text_edit.setPalette(palette)
 
         # Act
         panel.append_message("WARNING: heads up")
@@ -327,6 +337,58 @@ class TestConsolePanel:
 
         # Assert
         assert panel.text_edit.toPlainText() == ""
+
+    def test_console_panel_error_lighter_on_dark_background(self, qtbot):
+        """Error text should use a lighter colour when background is dark (#113)."""
+        from PySide6.QtGui import QColor, QPalette
+
+        from storyboard_gen.gui.console_panel import ConsolePanel
+
+        panel = ConsolePanel()
+        qtbot.addWidget(panel)
+
+        # Arrange — force a dark background palette
+        palette = panel.text_edit.palette()
+        palette.setColor(QPalette.ColorRole.Base, QColor("#1e1e1e"))
+        panel.text_edit.setPalette(palette)
+
+        # Act
+        panel.append_message("Error: something broke")
+
+        # Assert — colour should be lighter than #cc0000 for readability
+        cursor = panel.text_edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.Start)
+        cursor.movePosition(cursor.MoveOperation.Right)
+        fmt = cursor.charFormat()
+        colour = fmt.foreground().color()
+        # Should NOT be the dark-mode-unreadable #cc0000
+        assert colour != QColor("#cc0000")
+        # Should be a visible warm colour (lightness > 128)
+        assert colour.lightness() > 100
+
+    def test_console_panel_error_dark_red_on_light_background(self, qtbot):
+        """Error text should remain dark red when background is light."""
+        from PySide6.QtGui import QColor, QPalette
+
+        from storyboard_gen.gui.console_panel import ConsolePanel
+
+        panel = ConsolePanel()
+        qtbot.addWidget(panel)
+
+        # Arrange — force a light background palette
+        palette = panel.text_edit.palette()
+        palette.setColor(QPalette.ColorRole.Base, QColor("#ffffff"))
+        panel.text_edit.setPalette(palette)
+
+        # Act
+        panel.append_message("Error: something broke")
+
+        # Assert — classic dark red
+        cursor = panel.text_edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.Start)
+        cursor.movePosition(cursor.MoveOperation.Right)
+        fmt = cursor.charFormat()
+        assert fmt.foreground().color() == QColor("#cc0000")
 
 
 # ---------------------------------------------------------------------------
