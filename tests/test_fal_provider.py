@@ -2737,7 +2737,7 @@ class TestFluxDevSupport:
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_flux_dev_passes_reference_image_url(self, mock_fal, tmp_path):
-        """Flux Dev should pass reference_image_url (unlike Flux 2 which blocks it)."""
+        """Flux Dev should NOT send reference_image_url (not in API schema, #117)."""
         from storyboard_gen.providers.fal import FalProvider
 
         # Arrange
@@ -2761,10 +2761,9 @@ class TestFluxDevSupport:
                 reference_images=[ref_path],
             )
 
-        # Assert — reference_image_url should be present
+        # Assert — reference_image_url should NOT be present (only flux-general accepts it)
         arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
-        assert "reference_image_url" in arguments
-        assert arguments["reference_image_url"] == "https://fal.media/files/ref.png"
+        assert "reference_image_url" not in arguments
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_flux_dev_text_to_image_appends_endpoint(self, mock_fal, tmp_path):
@@ -3735,3 +3734,330 @@ class TestGoogleClipAudioDisabled:
         call_kwargs = mock_client.models.generate_videos.call_args.kwargs
         config = call_kwargs["config"]
         assert config.generate_audio is False
+
+
+class TestEditHandlerRefField:
+    """Tests for EditHandler ref_field parameter (#117 P0)."""
+
+    def test_default_ref_field_is_image_urls(self):
+        """Default ref_field should be image_urls (plural, list)."""
+        h = EditHandler(["test"])
+        assert h._ref_field == "image_urls"
+
+    def test_singular_ref_field(self):
+        """ref_field='image_url' should store singular field name."""
+        h = EditHandler(["test"], ref_field="image_url")
+        assert h._ref_field == "image_url"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_emu35_edit_sends_singular_image_url(self, mock_fal, tmp_path):
+        """emu-3.5 edit should send image_url (singular string) not image_urls."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "char.jpg"
+        ref_img.write_bytes(b"img-data")
+        chars = [Character(id="hero", description="A hero", reference=[ref_img])]
+        provider = FalProvider(model="fal-ai/emu-3.5-image/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A hero",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert — should use singular image_url, not image_urls
+        call_args = mock_fal.subscribe.call_args
+        arguments = call_args.kwargs["arguments"]
+        assert "image_url" in arguments
+        assert "image_urls" not in arguments
+        assert isinstance(arguments["image_url"], str)
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_reve_fast_edit_sends_singular_image_url(self, mock_fal, tmp_path):
+        """reve/fast/edit should send image_url (singular string) not image_urls."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "char.jpg"
+        ref_img.write_bytes(b"img-data")
+        chars = [Character(id="hero", description="A hero", reference=[ref_img])]
+        provider = FalProvider(model="fal-ai/reve/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A hero",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert — should use singular image_url, not image_urls
+        call_args = mock_fal.subscribe.call_args
+        arguments = call_args.kwargs["arguments"]
+        assert "image_url" in arguments
+        assert "image_urls" not in arguments
+        assert isinstance(arguments["image_url"], str)
+
+
+class TestFluxHandlerRefRestriction:
+    """Tests for FluxHandler reference_image_url restriction (#117 P0)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux_general_sends_reference_image_url(self, mock_fal, tmp_path):
+        """flux-general should send reference_image_url (it supports refs)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        provider = FalProvider(model="fal-ai/flux-general")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+                reference_images=[ref_img],
+            )
+
+        # Assert — reference_image_url should be present
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "reference_image_url" in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux_pro_v11_does_not_send_reference_image_url(self, mock_fal, tmp_path):
+        """flux-pro/v1.1 should NOT send reference_image_url (not in schema)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        provider = FalProvider(model="fal-ai/flux-pro/v1.1")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+                reference_images=[ref_img],
+            )
+
+        # Assert — reference_image_url should NOT be present
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "reference_image_url" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux_dev_does_not_send_reference_image_url(self, mock_fal, tmp_path):
+        """flux/dev should NOT send reference_image_url (not in schema)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        provider = FalProvider(model="fal-ai/flux/dev")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+                reference_images=[ref_img],
+            )
+
+        # Assert — reference_image_url should NOT be present
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "reference_image_url" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_flux_pro_v11_warns_ref_ignored(self, mock_fal, tmp_path, caplog):
+        """flux-pro/v1.1 should warn when reference image is ignored."""
+        import logging
+
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        provider = FalProvider(model="fal-ai/flux-pro/v1.1")
+
+        with (
+            patch("storyboard_gen.providers.fal._download_url") as mock_dl,
+            caplog.at_level(logging.WARNING),
+        ):
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+                reference_images=[ref_img],
+            )
+
+        assert any("reference" in r.message.lower() for r in caplog.records)
+
+
+class TestEditHandlerEditSizing:
+    """Tests for EditHandler edit_accepts_sizing parameter (#117 P1)."""
+
+    def test_default_edit_accepts_sizing_true(self):
+        """Default edit_accepts_sizing should be True."""
+        h = EditHandler(["test"])
+        assert h._edit_accepts_sizing is True
+
+    def test_edit_accepts_sizing_false(self):
+        """edit_accepts_sizing=False should store False."""
+        h = EditHandler(["test"], edit_accepts_sizing=False)
+        assert h._edit_accepts_sizing is False
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_grok_edit_does_not_send_aspect_ratio(self, mock_fal, tmp_path):
+        """grok-imagine-image/edit should NOT send aspect_ratio."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "char.jpg"
+        ref_img.write_bytes(b"img-data")
+        chars = [Character(id="hero", description="A hero", reference=[ref_img])]
+        provider = FalProvider(model="xai/grok-imagine-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A hero",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert — routing to /edit, aspect_ratio should NOT be present
+        call_args = mock_fal.subscribe.call_args
+        arguments = call_args.kwargs["arguments"]
+        assert "aspect_ratio" not in arguments
+        assert "image_size" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_grok_base_does_send_aspect_ratio(self, mock_fal, tmp_path):
+        """grok-imagine-image base endpoint SHOULD send aspect_ratio."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="xai/grok-imagine-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+            )
+
+        # Assert — base endpoint should have aspect_ratio
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "aspect_ratio" in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_reve_edit_does_not_send_aspect_ratio(self, mock_fal, tmp_path):
+        """reve/edit should NOT send aspect_ratio."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "char.jpg"
+        ref_img.write_bytes(b"img-data")
+        chars = [Character(id="hero", description="A hero", reference=[ref_img])]
+        provider = FalProvider(model="fal-ai/reve/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A hero",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert — routing to /edit, aspect_ratio should NOT be present
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "aspect_ratio" not in arguments
+        assert "image_size" not in arguments
+
+
+class TestKontextDevSizing:
+    """Tests for flux-kontext/dev sizing parameter (#117 P1)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_dev_does_not_send_aspect_ratio(self, mock_fal, tmp_path):
+        """flux-kontext/dev should NOT send aspect_ratio (not in schema)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        provider = FalProvider(model="fal-ai/flux-kontext/dev")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A hero",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref_img],
+            )
+
+        # Assert — aspect_ratio should NOT be present for flux-kontext/dev
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "aspect_ratio" not in arguments
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_kontext_pro_does_send_aspect_ratio(self, mock_fal, tmp_path):
+        """flux-pro/kontext (Pro) SHOULD send aspect_ratio."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        provider = FalProvider(model="fal-ai/flux-pro/kontext")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A hero",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref_img],
+            )
+
+        # Assert — kontext pro should have aspect_ratio
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert "aspect_ratio" in arguments

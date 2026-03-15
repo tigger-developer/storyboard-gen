@@ -189,6 +189,11 @@ class MainWindow(QMainWindow):
         )
         self.toolbar.addWidget(self._btn_yaml_editor)
 
+        self._btn_env = self._make_toolbar_button(
+            "🔑", f"Provider Config ({mod}+E)", self._on_edit_env
+        )
+        self.toolbar.addWidget(self._btn_env)
+
         self._btn_console = self._make_toolbar_button(
             "🖥", f"Console ({mod}+L)", self._on_toggle_console
         )
@@ -259,6 +264,8 @@ class MainWindow(QMainWindow):
         self._shortcut_output.activated.connect(self._on_output)
         self._shortcut_edit_yaml = QShortcut(QKeySequence("Ctrl+Shift+Y"), self)
         self._shortcut_edit_yaml.activated.connect(self._on_toggle_yaml)
+        self._shortcut_env = QShortcut(QKeySequence("Ctrl+E"), self)
+        self._shortcut_env.activated.connect(self._on_edit_env)
 
     def _setup_logging(self, verbose: bool = False) -> None:
         """Attach a Qt log handler to route log messages to the console.
@@ -301,6 +308,7 @@ class MainWindow(QMainWindow):
         self._btn_output.setEnabled(has_project and not is_generating)
         self._btn_refresh.setEnabled(has_project)
         self._btn_yaml_viewer.setEnabled(has_project)
+        self._btn_env.setEnabled(has_project)
 
     def _update_progress(self) -> None:
         """Update toolbar spinner and progress label based on active workers."""
@@ -503,7 +511,7 @@ class MainWindow(QMainWindow):
             return
 
         from storyboard_gen.generate import (
-            check_reference_warnings,
+            check_field_warnings,
             resolve_provider_config,
         )
         from storyboard_gen.pricing import (
@@ -553,7 +561,7 @@ class MainWindow(QMainWindow):
             lines.append("  Prompt:")
             lines.append(f"    {prompt}")
 
-            warns = check_reference_warnings(scene, self._project, provider_cfg)
+            warns = check_field_warnings(scene, self._project, provider_cfg)
             for w in warns:
                 lines.append(f"  {w}")
 
@@ -573,9 +581,40 @@ class MainWindow(QMainWindow):
         self._stop_all_generation()
 
     def _start_generation(self, scenes: list[Scene]) -> None:
-        """Start concurrent background generation for the given scenes."""
+        """Start concurrent background generation for the given scenes.
+
+        Checks for unsupported YAML fields and shows a warning dialog
+        with Proceed/Cancel if any are found (#118).
+        """
         if not scenes or not self._project:
             return
+
+        from storyboard_gen.generate import (
+            check_field_warnings,
+            resolve_provider_config,
+        )
+
+        all_warnings: list[str] = []
+        for scene in scenes:
+            provider_cfg = resolve_provider_config(
+                scene, self._project, scene.scene_type
+            )
+            warns = check_field_warnings(scene, self._project, provider_cfg)
+            all_warnings.extend(warns)
+
+        if all_warnings:
+            detail = "\n".join(all_warnings)
+            reply = QMessageBox.warning(
+                self,
+                "Field Warnings",
+                "Some YAML fields are not supported by the selected models:\n\n"
+                + detail
+                + "\n\nProceed anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
 
         for scene in scenes:
             self._start_scene_generation(scene)
@@ -897,6 +936,20 @@ class MainWindow(QMainWindow):
             self._show_error(f"Kdenlive export failed: {exc}")
 
     # ----- About dialog -----
+
+    def _on_edit_env(self) -> None:
+        """Open the .env editor dialog for provider credentials."""
+        if not self._project_dir:
+            return
+
+        from storyboard_gen.gui.env_editor import EnvEditorDialog
+
+        env_path = self._project_dir / ".env"
+        dialog = EnvEditorDialog(env_path=env_path, parent=self)
+        if dialog.exec():
+            # Reload .env so credentials take effect immediately
+            load_dotenv(env_path, override=True)
+            self.console.append_message("Provider configuration saved.")
 
     def _on_about(self) -> None:
         """Show the About dialog."""

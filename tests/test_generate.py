@@ -9,6 +9,7 @@ from PIL import Image as PILImage
 
 from storyboard_gen.generate import (
     _resolve_provider,
+    check_field_warnings,
     check_reference_warnings,
     crop_to_aspect_ratio,
     generate_clip,
@@ -824,8 +825,8 @@ class TestCheckReferenceWarnings:
 
         assert not any("style reference" in w.lower() for w in warnings)
 
-    def test_warns_char_refs_on_flux2(self, caplog):
-        """Character references should warn when model is Flux 2."""
+    def test_no_warn_char_refs_on_flux2(self, caplog):
+        """Flux 2 supports references via EditHandler (#114) — no warning expected."""
         import logging
         from pathlib import Path
 
@@ -858,7 +859,7 @@ class TestCheckReferenceWarnings:
         with caplog.at_level(logging.WARNING):
             warnings = check_reference_warnings(scene, project, provider_cfg)
 
-        assert any("reference" in w.lower() and "flux 2" in w.lower() for w in warnings)
+        assert not any("flux 2" in w.lower() for w in warnings)
 
     def test_no_warn_char_refs_on_flux_general(self, caplog):
         """Character references on Flux general should NOT warn."""
@@ -937,6 +938,289 @@ class TestCheckReferenceWarnings:
             warnings = check_reference_warnings(scene, project, provider_cfg)
 
         assert any("style reference" in w.lower() for w in warnings)
+
+
+class TestCheckFieldWarnings:
+    """Tests for check_field_warnings() (#118)."""
+
+    def test_warns_seed_on_grok_still(self, caplog):
+        """seed should warn on grok-imagine-image (not in schema)."""
+        import logging
+
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="still",
+                    prompt="x",
+                    duration=5,
+                    seed=42,
+                ),
+            ],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="fal", model="xai/grok-imagine-image")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_field_warnings(scene, project, provider_cfg)
+
+        assert any("seed" in w.lower() for w in warnings)
+
+    def test_no_warn_seed_on_flux_general(self, caplog):
+        """seed should NOT warn on flux-general (supports it)."""
+        import logging
+
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="still",
+                    prompt="x",
+                    duration=5,
+                    seed=42,
+                ),
+            ],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="fal", model="fal-ai/flux-general")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_field_warnings(scene, project, provider_cfg)
+
+        assert not any("seed" in w.lower() for w in warnings)
+
+    def test_no_warn_seed_when_not_set(self, caplog):
+        """No warning when seed is not set, even on unsupported model."""
+        import logging
+
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="still",
+                    prompt="x",
+                    duration=5,
+                ),
+            ],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="fal", model="xai/grok-imagine-image")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_field_warnings(scene, project, provider_cfg)
+
+        assert not any("seed" in w.lower() for w in warnings)
+
+    def test_warns_ref_on_flux_pro_v11(self, caplog):
+        """reference should warn on flux-pro/v1.1 (not supported)."""
+        import logging
+        from pathlib import Path
+
+        chars = {
+            "hero": Character(
+                id="hero",
+                description="A hero",
+                reference=[Path("refs/hero.png")],
+            ),
+        }
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters=chars,
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="still",
+                    prompt="x",
+                    duration=5,
+                    characters=["hero"],
+                ),
+            ],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="fal", model="fal-ai/flux-pro/v1.1")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_field_warnings(scene, project, provider_cfg)
+
+        assert any("reference" in w.lower() for w in warnings)
+
+    def test_no_warn_ref_on_kontext(self, caplog):
+        """reference should NOT warn on kontext (supports it)."""
+        import logging
+        from pathlib import Path
+
+        chars = {
+            "hero": Character(
+                id="hero",
+                description="A hero",
+                reference=[Path("refs/hero.png")],
+            ),
+        }
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters=chars,
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="still",
+                    prompt="x",
+                    duration=5,
+                    characters=["hero"],
+                ),
+            ],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="fal", model="fal-ai/flux-pro/kontext")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_field_warnings(scene, project, provider_cfg)
+
+        assert not any("reference" in w.lower() for w in warnings)
+
+    def test_warns_seed_on_kling_clip(self, caplog):
+        """seed should warn on kling-video clips (not in schema)."""
+        import logging
+
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="clip",
+                    prompt="x",
+                    duration=5,
+                    seed=42,
+                ),
+            ],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(
+            backend="fal", model="fal-ai/kling-video/v2.1/pro/text-to-video"
+        )
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_field_warnings(scene, project, provider_cfg)
+
+        assert any("seed" in w.lower() for w in warnings)
+
+    def test_warns_last_frame_on_wan(self, caplog):
+        """last_frame should warn on wan (not supported)."""
+        import logging
+        from pathlib import Path
+
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="clip",
+                    prompt="x",
+                    duration=5,
+                    source_frame=Path("refs/frame.png"),
+                    last_frame=Path("refs/last.png"),
+                ),
+            ],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(backend="fal", model="fal-ai/wan-i2v")
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_field_warnings(scene, project, provider_cfg)
+
+        assert any("last_frame" in w.lower() for w in warnings)
+
+    def test_warns_variants_on_fal_clip(self, caplog):
+        """variants should warn on FAL clip models (only Google Veo supports it)."""
+        import logging
+
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="clip",
+                    prompt="x",
+                    duration=5,
+                    variants=3,
+                ),
+            ],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(
+            backend="fal", model="fal-ai/kling-video/v2.1/pro/text-to-video"
+        )
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_field_warnings(scene, project, provider_cfg)
+
+        assert any("variants" in w.lower() for w in warnings)
+
+    def test_no_warn_variants_on_google_veo(self, caplog):
+        """variants should NOT warn on Google Veo (supports number_of_videos)."""
+        import logging
+
+        project = Project(
+            title="T",
+            aspect_ratio="9:16",
+            style_prefix="Style.",
+            characters={},
+            scenes=[
+                Scene(
+                    number="1",
+                    title="S",
+                    scene_type="clip",
+                    prompt="x",
+                    duration=5,
+                    variants=3,
+                ),
+            ],
+        )
+        scene = project.scenes[0]
+        provider_cfg = ProviderConfig(
+            backend="google", model="veo-3.1-fast-generate-001"
+        )
+
+        with caplog.at_level(logging.WARNING):
+            warnings = check_field_warnings(scene, project, provider_cfg)
+
+        assert not any("variants" in w.lower() for w in warnings)
+
+    def test_backwards_compat_alias(self):
+        """check_reference_warnings should still exist as an alias."""
+        assert check_reference_warnings is check_field_warnings
 
 
 class TestStyleReferencePassthrough:

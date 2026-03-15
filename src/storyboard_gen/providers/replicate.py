@@ -70,8 +70,9 @@ class ReplicateProvider(ImageProvider):
             merged_options.update(options)
         input_args.update(merged_options)
 
-        # Pass first valid reference image for img2img (flux-dev supports this).
+        # Pass first valid reference image for img2img.
         # Replicate only supports a single reference; warn when truncating.
+        # flux-1.1-pro uses "image_prompt"; flux-dev uses "image".
         if reference_images:
             if len(reference_images) > 1:
                 logger.warning(
@@ -79,9 +80,10 @@ class ReplicateProvider(ImageProvider):
                     "using first of %d provided",
                     len(reference_images),
                 )
+            ref_key = "image_prompt" if "flux-1.1-pro" in self.model else "image"
             for ref_path in reference_images:
                 if ref_path.exists():
-                    input_args["image"] = open(ref_path, "rb")  # noqa: SIM115 — handle passed to SDK which manages lifecycle
+                    input_args[ref_key] = open(ref_path, "rb")  # noqa: SIM115 — handle passed to SDK which manages lifecycle
                     logger.info("Reference image: %s", ref_path)
                     break
 

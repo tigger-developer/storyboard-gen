@@ -360,12 +360,16 @@ class EditHandler(StillHandler):
         safety: dict | None = None,
         supports_edit: bool = True,
         edit_suffix: str | None = "/edit",
+        ref_field: str = "image_urls",
+        edit_accepts_sizing: bool = True,
     ):
         self._patterns = patterns
         self._sizing = sizing
         self._safety = safety or {}
         self._supports_edit = supports_edit
         self._edit_suffix = edit_suffix
+        self._ref_field = ref_field
+        self._edit_accepts_sizing = edit_accepts_sizing
 
     def match(self, model: str) -> bool:
         lower = model.lower()
@@ -413,12 +417,23 @@ class EditHandler(StillHandler):
                 endpoint = base_model.rstrip("/") + self._edit_suffix
             else:
                 endpoint = provider.model
+            # Use ref_field: singular (string) or plural (list)
+            if self._ref_field == "image_url":
+                ref_value = image_urls[0]
+            else:
+                ref_value = image_urls
             arguments: dict = {
                 "prompt": prompt,
-                "image_urls": image_urls,
+                self._ref_field: ref_value,
                 "num_images": 1,
                 "output_format": "png",
             }
+            # Some edit endpoints don't accept sizing parameters
+            if self._edit_accepts_sizing:
+                if self._sizing == "aspect_ratio":
+                    arguments["aspect_ratio"] = aspect_ratio
+                else:
+                    arguments["image_size"] = _map_aspect_ratio(aspect_ratio)
         else:
             endpoint = base_model
             arguments = {
@@ -426,12 +441,11 @@ class EditHandler(StillHandler):
                 "num_images": 1,
                 "output_format": "png",
             }
-
-        # Add sizing parameter
-        if self._sizing == "aspect_ratio":
-            arguments["aspect_ratio"] = aspect_ratio
-        else:
-            arguments["image_size"] = _map_aspect_ratio(aspect_ratio)
+            # Base endpoint always accepts sizing
+            if self._sizing == "aspect_ratio":
+                arguments["aspect_ratio"] = aspect_ratio
+            else:
+                arguments["image_size"] = _map_aspect_ratio(aspect_ratio)
 
         return endpoint, arguments
 
@@ -489,7 +503,9 @@ _STILL_HANDLERS: list[StillHandler] = [
     O1ImageHandler(),
     KontextMultiHandler(),
     KontextHandler(),
-    EditHandler(["grok-imagine-image"], sizing="aspect_ratio"),
+    EditHandler(
+        ["grok-imagine-image"], sizing="aspect_ratio", edit_accepts_sizing=False
+    ),
     EditHandler(["seedream"], safety={"enable_safety_checker": False}),
     EditHandler(
         ["hunyuan-image"], safety={"enable_safety_checker": False}, supports_edit=False
@@ -501,11 +517,21 @@ _STILL_HANDLERS: list[StillHandler] = [
     EditHandler(["qwen-image-edit"], edit_suffix=None),
     EditHandler(["qwen-image"], supports_edit=False),
     EditHandler(["glm-image"], edit_suffix="/image-to-image"),
-    EditHandler(["emu-3.5"], sizing="aspect_ratio", edit_suffix="/edit-image"),
+    EditHandler(
+        ["emu-3.5"],
+        sizing="aspect_ratio",
+        edit_suffix="/edit-image",
+        ref_field="image_url",
+    ),
     EditHandler(["gpt-image"]),
     EditHandler(["nano-banana"], sizing="aspect_ratio"),
     EditHandler(["reve/fast/remix"], sizing="aspect_ratio", edit_suffix=None),
-    EditHandler(["reve"], sizing="aspect_ratio"),
+    EditHandler(
+        ["reve"],
+        sizing="aspect_ratio",
+        ref_field="image_url",
+        edit_accepts_sizing=False,
+    ),
     InstantCharacterHandler(),
     Flux2ProHandler(),
     EditHandler(["flux-2"], safety={"enable_safety_checker": False}),
@@ -608,15 +634,17 @@ class FalProvider(ImageProvider):
             Tuple of (endpoint, arguments dict).
         """
         if ref_url:
-            # Image-to-image: base endpoint, image_url, raw aspect_ratio
+            # Image-to-image: base endpoint, image_url
             endpoint = self.model
             arguments = {
                 "prompt": prompt,
                 "image_url": ref_url,
-                "aspect_ratio": aspect_ratio,
                 "num_images": 1,
                 "output_format": "png",
             }
+            # flux-kontext/dev doesn't accept aspect_ratio; kontext pro does
+            if "flux-kontext" not in self.model.lower():
+                arguments["aspect_ratio"] = aspect_ratio
         elif "flux-kontext" in self.model.lower():
             # Kontext Dev (fal-ai/flux-kontext/dev) is i2i only
             raise ValueError(
@@ -656,14 +684,14 @@ class FalProvider(ImageProvider):
             "output_format": "png",
         }
         if ref_url:
-            if self._is_flux2:
+            if "flux-general" in self.model.lower():
+                arguments["reference_image_url"] = ref_url
+            else:
                 logger.warning(
-                    "Flux 2 models do not support reference images; "
-                    "reference will be ignored for %s",
+                    "Model %s does not support reference_image_url; "
+                    "reference will be ignored",
                     self.model,
                 )
-            else:
-                arguments["reference_image_url"] = ref_url
         return self.model, arguments
 
     def _build_o1_image_args(

@@ -6515,3 +6515,226 @@ class TestDryRunOutput:
         window._run_dry_run(list(window._project.scenes))
 
         assert len(window._workers) == 0
+
+
+class TestFieldWarningDialog:
+    """Tests for pre-generation warning dialog (#118)."""
+
+    def test_warning_dialog_shown_when_fields_unsupported(self, qtbot, gui_project_dir):
+        """Warning dialog should appear when unsupported fields are used."""
+        from PySide6.QtWidgets import QMessageBox
+
+        from storyboard_gen.gui.app import MainWindow
+        from storyboard_gen.models import Scene
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Create a scene with seed on a model that doesn't support it
+        scene = Scene(
+            number="1",
+            title="Test",
+            scene_type="still",
+            prompt="test",
+            duration=5,
+            seed=42,
+        )
+
+        with (
+            patch.object(window, "_project") as mock_project,
+            patch(
+                "storyboard_gen.gui.app.QMessageBox.warning",
+                return_value=QMessageBox.StandardButton.Cancel,
+            ) as mock_warn,
+            patch.object(window, "_start_scene_generation") as mock_start,
+        ):
+            mock_project.scenes = [scene]
+            mock_project.style_reference = []
+            mock_project.characters = {}
+
+            # Use a provider that returns warnings
+            with patch(
+                "storyboard_gen.generate.resolve_provider_config"
+            ) as mock_resolve:
+                from storyboard_gen.models import ProviderConfig
+
+                mock_resolve.return_value = ProviderConfig(
+                    backend="fal", model="xai/grok-imagine-image"
+                )
+                window._start_generation([scene])
+
+            # Dialog should have been shown
+            mock_warn.assert_called_once()
+            # Generation should NOT have started (user cancelled)
+            mock_start.assert_not_called()
+
+    def test_warning_dialog_proceed_starts_generation(self, qtbot, gui_project_dir):
+        """Clicking Proceed in warning dialog should start generation."""
+        from PySide6.QtWidgets import QMessageBox
+
+        from storyboard_gen.gui.app import MainWindow
+        from storyboard_gen.models import Scene
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = Scene(
+            number="1",
+            title="Test",
+            scene_type="still",
+            prompt="test",
+            duration=5,
+            seed=42,
+        )
+
+        with (
+            patch.object(window, "_project") as mock_project,
+            patch(
+                "storyboard_gen.gui.app.QMessageBox.warning",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch.object(window, "_start_scene_generation") as mock_start,
+        ):
+            mock_project.scenes = [scene]
+            mock_project.style_reference = []
+            mock_project.characters = {}
+
+            with patch(
+                "storyboard_gen.generate.resolve_provider_config"
+            ) as mock_resolve:
+                from storyboard_gen.models import ProviderConfig
+
+                mock_resolve.return_value = ProviderConfig(
+                    backend="fal", model="xai/grok-imagine-image"
+                )
+                window._start_generation([scene])
+
+            # Generation SHOULD have started (user proceeded)
+            mock_start.assert_called_once()
+
+    def test_no_dialog_when_no_warnings(self, qtbot, gui_project_dir):
+        """No dialog should appear when all fields are supported."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scenes = list(window._project.scenes)
+
+        with (
+            patch("storyboard_gen.gui.app.QMessageBox.warning") as mock_warn,
+            patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls,
+        ):
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+            window._start_generation(scenes)
+
+            # No dialog — fields are supported
+            mock_warn.assert_not_called()
+
+
+class TestEnvEditorDialog:
+    """Tests for .env editor dialog (#116)."""
+
+    def test_dialog_creates_with_env_path(self, qtbot, tmp_path):
+        """Dialog should initialise from an .env file path."""
+        from storyboard_gen.gui.env_editor import EnvEditorDialog
+
+        env_path = tmp_path / ".env"
+        env_path.write_text("FAL_KEY=test123\n")
+        dialog = EnvEditorDialog(env_path=env_path)
+        qtbot.addWidget(dialog)
+        assert dialog is not None
+
+    def test_dialog_loads_existing_values(self, qtbot, tmp_path):
+        """Dialog should populate fields from existing .env values."""
+        from storyboard_gen.gui.env_editor import EnvEditorDialog
+
+        env_path = tmp_path / ".env"
+        env_path.write_text("FAL_KEY=my-fal-key\nGEMINI_API_KEY=my-gemini-key\n")
+        dialog = EnvEditorDialog(env_path=env_path)
+        qtbot.addWidget(dialog)
+
+        assert dialog._fields["FAL_KEY"].text() == "my-fal-key"
+        assert dialog._fields["GEMINI_API_KEY"].text() == "my-gemini-key"
+
+    def test_dialog_loads_commented_values_as_empty(self, qtbot, tmp_path):
+        """Commented-out keys should show as empty fields."""
+        from storyboard_gen.gui.env_editor import EnvEditorDialog
+
+        env_path = tmp_path / ".env"
+        env_path.write_text("# FAL_KEY=your-fal-key\n")
+        dialog = EnvEditorDialog(env_path=env_path)
+        qtbot.addWidget(dialog)
+
+        assert dialog._fields["FAL_KEY"].text() == ""
+
+    def test_dialog_saves_values(self, qtbot, tmp_path):
+        """Saving should write values back to the .env file."""
+        from storyboard_gen.gui.env_editor import EnvEditorDialog
+
+        env_path = tmp_path / ".env"
+        env_path.write_text("FAL_KEY=old-key\n")
+        dialog = EnvEditorDialog(env_path=env_path)
+        qtbot.addWidget(dialog)
+
+        dialog._fields["FAL_KEY"].setText("new-key")
+        dialog._save()
+
+        content = env_path.read_text()
+        assert "FAL_KEY=new-key" in content
+
+    def test_dialog_saves_empty_as_commented(self, qtbot, tmp_path):
+        """Empty fields should be written as commented-out lines."""
+        from storyboard_gen.gui.env_editor import EnvEditorDialog
+
+        env_path = tmp_path / ".env"
+        env_path.write_text("FAL_KEY=old-key\n")
+        dialog = EnvEditorDialog(env_path=env_path)
+        qtbot.addWidget(dialog)
+
+        dialog._fields["FAL_KEY"].setText("")
+        dialog._save()
+
+        content = env_path.read_text()
+        assert "# FAL_KEY=" in content
+
+    def test_dialog_has_all_known_keys(self, qtbot, tmp_path):
+        """Dialog should have fields for all known .env keys."""
+        from storyboard_gen.gui.env_editor import EnvEditorDialog
+
+        env_path = tmp_path / ".env"
+        env_path.write_text("")
+        dialog = EnvEditorDialog(env_path=env_path)
+        qtbot.addWidget(dialog)
+
+        expected_keys = [
+            "GEMINI_API_KEY",
+            "USE_VERTEX",
+            "GOOGLE_CLOUD_PROJECT",
+            "GOOGLE_CLOUD_LOCATION",
+            "GCS_OUTPUT_BUCKET",
+            "FAL_KEY",
+            "REPLICATE_API_TOKEN",
+        ]
+        for key in expected_keys:
+            assert key in dialog._fields, f"Missing field for {key}"
+
+    def test_dialog_creates_env_if_missing(self, qtbot, tmp_path):
+        """Dialog should handle missing .env gracefully."""
+        from storyboard_gen.gui.env_editor import EnvEditorDialog
+
+        env_path = tmp_path / ".env"
+        # Don't create the file
+        dialog = EnvEditorDialog(env_path=env_path)
+        qtbot.addWidget(dialog)
+
+        dialog._fields["FAL_KEY"].setText("brand-new-key")
+        dialog._save()
+
+        assert env_path.exists()
+        content = env_path.read_text()
+        assert "FAL_KEY=brand-new-key" in content

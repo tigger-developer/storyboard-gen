@@ -12,7 +12,7 @@ from storyboard_gen import __version__
 from storyboard_gen.assemble import assemble
 from storyboard_gen.config import ConfigError, load_project
 from storyboard_gen.generate import (
-    check_reference_warnings,
+    check_field_warnings,
     generate_clip,
     generate_still,
     resolve_provider_config,
@@ -394,7 +394,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     for scene in scenes:
         # Show reference/model mismatch warnings (#62)
         provider_cfg = resolve_provider_config(scene, project, scene.scene_type)
-        check_reference_warnings(scene, project, provider_cfg)
+        check_field_warnings(scene, project, provider_cfg)
 
         if scene.scene_type == "still":
             generate_still(scene, project, output_dir, project_dir=project_dir)
@@ -450,7 +450,7 @@ def _dry_run(project, scenes) -> int:
         print(f"    {prompt}")
 
         # Show reference/model mismatch warnings (#62)
-        warns = check_reference_warnings(scene, project, provider_cfg)
+        warns = check_field_warnings(scene, project, provider_cfg)
         for w in warns:
             print(f"  {w}")
 

@@ -21,22 +21,44 @@ logger = logging.getLogger(__name__)
 _ASPECT_RATIO_TOLERANCE = 0.01
 
 
-def check_reference_warnings(
+def _model_matches(model_lower: str, patterns: list[str]) -> bool:
+    """Return True if the model ID matches any of the given patterns."""
+    return any(p in model_lower for p in patterns)
+
+
+# Models that do NOT support seed for stills
+_NO_SEED_STILL = [
+    "kling-image",
+    "grok-imagine-image",
+    "seedream/v5",
+    "recraft/v4",
+    "gpt-image",
+    "reve",
+]
+
+# Models that do NOT support seed for clips
+_NO_SEED_CLIP = ["kling-video", "grok-imagine-video", "minimax"]
+
+# Models that do NOT support reference images for stills
+_NO_REF_STILL = ["flux-pro/v1.1", "flux/dev", "hunyuan-image", "recraft/v4"]
+
+# Models that support last_frame for clips
+_LAST_FRAME_CLIP = ["kling-video", "seedance"]
+
+
+def check_field_warnings(
     scene: Scene, project: Project, provider_cfg: ProviderConfig
 ) -> list[str]:
-    """Check for reference image/model mismatches and log warnings.
+    """Check for unsupported YAML field / model mismatches and log warnings.
 
     Returns a list of warning strings for display in CLI and GUI.
     This function is safe to call from dry-run (no side effects).
 
-    Warnings:
-        - Style references configured but model is not Ideogram Character
-        - Character references configured but model is Flux 2 (ignores refs)
+    Checks style_reference, seed, reference, variants, last_frame.
     """
     warnings: list[str] = []
     model_lower = provider_cfg.model.lower()
     is_ideogram_char = "ideogram" in model_lower and "character" in model_lower
-    is_flux2 = "flux-2" in model_lower
 
     # Warn: style references on non-Ideogram Character models
     if project.style_reference and not is_ideogram_char:
@@ -49,23 +71,62 @@ def check_reference_warnings(
         logger.warning(msg)
         warnings.append(msg)
 
-    # Warn: character references on Flux 2 models (which ignore them)
-    if is_flux2:
+    # Warn: seed on models that don't support it
+    if scene.seed is not None:
+        no_seed = _NO_SEED_STILL if scene.scene_type == "still" else _NO_SEED_CLIP
+        if _model_matches(model_lower, no_seed):
+            msg = (
+                f"\u26a0\ufe0f  Scene {scene.number}: 'seed: {scene.seed}' will be "
+                f"ignored \u2014 {provider_cfg.model} does not support seed."
+            )
+            logger.warning(msg)
+            warnings.append(msg)
+
+    # Warn: reference images on still models that don't support them
+    if scene.scene_type == "still":
         has_char_refs = any(
             project.characters.get(cid) and project.characters[cid].reference
             for cid in scene.characters
         )
         has_scene_refs = bool(scene.reference)
-        if has_char_refs or has_scene_refs:
+        if (has_char_refs or has_scene_refs) and _model_matches(
+            model_lower, _NO_REF_STILL
+        ):
             msg = (
                 f"\u26a0\ufe0f  Scene {scene.number}: reference images configured but "
-                f"Flux 2 model '{provider_cfg.model}' does not support "
-                f"reference images. References will be ignored."
+                f"{provider_cfg.model} does not support references. "
+                f"References will be ignored."
+            )
+            logger.warning(msg)
+            warnings.append(msg)
+
+    # Warn: last_frame on models that don't support it
+    if scene.last_frame is not None and not _model_matches(
+        model_lower, _LAST_FRAME_CLIP
+    ):
+        msg = (
+            f"\u26a0\ufe0f  Scene {scene.number}: 'last_frame' will be ignored "
+            f"\u2014 {provider_cfg.model} does not support end frame interpolation."
+        )
+        logger.warning(msg)
+        warnings.append(msg)
+
+    # Warn: variants > 1 on clip models that don't support it
+    if scene.variants > 1 and scene.scene_type == "clip":
+        if provider_cfg.backend != "google":
+            msg = (
+                f"\u26a0\ufe0f  Scene {scene.number}: 'variants: {scene.variants}' "
+                f"will be ignored \u2014 {provider_cfg.model} does not support "
+                f"multiple variants."
             )
             logger.warning(msg)
             warnings.append(msg)
 
     return warnings
+
+
+# Backwards-compatible alias
+check_reference_warnings = check_field_warnings
 
 
 def resolve_provider_config(

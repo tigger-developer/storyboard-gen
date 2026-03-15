@@ -302,3 +302,56 @@ class TestReplicateGenerateClip:
                 seed=42,
                 number_of_videos=2,
             )
+
+
+class TestReplicateRefFieldName:
+    """Tests for Replicate reference image field name (#117 P0)."""
+
+    @patch("storyboard_gen.providers.replicate.replicate")
+    def test_flux_11_pro_sends_image_prompt_not_image(self, mock_replicate, tmp_path):
+        """flux-1.1-pro should send 'image_prompt' not 'image' for references."""
+        # Arrange
+        ref_path = tmp_path / "ref.png"
+        ref_path.write_bytes(b"fake-image")
+
+        mock_file = MagicMock()
+        mock_file.read.return_value = b"png-bytes"
+        mock_replicate.run.return_value = mock_file
+        provider = ReplicateProvider(model="black-forest-labs/flux-1.1-pro")
+
+        # Act
+        provider.generate_still(
+            prompt="A hero",
+            output_path=tmp_path / "scene_01.png",
+            aspect_ratio="9:16",
+            reference_images=[ref_path],
+        )
+
+        # Assert — should use image_prompt, not image
+        input_args = mock_replicate.run.call_args.kwargs["input"]
+        assert "image_prompt" in input_args
+        assert "image" not in input_args
+
+    @patch("storyboard_gen.providers.replicate.replicate")
+    def test_flux_dev_still_sends_image(self, mock_replicate, tmp_path):
+        """flux-dev should still send 'image' (it accepts that field)."""
+        # Arrange
+        ref_path = tmp_path / "ref.png"
+        ref_path.write_bytes(b"fake-image")
+
+        mock_file = MagicMock()
+        mock_file.read.return_value = b"png-bytes"
+        mock_replicate.run.return_value = [mock_file]
+        provider = ReplicateProvider(model="black-forest-labs/flux-dev")
+
+        # Act
+        provider.generate_still(
+            prompt="A hero",
+            output_path=tmp_path / "scene_01.png",
+            aspect_ratio="9:16",
+            reference_images=[ref_path],
+        )
+
+        # Assert — flux-dev uses 'image'
+        input_args = mock_replicate.run.call_args.kwargs["input"]
+        assert "image" in input_args
