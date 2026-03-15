@@ -65,13 +65,13 @@ class ConsolePanel(QWidget):
         """
         dark = self._is_dark_background()
         text_lower = text.lower()
-        if "error" in text_lower:
+        if text_lower.startswith("error:") or text_lower.startswith("critical:"):
             fmt = QTextCharFormat()
-            fmt.setForeground(QColor("#ff6b6b") if dark else QColor("#cc0000"))
+            fmt.setForeground(QColor("#ffaa33") if dark else QColor("#cc0000"))
             cursor = self.text_edit.textCursor()
             cursor.movePosition(cursor.MoveOperation.End)
             cursor.insertText(text + "\n", fmt)
-        elif "warning" in text_lower:
+        elif text_lower.startswith("warning:"):
             fmt = QTextCharFormat()
             fmt.setForeground(QColor("#ffaa33") if dark else QColor("#cc8800"))
             cursor = self.text_edit.textCursor()

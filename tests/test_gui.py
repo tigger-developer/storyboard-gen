@@ -338,8 +338,8 @@ class TestConsolePanel:
         # Assert
         assert panel.text_edit.toPlainText() == ""
 
-    def test_console_panel_error_lighter_on_dark_background(self, qtbot):
-        """Error text should use a lighter colour when background is dark (#113)."""
+    def test_console_panel_error_amber_on_dark_background(self, qtbot):
+        """Error text should use amber when background is dark (#113)."""
         from PySide6.QtGui import QColor, QPalette
 
         from storyboard_gen.gui.console_panel import ConsolePanel
@@ -353,18 +353,14 @@ class TestConsolePanel:
         panel.text_edit.setPalette(palette)
 
         # Act
-        panel.append_message("Error: something broke")
+        panel.append_message("ERROR: something broke")
 
-        # Assert — colour should be lighter than #cc0000 for readability
+        # Assert — amber for readability on dark backgrounds
         cursor = panel.text_edit.textCursor()
         cursor.movePosition(cursor.MoveOperation.Start)
         cursor.movePosition(cursor.MoveOperation.Right)
         fmt = cursor.charFormat()
-        colour = fmt.foreground().color()
-        # Should NOT be the dark-mode-unreadable #cc0000
-        assert colour != QColor("#cc0000")
-        # Should be a visible warm colour (lightness > 128)
-        assert colour.lightness() > 100
+        assert fmt.foreground().color() == QColor("#ffaa33")
 
     def test_console_panel_error_dark_red_on_light_background(self, qtbot):
         """Error text should remain dark red when background is light."""
@@ -381,7 +377,7 @@ class TestConsolePanel:
         panel.text_edit.setPalette(palette)
 
         # Act
-        panel.append_message("Error: something broke")
+        panel.append_message("ERROR: something broke")
 
         # Assert — classic dark red
         cursor = panel.text_edit.textCursor()
@@ -389,6 +385,30 @@ class TestConsolePanel:
         cursor.movePosition(cursor.MoveOperation.Right)
         fmt = cursor.charFormat()
         assert fmt.foreground().color() == QColor("#cc0000")
+
+    def test_console_panel_info_with_error_word_not_highlighted(self, qtbot):
+        """INFO messages containing 'error' should use default text colour (#113)."""
+        from PySide6.QtGui import QColor, QPalette
+
+        from storyboard_gen.gui.console_panel import ConsolePanel
+
+        panel = ConsolePanel()
+        qtbot.addWidget(panel)
+
+        # Arrange — ensure light background
+        palette = panel.text_edit.palette()
+        palette.setColor(QPalette.ColorRole.Base, QColor("#ffffff"))
+        panel.text_edit.setPalette(palette)
+
+        # Act — INFO message that contains substring "error"
+        panel.append_message("INFO: No errors found")
+
+        # Assert — should NOT be coloured red
+        cursor = panel.text_edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.Start)
+        cursor.movePosition(cursor.MoveOperation.Right)
+        fmt = cursor.charFormat()
+        assert fmt.foreground().color() != QColor("#cc0000")
 
 
 # ---------------------------------------------------------------------------
