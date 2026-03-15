@@ -85,7 +85,9 @@ class TestGetAllModels:
         all_models = get_all_models()
         for backend, models in BACKEND_MODELS.items():
             for model_id in models:
-                assert model_id in all_models, f"{model_id} missing from get_all_models()"
+                assert model_id in all_models, (
+                    f"{model_id} missing from get_all_models()"
+                )
                 assert all_models[model_id] == backend
 
     def test_no_duplicate_model_ids(self):
@@ -174,11 +176,9 @@ class TestRegistrySyncWithDocs:
         """Every model in docs/models.md should be in BACKEND_MODELS."""
         documented = self._parse_model_ids_from_docs(self._DOCS_PATH)
         all_registry = get_all_models()
-        missing = {
-            m: b for m, b in documented.items() if m not in all_registry
-        }
+        missing = {m: b for m, b in documented.items() if m not in all_registry}
         assert not missing, (
-            f"Models in docs/models.md but missing from BACKEND_MODELS:\n"
+            "Models in docs/models.md but missing from BACKEND_MODELS:\n"
             + "\n".join(f"  {b}: {m}" for m, b in sorted(missing.items()))
         )
 
@@ -186,10 +186,8 @@ class TestRegistrySyncWithDocs:
         """Every model in BACKEND_MODELS should be in docs/models.md."""
         documented = self._parse_model_ids_from_docs(self._DOCS_PATH)
         all_registry = get_all_models()
-        undocumented = {
-            m: b for m, b in all_registry.items() if m not in documented
-        }
+        undocumented = {m: b for m, b in all_registry.items() if m not in documented}
         assert not undocumented, (
-            f"Models in BACKEND_MODELS but missing from docs/models.md:\n"
+            "Models in BACKEND_MODELS but missing from docs/models.md:\n"
             + "\n".join(f"  {b}: {m}" for m, b in sorted(undocumented.items()))
         )

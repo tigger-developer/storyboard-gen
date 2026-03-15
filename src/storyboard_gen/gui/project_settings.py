@@ -422,9 +422,7 @@ class ProjectSettingsForm(QWidget):
         completer.setCaseSensitivity(Qt.CaseInsensitive)
         combo.setCompleter(completer)
 
-    def _auto_switch_backend(
-        self, model_text: str, backend_combo: QComboBox
-    ) -> None:
+    def _auto_switch_backend(self, model_text: str, backend_combo: QComboBox) -> None:
         """Switch backend combo to match the model's registered backend."""
         all_models = get_all_models()
         if model_text in all_models:

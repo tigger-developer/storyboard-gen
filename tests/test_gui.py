@@ -6195,7 +6195,9 @@ class TestProjectSettingsForm:
         completer = form._still_model.completer()
         assert completer is not None
         model = completer.model()
-        completer_items = [model.data(model.index(i, 0)) for i in range(model.rowCount())]
+        completer_items = [
+            model.data(model.index(i, 0)) for i in range(model.rowCount())
+        ]
         all_models = get_all_models()
         # Should contain models from at least two different backends
         backends_in_completer = set()
