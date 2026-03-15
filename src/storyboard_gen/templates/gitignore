@@ -8,6 +8,9 @@ logs/
 output/intermediate/
 output/clips/
 
+# Archived previous generations (browsable via GUI, not needed in VCS)
+archive/
+
 # Assembled video output
 *.mp4
 *.mov

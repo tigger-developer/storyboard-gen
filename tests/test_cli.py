@@ -259,6 +259,8 @@ class TestCliInit:
         assert "*.mp4" in content
         # Stills kept (NOT excluded)
         assert "!output/stills/" in content
+        # Archived generations excluded
+        assert "archive/" in content
         # Kdenlive project kept (NOT excluded)
         assert "!*.kdenlive" in content
 
