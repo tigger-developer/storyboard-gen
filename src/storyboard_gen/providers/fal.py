@@ -355,6 +355,7 @@ class EditHandler(StillHandler):
         edit_suffix: str | None = "/edit",
         ref_field: str = "image_urls",
         edit_accepts_sizing: bool = True,
+        strip_t2i: bool = True,
     ):
         self._patterns = patterns
         self._sizing = sizing
@@ -363,6 +364,7 @@ class EditHandler(StillHandler):
         self._edit_suffix = edit_suffix
         self._ref_field = ref_field
         self._edit_accepts_sizing = edit_accepts_sizing
+        self._strip_t2i = strip_t2i
 
     def match(self, model: str) -> bool:
         lower = model.lower()
@@ -381,7 +383,7 @@ class EditHandler(StillHandler):
         style_reference_images: list[Path] | None,
         project_dir: Path | None,
     ) -> tuple[str, dict]:
-        # Normalize base model: strip edit suffix and /text-to-image
+        # Derive base model: always strip edit suffix and /text-to-image
         base_model = provider.model
         for suffix in [self._edit_suffix, "/text-to-image"]:
             if suffix and base_model.lower().endswith(suffix.lower()):
@@ -426,7 +428,8 @@ class EditHandler(StillHandler):
                 else:
                     arguments["image_size"] = _map_aspect_ratio(aspect_ratio)
         else:
-            endpoint = base_model
+            # T2I: use original model when strip_t2i=False (#126)
+            endpoint = base_model if self._strip_t2i else provider.model
             arguments = {
                 "prompt": prompt,
                 "num_images": 1,
@@ -499,12 +502,20 @@ _STILL_HANDLERS: list[StillHandler] = [
     EditHandler(
         ["grok-imagine-image"], sizing="aspect_ratio", edit_accepts_sizing=False
     ),
-    EditHandler(["seedream"], safety={"enable_safety_checker": False}),
     EditHandler(
-        ["hunyuan-image"], safety={"enable_safety_checker": False}, supports_edit=False
+        ["seedream"], safety={"enable_safety_checker": False}, strip_t2i=False
     ),
     EditHandler(
-        ["recraft"], safety={"enable_safety_checker": False}, supports_edit=False
+        ["hunyuan-image"],
+        safety={"enable_safety_checker": False},
+        supports_edit=False,
+        strip_t2i=False,
+    ),
+    EditHandler(
+        ["recraft"],
+        safety={"enable_safety_checker": False},
+        supports_edit=False,
+        strip_t2i=False,
     ),
     EditHandler(["firered"], edit_suffix=None),
     EditHandler(["qwen-image-edit"], edit_suffix=None),
@@ -515,6 +526,7 @@ _STILL_HANDLERS: list[StillHandler] = [
         sizing="aspect_ratio",
         edit_suffix="/edit-image",
         ref_field="image_url",
+        strip_t2i=False,
     ),
     EditHandler(["gpt-image"], sizing="pixel"),
     EditHandler(["nano-banana"], sizing="aspect_ratio"),
@@ -524,6 +536,7 @@ _STILL_HANDLERS: list[StillHandler] = [
         sizing="aspect_ratio",
         ref_field="image_url",
         edit_accepts_sizing=False,
+        strip_t2i=False,
     ),
     InstantCharacterHandler(),
     Flux2ProHandler(),

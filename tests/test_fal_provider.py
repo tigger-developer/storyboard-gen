@@ -3159,9 +3159,9 @@ class TestSeedreamHandler:
                 aspect_ratio="16:9",
             )
 
-        # Assert — EditHandler normalizes by stripping /text-to-image suffix
+        # Assert — strip_t2i=False preserves /text-to-image in endpoint (#126)
         call_args = mock_fal.subscribe.call_args
-        assert call_args.args[0] == "fal-ai/bytedance/seedream/v5/lite"
+        assert call_args.args[0] == "fal-ai/bytedance/seedream/v5/lite/text-to-image"
 
 
 class TestHunyuanImageHandler:
@@ -4112,3 +4112,183 @@ class TestFalErrorCleaning:
                 aspect_ratio="16:9",
                 duration=5,
             )
+
+
+# ---------------------------------------------------------------------------
+# strip_t2i endpoint preservation — issue #126
+# ---------------------------------------------------------------------------
+
+
+class TestStripT2iEndpointPreservation:
+    """Models with strip_t2i=False must preserve /text-to-image in endpoint (#126)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_seedream_v45_preserves_text_to_image_endpoint(self, mock_fal, tmp_path):
+        """Seedream v4.5 base endpoint preserves /text-to-image (AC1)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/bytedance/seedream/v4.5/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+            )
+
+        # Assert — endpoint must include /text-to-image
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/bytedance/seedream/v4.5/text-to-image"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_seedream_v5_lite_preserves_text_to_image_endpoint(
+        self, mock_fal, tmp_path
+    ):
+        """Seedream v5 Lite base endpoint preserves /text-to-image (AC2)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(
+            model="fal-ai/bytedance/seedream/v5/lite/text-to-image"
+        )
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+            )
+
+        # Assert
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/bytedance/seedream/v5/lite/text-to-image"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_seedream_edit_endpoint_correct(self, mock_fal, tmp_path):
+        """Seedream v4.5 edit endpoint strips /text-to-image, appends /edit (AC3)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        chars = [Character(id="boy", description="A boy", reference=[ref_img])]
+        provider = FalProvider(model="fal-ai/bytedance/seedream/v4.5/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A boy smiling",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                scene_characters=chars,
+                project_dir=tmp_path,
+            )
+
+        # Assert — edit endpoint: strip /text-to-image, append /edit
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/bytedance/seedream/v4.5/edit"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_hunyuan_image_preserves_text_to_image_endpoint(self, mock_fal, tmp_path):
+        """Hunyuan Image base endpoint preserves /text-to-image (AC4)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/hunyuan-image/v3/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+            )
+
+        # Assert
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/hunyuan-image/v3/text-to-image"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_recraft_preserves_text_to_image_endpoint(self, mock_fal, tmp_path):
+        """Recraft base endpoint preserves /text-to-image (AC5)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/recraft/v4/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+            )
+
+        # Assert
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/recraft/v4/text-to-image"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_emu35_preserves_text_to_image_endpoint(self, mock_fal, tmp_path):
+        """Emu 3.5 base endpoint preserves /text-to-image (AC6)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/emu-3.5-image/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+            )
+
+        # Assert
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/emu-3.5-image/text-to-image"
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_reve_preserves_text_to_image_endpoint(self, mock_fal, tmp_path):
+        """Reve base endpoint preserves /text-to-image (AC7)."""
+        # Arrange
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/reve/text-to-image")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+
+            # Act
+            provider.generate_still(
+                prompt="A landscape",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="16:9",
+            )
+
+        # Assert
+        call_args = mock_fal.subscribe.call_args
+        assert call_args.args[0] == "fal-ai/reve/text-to-image"
