@@ -3430,6 +3430,75 @@ class TestSceneYamlExtraction:
         assert "number: 3" not in block
 
 
+class TestQuotedSceneNumbers:
+    """Scene numbers with YAML quotes should be matched correctly (#129)."""
+
+    def test_extract_scene_yaml_double_quoted_number(self, tmp_path):
+        """Double-quoted number: \"10a\" should be found by extract_scene_yaml (AC1)."""
+        from storyboard_gen.gui.scene_yaml_editor import extract_scene_yaml
+
+        yaml_path = tmp_path / "project.yaml"
+        yaml_path.write_text(
+            'title: "Test"\nscenes:\n'
+            '  - number: "10a"\n    title: "Quoted scene"\n    type: still\n'
+            "    duration: 3\n    prompt: >\n      A test.\n"
+        )
+
+        block = extract_scene_yaml(yaml_path, "10a")
+        assert block is not None
+        assert "Quoted scene" in block
+
+    def test_extract_scene_yaml_single_quoted_number(self, tmp_path):
+        """Single-quoted number: '10a' should be found (AC2)."""
+        from storyboard_gen.gui.scene_yaml_editor import extract_scene_yaml
+
+        yaml_path = tmp_path / "project.yaml"
+        yaml_path.write_text(
+            "title: \"Test\"\nscenes:\n"
+            "  - number: '10a'\n    title: \"Quoted scene\"\n    type: still\n"
+            "    duration: 3\n    prompt: >\n      A test.\n"
+        )
+
+        block = extract_scene_yaml(yaml_path, "10a")
+        assert block is not None
+        assert "Quoted scene" in block
+
+    def test_extract_scene_yaml_unquoted_string_number(self, tmp_path):
+        """Unquoted alphanumeric number: 10a still works (AC3 regression)."""
+        from storyboard_gen.gui.scene_yaml_editor import extract_scene_yaml
+
+        yaml_path = tmp_path / "project.yaml"
+        yaml_path.write_text(
+            'title: "Test"\nscenes:\n'
+            "  - number: 10a\n    title: \"Unquoted scene\"\n    type: still\n"
+            "    duration: 3\n    prompt: >\n      A test.\n"
+        )
+
+        block = extract_scene_yaml(yaml_path, "10a")
+        assert block is not None
+        assert "Unquoted scene" in block
+
+    def test_is_dirty_false_when_scene_not_found(self, qtbot, tmp_path):
+        """is_dirty() should return False when scene was not found (AC5)."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = tmp_path / "project.yaml"
+        yaml_path.write_text(
+            'title: "Test"\nscenes:\n'
+            "  - number: 1\n    title: \"Only scene\"\n    type: still\n"
+            "    duration: 3\n    prompt: >\n      A test.\n"
+        )
+
+        # Load a scene that doesn't exist
+        editor.load_scene("99", yaml_path)
+
+        # Should NOT be dirty — no real content to save
+        assert not editor.is_dirty()
+
+
 class TestSceneYamlReplacement:
     """Test replacing a scene's YAML block in project.yaml."""
 

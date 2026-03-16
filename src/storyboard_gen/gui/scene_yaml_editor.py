@@ -100,12 +100,12 @@ def _find_scene_boundaries(
             # Check for "- number: N" (inline) on the first line
             m = inline_number.match(lines[j])
             if m:
-                scene_num = str(m.group(1))
+                scene_num = str(m.group(1)).strip("\"'")
                 break
             # Check for "  number: N" (subsequent line)
             m = number_pattern.match(lines[j])
             if m:
-                scene_num = str(m.group(1))
+                scene_num = str(m.group(1)).strip("\"'")
                 break
         result.append((start, end, scene_num))
 
@@ -332,10 +332,9 @@ class SceneYamlEditor(QWidget):
 
         block = extract_scene_yaml(yaml_path, scene_number)
         if block is None:
-            self.text_edit.setPlainText(
-                f"# Scene {scene_number} not found in {yaml_path.name}"
-            )
-            self._original_text = ""
+            placeholder = f"# Scene {scene_number} not found in {yaml_path.name}"
+            self.text_edit.setPlainText(placeholder)
+            self._original_text = placeholder
             self._save_btn.setEnabled(False)
             return
 
