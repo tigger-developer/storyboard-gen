@@ -1,8 +1,6 @@
 # ABOUTME: Tests for the FAL.ai provider implementation.
 # ABOUTME: Mocks fal_client calls (external HTTP API — acceptable per TESTING.md).
 
-import hashlib
-import json
 from unittest.mock import patch
 
 import pytest
@@ -1483,13 +1481,19 @@ class TestFalSafetyDefaults:
         assert arguments["enable_safety_checker"] is True
 
 
-class TestFalCdnCache:
-    """Tests for CDN URL caching to avoid re-uploading references (#37)."""
+class TestCdnCacheRemoved:
+    """CDN cache has been removed (#123) — verify no caching behaviour remains."""
+
+    def test_cdn_cache_methods_removed(self):
+        """_upload_with_cache, _load_cdn_cache, _save_cdn_cache must not exist."""
+        provider = FalProvider(model="fal-ai/flux-general")
+        assert not hasattr(provider, "_upload_with_cache")
+        assert not hasattr(provider, "_load_cdn_cache")
+        assert not hasattr(provider, "_save_cdn_cache")
 
     @patch("storyboard_gen.providers.fal.fal_client")
-    def test_cdn_cache_miss_triggers_upload_and_stores(self, mock_fal, tmp_path):
-        """Cache miss should upload the file and store the hash → URL mapping."""
-        # Arrange
+    def test_no_cdn_cache_file_created(self, mock_fal, tmp_path):
+        """Generation should not create logs/cdn_cache.json."""
         ref = tmp_path / "boy.jpg"
         ref.write_bytes(b"boy-image-data")
 
@@ -1506,8 +1510,6 @@ class TestFalCdnCache:
 
         with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
             mock_dl.return_value = b"video-bytes"
-
-            # Act
             provider.generate_clip(
                 prompt="@boy waves",
                 output_path=tmp_path / "scene_01.mp4",
@@ -1517,39 +1519,29 @@ class TestFalCdnCache:
                 project_dir=project_dir,
             )
 
-        # Assert — upload called, cache file created with correct hash
-        mock_fal.upload_file.assert_called_once_with(str(ref))
         cache_path = project_dir / "logs" / "cdn_cache.json"
-        assert cache_path.exists()
-        cache = json.loads(cache_path.read_text())
-        file_hash = hashlib.sha256(b"boy-image-data").hexdigest()
-        assert cache[file_hash] == "https://fal.media/files/boy.png"
+        assert not cache_path.exists()
 
     @patch("storyboard_gen.providers.fal.fal_client")
-    def test_cdn_cache_hit_skips_upload(self, mock_fal, tmp_path):
-        """Cache hit should reuse the cached URL without uploading."""
-        # Arrange
+    def test_reference_upload_called_every_invocation(self, mock_fal, tmp_path):
+        """Reference images must be uploaded fresh on every call, not cached."""
         ref = tmp_path / "boy.jpg"
         ref.write_bytes(b"boy-image-data")
-        file_hash = hashlib.sha256(b"boy-image-data").hexdigest()
 
-        project_dir = tmp_path / "project"
-        logs_dir = project_dir / "logs"
-        logs_dir.mkdir(parents=True)
-        cache = {file_hash: "https://fal.media/files/cached_boy.png"}
-        (logs_dir / "cdn_cache.json").write_text(json.dumps(cache))
-
+        mock_fal.upload_file.return_value = "https://fal.media/files/boy.png"
         mock_fal.subscribe.return_value = {
             "video": {"url": "https://fal.media/files/video.mp4"},
         }
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
 
         chars = [Character(id="boy", description="A boy", reference=[ref])]
         provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
 
         with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
             mock_dl.return_value = b"video-bytes"
-
-            # Act
+            # Call twice
             provider.generate_clip(
                 prompt="@boy waves",
                 output_path=tmp_path / "scene_01.mp4",
@@ -1558,60 +1550,27 @@ class TestFalCdnCache:
                 scene_characters=chars,
                 project_dir=project_dir,
             )
-
-        # Assert — no upload (cache hit), cached URL used in elements
-        mock_fal.upload_file.assert_not_called()
-        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
-        assert (
-            arguments["elements"][0]["frontal_image_url"]
-            == "https://fal.media/files/cached_boy.png"
-        )
-
-    @patch("storyboard_gen.providers.fal.fal_client")
-    def test_cdn_cache_changed_file_triggers_reupload(self, mock_fal, tmp_path):
-        """Changed file (different hash) should re-upload and update cache."""
-        # Arrange — cache has OLD hash
-        ref = tmp_path / "boy.jpg"
-        ref.write_bytes(b"new-image-data")
-        old_hash = hashlib.sha256(b"old-image-data").hexdigest()
-
-        project_dir = tmp_path / "project"
-        logs_dir = project_dir / "logs"
-        logs_dir.mkdir(parents=True)
-        cache = {old_hash: "https://fal.media/files/old_boy.png"}
-        (logs_dir / "cdn_cache.json").write_text(json.dumps(cache))
-
-        mock_fal.upload_file.return_value = "https://fal.media/files/new_boy.png"
-        mock_fal.subscribe.return_value = {
-            "video": {"url": "https://fal.media/files/video.mp4"},
-        }
-
-        chars = [Character(id="boy", description="A boy", reference=[ref])]
-        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
-
-        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
-            mock_dl.return_value = b"video-bytes"
-
-            # Act
             provider.generate_clip(
-                prompt="@boy waves",
-                output_path=tmp_path / "scene_01.mp4",
+                prompt="@boy runs",
+                output_path=tmp_path / "scene_02.mp4",
                 aspect_ratio="9:16",
                 duration=5,
                 scene_characters=chars,
                 project_dir=project_dir,
             )
 
-        # Assert — re-upload happened, new URL in elements and cache
-        mock_fal.upload_file.assert_called_once()
-        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
-        assert (
-            arguments["elements"][0]["frontal_image_url"]
-            == "https://fal.media/files/new_boy.png"
-        )
-        new_hash = hashlib.sha256(b"new-image-data").hexdigest()
-        updated_cache = json.loads((logs_dir / "cdn_cache.json").read_text())
-        assert updated_cache[new_hash] == "https://fal.media/files/new_boy.png"
+        # upload_file must be called both times (no caching)
+        assert mock_fal.upload_file.call_count == 2
+
+    def test_no_hashlib_import(self):
+        """fal.py should not import hashlib (only used for CDN cache)."""
+        import importlib
+        import inspect
+
+        mod = importlib.import_module("storyboard_gen.providers.fal")
+        source = inspect.getsource(mod)
+        # Should not have "import hashlib" as a top-level import
+        assert "import hashlib" not in source
 
 
 class TestO1ImageDetection:
@@ -1673,28 +1632,24 @@ class TestKontextMultiDetection:
 
 
 class TestUploadAllReferences:
-    """Tests for _upload_all_references() multi-ref upload (#46)."""
+    """Tests for _upload_all_references() multi-ref upload (#46, #123)."""
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_uploads_all_existing_references(self, mock_fal, tmp_path):
         """All existing reference images should be uploaded and URLs returned."""
-        # Arrange
         ref1 = tmp_path / "ref1.png"
         ref2 = tmp_path / "ref2.png"
         ref1.write_bytes(b"image-1")
         ref2.write_bytes(b"image-2")
 
-        cdn_cache: dict[str, str] = {}
         mock_fal.upload_file.side_effect = [
             "https://fal.media/files/ref1.png",
             "https://fal.media/files/ref2.png",
         ]
         provider = FalProvider(model="fal-ai/kling-image/o1")
 
-        # Act
-        urls = provider._upload_all_references([ref1, ref2], cdn_cache)
+        urls = provider._upload_all_references([ref1, ref2])
 
-        # Assert
         assert urls == [
             "https://fal.media/files/ref1.png",
             "https://fal.media/files/ref2.png",
@@ -1703,45 +1658,23 @@ class TestUploadAllReferences:
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_skips_nonexistent_references(self, mock_fal, tmp_path):
         """Missing reference files should be skipped silently."""
-        # Arrange
         ref1 = tmp_path / "ref1.png"
         ref1.write_bytes(b"image-1")
         ref2 = tmp_path / "missing.png"  # does not exist
 
-        cdn_cache: dict[str, str] = {}
         mock_fal.upload_file.return_value = "https://fal.media/files/ref1.png"
         provider = FalProvider(model="fal-ai/kling-image/o1")
 
-        # Act
-        urls = provider._upload_all_references([ref1, ref2], cdn_cache)
+        urls = provider._upload_all_references([ref1, ref2])
 
-        # Assert — only the existing one
         assert urls == ["https://fal.media/files/ref1.png"]
-
-    @patch("storyboard_gen.providers.fal.fal_client")
-    def test_uses_cdn_cache(self, mock_fal, tmp_path):
-        """Cached references should not be re-uploaded."""
-        # Arrange
-        ref = tmp_path / "ref.png"
-        ref.write_bytes(b"image-data")
-        file_hash = hashlib.sha256(b"image-data").hexdigest()
-        cdn_cache = {file_hash: "https://fal.media/files/cached.png"}
-        provider = FalProvider(model="fal-ai/kling-image/o1")
-
-        # Act
-        urls = provider._upload_all_references([ref], cdn_cache)
-
-        # Assert — cache hit, no upload
-        mock_fal.upload_file.assert_not_called()
-        assert urls == ["https://fal.media/files/cached.png"]
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_returns_empty_for_no_references(self, mock_fal):
         """No references should return an empty list."""
         provider = FalProvider(model="fal-ai/kling-image/o1")
-        cdn_cache: dict[str, str] = {}
 
-        urls = provider._upload_all_references([], cdn_cache)
+        urls = provider._upload_all_references([])
         assert urls == []
 
 

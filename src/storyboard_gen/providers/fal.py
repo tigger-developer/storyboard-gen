@@ -1,8 +1,6 @@
 # ABOUTME: FAL.ai provider for storyboard-gen.
 # ABOUTME: Generates stills and clips via fal-client SDK for multiple model families.
 
-import hashlib
-import json
 import logging
 import re
 import urllib.request
@@ -103,11 +101,9 @@ class IdeogramCharacterHandler(StillHandler):
         style_reference_images: list[Path] | None,
         project_dir: Path | None,
     ) -> tuple[str, dict]:
-        cdn_cache = provider._load_cdn_cache(project_dir)
         endpoint, arguments = provider._build_ideogram_character_args(
-            prompt, aspect_ratio, scene_characters, style_reference_images, cdn_cache
+            prompt, aspect_ratio, scene_characters, style_reference_images
         )
-        provider._save_cdn_cache(project_dir, cdn_cache)
         return endpoint, arguments
 
 
@@ -132,12 +128,10 @@ class O1ImageHandler(StillHandler):
         project_dir: Path | None,
     ) -> tuple[str, dict]:
         if scene_characters:
-            cdn_cache = provider._load_cdn_cache(project_dir)
             prompt = provider._rewrite_prompt(prompt, scene_characters)
             endpoint, arguments = provider._build_o1_image_args(
-                prompt, aspect_ratio, scene_characters, cdn_cache
+                prompt, aspect_ratio, scene_characters
             )
-            provider._save_cdn_cache(project_dir, cdn_cache)
         else:
             endpoint = provider.model
             arguments = {
@@ -170,12 +164,10 @@ class KontextMultiHandler(StillHandler):
         project_dir: Path | None,
     ) -> tuple[str, dict]:
         if scene_characters:
-            cdn_cache = provider._load_cdn_cache(project_dir)
             prompt = provider._rewrite_prompt(prompt, scene_characters)
             endpoint, arguments = provider._build_kontext_multi_args(
-                prompt, aspect_ratio, scene_characters, cdn_cache
+                prompt, aspect_ratio, scene_characters
             )
-            provider._save_cdn_cache(project_dir, cdn_cache)
         else:
             endpoint = provider.model
             arguments = {
@@ -234,20 +226,16 @@ class Flux2ProHandler(StillHandler):
         base_model = re.sub(r"/edit$", "", provider.model, flags=re.IGNORECASE)
 
         if scene_characters:
-            cdn_cache = provider._load_cdn_cache(project_dir)
-
             # Upload all character refs
             all_refs: list[Path] = []
             for char in scene_characters:
                 all_refs.extend(r for r in char.reference if r.exists())
-            image_urls = provider._upload_all_references(all_refs, cdn_cache)
+            image_urls = provider._upload_all_references(all_refs)
 
             # Rewrite @character_id → @imageN (lowercase per Flux 2 Pro API)
             prompt = provider._rewrite_prompt(
                 prompt, scene_characters, tag_prefix="image"
             )
-
-            provider._save_cdn_cache(project_dir, cdn_cache)
 
             endpoint = base_model.rstrip("/") + "/edit"
             image_size = _map_aspect_ratio(aspect_ratio)
@@ -332,12 +320,10 @@ class IdeogramV3Handler(StillHandler):
         }
         # Style refs → image_urls (same channel as ideogram/character)
         if style_reference_images:
-            cdn_cache = provider._load_cdn_cache(project_dir)
             existing_style = [r for r in style_reference_images if r.exists()]
             if existing_style:
-                style_urls = provider._upload_all_references(existing_style, cdn_cache)
+                style_urls = provider._upload_all_references(existing_style)
                 arguments["image_urls"] = style_urls
-            provider._save_cdn_cache(project_dir, cdn_cache)
         return provider.model, arguments
 
 
@@ -399,18 +385,14 @@ class EditHandler(StillHandler):
         image_urls = None
         if self._supports_edit:
             if scene_characters:
-                cdn_cache = provider._load_cdn_cache(project_dir)
                 all_refs = [
                     r for c in scene_characters for r in c.reference if r.exists()
                 ]
-                image_urls = provider._upload_all_references(all_refs, cdn_cache)
-                provider._save_cdn_cache(project_dir, cdn_cache)
+                image_urls = provider._upload_all_references(all_refs)
             elif reference_images:
-                cdn_cache = provider._load_cdn_cache(project_dir)
                 image_urls = provider._upload_all_references(
-                    [r for r in reference_images if r.exists()], cdn_cache
+                    [r for r in reference_images if r.exists()]
                 )
-                provider._save_cdn_cache(project_dir, cdn_cache)
 
         if image_urls:
             if self._edit_suffix:
@@ -699,7 +681,6 @@ class FalProvider(ImageProvider):
         prompt: str,
         aspect_ratio: str,
         scene_characters: list,
-        cdn_cache: dict[str, str],
     ) -> tuple[str, dict]:
         """Build arguments for Kling O1 Image models.
 
@@ -709,7 +690,6 @@ class FalProvider(ImageProvider):
             prompt: Full prompt text (with @character_id tokens).
             aspect_ratio: Raw "W:H" string.
             scene_characters: Ordered list of Character objects.
-            cdn_cache: Mutable CDN cache dict.
 
         Returns:
             Tuple of (endpoint, arguments dict).
@@ -719,7 +699,7 @@ class FalProvider(ImageProvider):
         for char in scene_characters:
             all_refs.extend(r for r in char.reference if r.exists())
 
-        image_urls = self._upload_all_references(all_refs, cdn_cache)
+        image_urls = self._upload_all_references(all_refs)
 
         arguments: dict = {
             "prompt": prompt,
@@ -737,7 +717,6 @@ class FalProvider(ImageProvider):
         prompt: str,
         aspect_ratio: str,
         scene_characters: list,
-        cdn_cache: dict[str, str],
     ) -> tuple[str, dict]:
         """Build arguments for Kontext Max Multi models.
 
@@ -749,7 +728,6 @@ class FalProvider(ImageProvider):
             prompt: Full prompt text.
             aspect_ratio: Raw "W:H" string.
             scene_characters: Ordered list of Character objects.
-            cdn_cache: Mutable CDN cache dict.
 
         Returns:
             Tuple of (endpoint, arguments dict).
@@ -759,7 +737,7 @@ class FalProvider(ImageProvider):
         for char in scene_characters:
             all_refs.extend(r for r in char.reference if r.exists())
 
-        image_urls = self._upload_all_references(all_refs, cdn_cache)
+        image_urls = self._upload_all_references(all_refs)
 
         arguments: dict = {
             "prompt": prompt,
@@ -778,7 +756,6 @@ class FalProvider(ImageProvider):
         aspect_ratio: str,
         scene_characters: list | None,
         style_reference_images: list[Path] | None,
-        cdn_cache: dict[str, str],
     ) -> tuple[str, dict]:
         """Build arguments for Ideogram Character models.
 
@@ -791,7 +768,6 @@ class FalProvider(ImageProvider):
             aspect_ratio: Raw "W:H" string.
             scene_characters: Ordered list of Character objects.
             style_reference_images: List of style reference image paths.
-            cdn_cache: Mutable CDN cache dict.
 
         Returns:
             Tuple of (endpoint, arguments dict).
@@ -811,14 +787,14 @@ class FalProvider(ImageProvider):
             for char in scene_characters:
                 char_refs.extend(r for r in char.reference if r.exists())
             if char_refs:
-                char_urls = self._upload_all_references(char_refs, cdn_cache)
+                char_urls = self._upload_all_references(char_refs)
                 arguments["reference_image_urls"] = char_urls
 
         # Style refs → image_urls (all existing)
         if style_reference_images:
             existing_style = [r for r in style_reference_images if r.exists()]
             if existing_style:
-                style_urls = self._upload_all_references(existing_style, cdn_cache)
+                style_urls = self._upload_all_references(existing_style)
                 arguments["image_urls"] = style_urls
 
         return self.model, arguments
@@ -1026,61 +1002,21 @@ class FalProvider(ImageProvider):
 
         return prompt
 
-    def _load_cdn_cache(self, project_dir: Path | None) -> dict[str, str]:
-        """Load the CDN URL cache from project_dir/logs/cdn_cache.json.
-
-        Returns:
-            Dict mapping SHA-256 hex digest to CDN URL.
-        """
-        if project_dir is None:
-            return {}
-        cache_path = project_dir / "logs" / "cdn_cache.json"
-        if cache_path.exists():
-            return json.loads(cache_path.read_text())
-        return {}
-
-    def _save_cdn_cache(self, project_dir: Path | None, cache: dict[str, str]) -> None:
-        """Save the CDN URL cache to project_dir/logs/cdn_cache.json."""
-        if project_dir is None:
-            return
-        logs_dir = project_dir / "logs"
-        logs_dir.mkdir(parents=True, exist_ok=True)
-        (logs_dir / "cdn_cache.json").write_text(json.dumps(cache, indent=2))
-
-    def _upload_with_cache(self, path: Path, cdn_cache: dict[str, str]) -> str:
-        """Upload a file to FAL CDN, using cached URL if hash matches.
-
-        Args:
-            path: Local file path to upload.
-            cdn_cache: Mutable cache dict (updated in place on miss).
-
-        Returns:
-            CDN URL string.
-        """
-        file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
-        if file_hash in cdn_cache:
-            logger.info("CDN cache hit for %s (hash=%s...)", path.name, file_hash[:8])
-            return cdn_cache[file_hash]
-
-        url = fal_client.upload_file(str(path))
-        cdn_cache[file_hash] = url
-        logger.info("Uploaded %s -> %s (hash=%s...)", path.name, url, file_hash[:8])
-        return url
-
     def _upload_all_references(
         self,
         reference_images: list[Path],
-        cdn_cache: dict[str, str],
     ) -> list[str]:
         """Upload all valid reference images to FAL CDN.
 
         Unlike _upload_reference() which uses only the first image,
         this uploads every existing file and returns all URLs.
-        Used by O1 Image and Kontext Multi models.
+        Used by O1 Image, Kontext Multi, and EditHandler models.
+
+        Uploads fresh on every call — FAL CDN URLs expire at their
+        discretion, so caching is not safe (#123).
 
         Args:
             reference_images: List of reference image paths.
-            cdn_cache: Mutable CDN cache dict.
 
         Returns:
             List of CDN URL strings for existing files.
@@ -1088,13 +1024,12 @@ class FalProvider(ImageProvider):
         urls = []
         for ref_path in reference_images:
             if ref_path.exists():
-                url = self._upload_with_cache(ref_path, cdn_cache)
+                url = fal_client.upload_file(str(ref_path))
+                logger.info("Uploaded %s -> %s", ref_path.name, url)
                 urls.append(url)
         return urls
 
-    def _build_elements(
-        self, scene_characters: list, cdn_cache: dict[str, str]
-    ) -> list[dict]:
+    def _build_elements(self, scene_characters: list) -> list[dict]:
         """Build O3 elements array from Character objects.
 
         For each character with reference images:
@@ -1102,10 +1037,10 @@ class FalProvider(ImageProvider):
         - Additional references → reference_image_urls
 
         Characters without references are skipped.
+        Uploads fresh on every call (#123).
 
         Args:
             scene_characters: Ordered list of Character objects.
-            cdn_cache: Mutable CDN cache dict.
 
         Returns:
             List of element dicts for the O3 API.
@@ -1116,10 +1051,13 @@ class FalProvider(ImageProvider):
             if not existing_refs:
                 continue
 
-            frontal_url = self._upload_with_cache(existing_refs[0], cdn_cache)
-            extra_urls = [
-                self._upload_with_cache(r, cdn_cache) for r in existing_refs[1:]
-            ]
+            frontal_url = fal_client.upload_file(str(existing_refs[0]))
+            logger.info("Uploaded %s -> %s", existing_refs[0].name, frontal_url)
+            extra_urls = []
+            for r in existing_refs[1:]:
+                url = fal_client.upload_file(str(r))
+                logger.info("Uploaded %s -> %s", r.name, url)
+                extra_urls.append(url)
             element: dict = {
                 "frontal_image_url": frontal_url,
                 "reference_image_urls": extra_urls,
@@ -1231,11 +1169,9 @@ class FalProvider(ImageProvider):
             )
             # Build O3 character elements (#37)
             if self._is_o3 and scene_characters:
-                cdn_cache = self._load_cdn_cache(project_dir)
-                elements = self._build_elements(scene_characters, cdn_cache)
+                elements = self._build_elements(scene_characters)
                 if elements:
                     arguments["elements"] = elements
-                self._save_cdn_cache(project_dir, cdn_cache)
         return arguments
 
     def _auto_route_clip_endpoint(self, source_frame_url: str | None) -> str:
