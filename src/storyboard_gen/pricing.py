@@ -105,8 +105,8 @@ def _normalise_unit(unit: str) -> str | None:
         return "second"
     if lower in ("megapixel", "megapixels"):
         return "megapixel"
-    # Compute seconds are not video seconds — unsuitable for cost estimation.
-    if lower == "compute seconds":
+    # Compute seconds / generic "units" — unsuitable for cost estimation.
+    if lower in ("compute seconds", "units"):
         return None
     return unit
 

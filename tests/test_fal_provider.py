@@ -7,6 +7,7 @@ import pytest
 
 from storyboard_gen.models import Character
 from storyboard_gen.providers.fal import (
+    ASPECT_RATIO_MAP,
     EditHandler,
     FalProvider,
     Flux2Handler,
@@ -19,6 +20,7 @@ from storyboard_gen.providers.fal import (
     KontextMultiHandler,
     O1ImageHandler,
     StillHandler,
+    _PIXEL_SIZE_MAP,
     _map_aspect_ratio,
     _resolve_still_handler,
 )
@@ -3994,3 +3996,119 @@ class TestKontextDevSizing:
         # Assert — kontext pro should have aspect_ratio
         arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
         assert "aspect_ratio" in arguments
+
+
+# ---------------------------------------------------------------------------
+# GPT Image pixel sizing — issue #121
+# ---------------------------------------------------------------------------
+
+
+class TestGptImagePixelSizing:
+    """GPT Image models must send literal pixel dimensions, not presets (#121)."""
+
+    @pytest.mark.parametrize(
+        "ratio,expected",
+        [
+            ("9:16", "1024x1536"),
+            ("16:9", "1536x1024"),
+            ("4:3", "1536x1024"),
+            ("1:1", "1024x1024"),
+        ],
+    )
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_gpt_image_pixel_size_all_ratios(self, mock_fal, tmp_path, ratio, expected):
+        """gpt-image sends pixel dimensions not presets for all ratios (AC1)."""
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        provider = FalProvider(model="fal-ai/gpt-image-1.5")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A hero",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio=ratio,
+            )
+
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_size"] == expected
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_gpt_image_edit_with_refs_sends_pixel_size(self, mock_fal, tmp_path):
+        """gpt-image edit endpoint with refs also gets pixel sizing (AC2)."""
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        provider = FalProvider(model="fal-ai/gpt-image-1.5")
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            provider.generate_still(
+                prompt="A hero",
+                output_path=tmp_path / "scene_01.png",
+                aspect_ratio="9:16",
+                reference_images=[ref_img],
+            )
+
+        # Should use /edit endpoint with pixel sizing
+        endpoint = mock_fal.subscribe.call_args.kwargs.get(
+            "endpoint", mock_fal.subscribe.call_args.args[0]
+        )
+        assert "/edit" in endpoint
+        arguments = mock_fal.subscribe.call_args.kwargs["arguments"]
+        assert arguments["image_size"] == "1024x1536"
+
+    def test_pixel_size_map_covers_all_ratios(self):
+        """_PIXEL_SIZE_MAP covers all ASPECT_RATIO_MAP keys (AC3)."""
+        assert set(_PIXEL_SIZE_MAP.keys()) == set(ASPECT_RATIO_MAP.keys())
+
+
+# ---------------------------------------------------------------------------
+# FAL error cleaning uses exc.args[0] — issue #122
+# ---------------------------------------------------------------------------
+
+
+class TestFalErrorCleaning:
+    """FAL provider should pass exc.args[0] to clean_api_error (#122)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_fal_still_error_uses_args_not_str(self, mock_fal, tmp_path):
+        """Still generation error cleaning should use exc.args[0] (AC2)."""
+        # Simulate a FAL HTTP error with a list of error dicts
+        error_data = [{"loc": ["body"], "msg": "URL expired", "type": "value_error"}]
+
+        class FakeError(Exception):
+            pass
+
+        mock_fal.subscribe.side_effect = FakeError(error_data)
+        provider = FalProvider(model="fal-ai/flux-general")
+
+        with pytest.raises(RuntimeError, match="URL expired"):
+            provider.generate_still(
+                prompt="A hero",
+                output_path=tmp_path / "out.png",
+                aspect_ratio="9:16",
+            )
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_fal_clip_error_uses_args_not_str(self, mock_fal, tmp_path):
+        """Clip generation error cleaning should use exc.args[0] (AC2)."""
+        error_data = [{"loc": ["body"], "msg": "Invalid frame", "type": "value_error"}]
+
+        class FakeError(Exception):
+            pass
+
+        mock_fal.subscribe.side_effect = FakeError(error_data)
+        provider = FalProvider(model="fal-ai/kling-video/o3/standard/image-to-video")
+
+        with pytest.raises(RuntimeError, match="Invalid frame"):
+            provider.generate_clip(
+                prompt="Pan across",
+                output_path=tmp_path / "out.mp4",
+                aspect_ratio="16:9",
+                duration=5,
+            )

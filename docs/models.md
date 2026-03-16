@@ -322,7 +322,7 @@ Emu 3.5 uses raw `aspect_ratio` strings and a non-standard edit endpoint suffix 
 | `fal-ai/gpt-image-1.5` | GPT Image 1.5 | TBC | Yes (via `/edit`) | Fixed sizes: 1024x1024, 1536x1024, 1024x1536. |
 | `fal-ai/gpt-image-1.5/edit` | GPT Image 1.5 Edit | TBC | Yes (`image_urls`) | Explicit edit endpoint. Supports `mask_image_url`. |
 
-GPT Image uses `image_size` with fixed dimensions. Override via `options.image_size` if presets don't match.
+GPT Image uses literal pixel dimensions (`1024x1024`, `1536x1024`, `1024x1536`) mapped from the project aspect ratio via the `"pixel"` sizing mode.
 
 **Options:** `quality` (string), `background` (string), `seed` (int).
 
@@ -614,7 +614,7 @@ storyboard-gen checks for reference/model mismatches and logs warnings. These wa
 | FAL FireRed | Yes (`image_urls`) | No | `image_size` presets | FAL_KEY |
 | FAL Nano Banana | Yes (via `/edit`) | No | Raw strings | FAL_KEY |
 | FAL Emu 3.5 (Meta) | Yes (via `/edit-image`) | No | Raw strings | FAL_KEY |
-| FAL GPT Image (OpenAI) | Yes (via `/edit`) | No | `image_size` (fixed) | FAL_KEY |
+| FAL GPT Image (OpenAI) | Yes (via `/edit`) | No | Pixel dimensions | FAL_KEY |
 | FAL Reve | Yes (via `/edit`, `/remix`) | No | Raw strings | FAL_KEY |
 | Replicate Flux | Yes (1 ref, some models) | `safety_tolerance` | N/A | Token |
 

@@ -24,6 +24,13 @@ ASPECT_RATIO_MAP = {
     "1:1": "square_hd",
 }
 
+_PIXEL_SIZE_MAP = {
+    "9:16": "1024x1536",
+    "16:9": "1536x1024",
+    "4:3": "1536x1024",
+    "1:1": "1024x1024",
+}
+
 
 def _map_aspect_ratio(aspect_ratio: str) -> str:
     """Map a W:H aspect ratio string to a FAL image_size preset.
@@ -414,6 +421,8 @@ class EditHandler(StillHandler):
             if self._edit_accepts_sizing:
                 if self._sizing == "aspect_ratio":
                     arguments["aspect_ratio"] = aspect_ratio
+                elif self._sizing == "pixel":
+                    arguments["image_size"] = _PIXEL_SIZE_MAP[aspect_ratio]
                 else:
                     arguments["image_size"] = _map_aspect_ratio(aspect_ratio)
         else:
@@ -426,6 +435,8 @@ class EditHandler(StillHandler):
             # Base endpoint always accepts sizing
             if self._sizing == "aspect_ratio":
                 arguments["aspect_ratio"] = aspect_ratio
+            elif self._sizing == "pixel":
+                arguments["image_size"] = _PIXEL_SIZE_MAP[aspect_ratio]
             else:
                 arguments["image_size"] = _map_aspect_ratio(aspect_ratio)
 
@@ -505,7 +516,7 @@ _STILL_HANDLERS: list[StillHandler] = [
         edit_suffix="/edit-image",
         ref_field="image_url",
     ),
-    EditHandler(["gpt-image"]),
+    EditHandler(["gpt-image"], sizing="pixel"),
     EditHandler(["nano-banana"], sizing="aspect_ratio"),
     EditHandler(["reve/fast/remix"], sizing="aspect_ratio", edit_suffix=None),
     EditHandler(
@@ -869,7 +880,9 @@ class FalProvider(ImageProvider):
             logger.error(
                 "FAL still API error for %s: %s", self.model, exc, exc_info=True
             )
-            raise RuntimeError(f"FAL API error: {clean_api_error(str(exc))}") from exc
+            raise RuntimeError(
+                f"FAL API error: {clean_api_error(exc.args[0] if exc.args else str(exc))}"
+            ) from exc
 
         images = result.get("images", [])
         if not images:
@@ -1275,7 +1288,9 @@ class FalProvider(ImageProvider):
             logger.error(
                 "FAL clip API error for %s: %s", self.model, exc, exc_info=True
             )
-            raise RuntimeError(f"FAL API error: {clean_api_error(str(exc))}") from exc
+            raise RuntimeError(
+                f"FAL API error: {clean_api_error(exc.args[0] if exc.args else str(exc))}"
+            ) from exc
 
         video = result.get("video")
         if not video or not video.get("url"):

@@ -48,6 +48,10 @@ class TestNormaliseUnit:
         """Compute seconds ≠ video seconds; cannot estimate duration cost."""
         assert _normalise_unit("compute seconds") is None
 
+    def test_normalise_units_returns_none(self):
+        """'units' pricing unit treated as unavailable (#121 AC4)."""
+        assert _normalise_unit("units") is None
+
     def test_normalise_unknown_returns_as_is(self):
         assert _normalise_unit("tokens") == "tokens"
 
