@@ -6,6 +6,7 @@ from pathlib import Path
 
 from storyboard_gen.model_registry import (
     BACKEND_MODELS,
+    EDIT_SIBLINGS,
     get_all_models,
     get_backends,
     get_models_for_backend,
@@ -191,3 +192,28 @@ class TestRegistrySyncWithDocs:
             "Models in BACKEND_MODELS but missing from docs/models.md:\n"
             + "\n".join(f"  {b}: {m}" for m, b in sorted(undocumented.items()))
         )
+
+
+class TestEditSiblings:
+    """Verify EDIT_SIBLINGS mapping integrity (#128)."""
+
+    def test_all_keys_in_registry(self):
+        """Every T2I model in EDIT_SIBLINGS must be in BACKEND_MODELS."""
+        fal_models = set(BACKEND_MODELS.get("fal", []))
+        missing = [m for m in EDIT_SIBLINGS if m not in fal_models]
+        assert not missing, f"EDIT_SIBLINGS keys not in registry: {missing}"
+
+    def test_all_values_in_registry(self):
+        """Every edit endpoint in EDIT_SIBLINGS must be in BACKEND_MODELS."""
+        fal_models = set(BACKEND_MODELS.get("fal", []))
+        missing = [v for v in EDIT_SIBLINGS.values() if v not in fal_models]
+        assert not missing, f"EDIT_SIBLINGS values not in registry: {missing}"
+
+    def test_keys_differ_from_values(self):
+        """T2I model and edit endpoint should be different models."""
+        same = {k: v for k, v in EDIT_SIBLINGS.items() if k == v}
+        assert not same, f"EDIT_SIBLINGS key==value: {same}"
+
+    def test_mapping_is_nonempty(self):
+        """EDIT_SIBLINGS should contain at least one mapping."""
+        assert len(EDIT_SIBLINGS) > 0

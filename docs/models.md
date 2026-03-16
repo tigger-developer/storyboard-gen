@@ -1,25 +1,61 @@
-<!-- Version: 3.7 | Last updated: 2026-03-15 -->
+<!-- Version: 4.0 | Last updated: 2026-03-16 -->
 
 # Model Reference
 
-Comprehensive guide to all AI models supported by storyboard-gen, organised by provider.
+Comprehensive guide to all AI models supported by storyboard-gen (85 models across 3 providers).
 
-**Audio on clips:** All clip providers disable audio generation by default where a toggle is available. Google Veo sets `generate_audio=False`; FAL Kling and Seedance set `generate_audio: false`. Grok video and Hunyuan video have no audio toggle (Grok generates audio inherently; Hunyuan has no audio support). This prevents unwanted AI-generated audio from interfering with your project's audio track.
+## Contents
 
-**Cost estimates:** Pricing is available via `--dry-run` (CLI) and in the GUI scene list and generate dialog. Pricing lookup follows a priority chain: project.yaml override > FAL live API > static defaults. FAL models use the FAL pricing API (session-cached). Google models (Imagen, Veo) use built-in static defaults. You can override pricing for any provider in `project.yaml`:
+- [Choosing a model](#choosing-a-model) — quick recommendations by use case
+- [Google](#google-backend-google) — Imagen stills, Veo clips (6 models)
+- [FAL.ai](#falai-backend-fal) — Flux, Kontext, Kling, Seedream, and more (77 models)
+- [Replicate](#replicate-backend-replicate) — Flux stills (2 models)
+- [Reference images](#reference-images) — character refs, style refs, `@character_id` syntax
+- [Safety defaults](#safety-defaults) — per-model safety settings
+- [Pricing](#pricing) — cost estimates and overrides
+- [Provider comparison](#provider-comparison) — side-by-side feature matrix
+- [See also](#see-also)
 
-```yaml
-providers:
-  still:
-    backend: fal
-    model: fal-ai/flux-pro/v1.1
-    pricing:
-      unit_price: 0.05
-      unit: image
-      # currency defaults to USD
-```
+---
 
-**Pricing note:** Cost estimates are indicative. FAL prices are fetched live from the FAL pricing API. Google and Replicate prices are static defaults that may be outdated. Google pricing is from the [Gemini API pricing page](https://ai.google.dev/gemini-api/docs/pricing); Replicate pricing is from [replicate.com/pricing](https://replicate.com/pricing) as of 2026-03-11. Use `--dry-run` for current estimates, or override per model in `project.yaml`.
+## Choosing a model
+
+### For stills
+
+| Need | Recommended model | Why |
+|------|-------------------|-----|
+| Best quality, no references | `imagen-4.0-generate-001` (Google) | Strongest photorealistic output |
+| Fastest Google | `imagen-4.0-fast-generate-001` (Google) | Same quality tier, faster generation |
+| Cheapest option | `xai/grok-imagine-image` (FAL/xAI) | ~$0.02/image, good quality |
+| Reference image consistency | `fal-ai/flux-general` (FAL) | Best reference support with LoRAs |
+| Multi-character with refs | `fal-ai/flux-2-pro` (FAL) | Multi-ref via `@imageN` + `/edit` endpoint |
+| Character from single ref | `fal-ai/instant-character` (FAL) | Purpose-built for character consistency |
+| Multi-character consistency | `fal-ai/kling-image/o1` (FAL) | `@ImageN` mapping + `image_urls` |
+| Multi-ref, implicit mapping | `fal-ai/flux-pro/kontext/max/multi` (FAL) | Model infers associations |
+| Style transfer from a reference | `fal-ai/flux-pro/kontext` (FAL) | Purpose-built for image-to-image (also supports text-to-image) |
+| Character + style refs | `fal-ai/ideogram/character` (FAL) | Dual-channel: identity + aesthetic |
+| Typography | `fal-ai/ideogram/v3` (FAL) | Best text rendering in images |
+| Design with colour control | `fal-ai/recraft/v4/text-to-image` (FAL) | RGB palette control |
+| 4K resolution | `fal-ai/bytedance/seedream/v4.5/text-to-image` (FAL) | Supports `auto_4K` preset |
+| Fast iteration | `fal-ai/flux-2/turbo` (FAL) | Fastest generation time |
+| Budget with refs (non-commercial) | `fal-ai/flux/dev` (FAL) | ~$0.025/image, reference support, non-commercial licence |
+| No API key setup | `black-forest-labs/flux-dev` (Replicate) | Simple token-based auth |
+
+### For clips
+
+| Need | Recommended model | Why |
+|------|-------------------|-----|
+| Best quality | `veo-3.1-fast-generate-001` (Google) | Most capable video model |
+| Higher quality Google | `veo-3.1-generate-001` (Google) | Standard (non-fast) Veo |
+| Fastest generation | `xai/grok-imagine-video/text-to-video` (FAL/xAI) | ~17s generation, up to 15s clips |
+| Cheapest clips | `xai/grok-imagine-video/text-to-video` (FAL/xAI) | ~$0.05–0.07/s |
+| 1080p resolution | `fal-ai/bytedance/seedance/v1.5/pro/text-to-video` (FAL) | Supports 1080p |
+| Multi-character consistency | `fal-ai/kling-video/o3/*/image-to-video` (FAL) | Character elements support |
+| Multi-shot narratives | `wan/v2.6/text-to-video` (FAL) | `multi_shots` for scene segmentation |
+| End-frame control | `fal-ai/bytedance/seedance/v1.5/pro/image-to-video` (FAL) | `end_image_url` support |
+| Image-to-video | Any model with `source_frame` | Auto-routes endpoint |
+| Subject reference video | `fal-ai/minimax/video-01-subject-reference` (FAL) | Subject consistency from ref image |
+| Competitive price | `fal-ai/hunyuan-video-v1.5/text-to-video` (FAL) | ~$0.075/s |
 
 ---
 
@@ -94,7 +130,13 @@ Each project directory has its own `.env`, so different storyboard projects can 
 
 FAL models are accessed via `fal-client`. Requires `FAL_KEY` in `.env`.
 
-### Flux 1.x (stills)
+```bash
+FAL_KEY=your-fal-key
+```
+
+### Stills — Flux family
+
+#### Flux 1.x
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
@@ -104,61 +146,53 @@ FAL models are accessed via `fal-client`. Requires `FAL_KEY` in `.env`.
 
 **Options:** `seed` (int), `num_inference_steps` (1–50), `guidance_scale` (0–20), `reference_strength` (float).
 
-### Flux 2 (stills)
+#### Flux 2
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
-| `fal-ai/flux-2` | Flux 2 | Yes (via `/edit`) | Base Flux 2 model. Routes to `/edit` endpoint when refs present. |
+| `fal-ai/flux-2` | Flux 2 | Yes (via edit sibling) | Base Flux 2 model. Routes to edit endpoint when refs present. |
 | `fal-ai/flux-2/edit` | Flux 2 Edit | Yes (`image_urls`) | Explicit edit endpoint. |
-| `fal-ai/flux-2/turbo` | Flux 2 Turbo | Yes (via `/edit`) | Faster variant. |
+| `fal-ai/flux-2/turbo` | Flux 2 Turbo | Yes (via edit sibling) | Faster variant. |
 | `fal-ai/flux-2/turbo/edit` | Flux 2 Turbo Edit | Yes (`image_urls`) | Explicit edit endpoint. |
-| `fal-ai/flux-2/dev` | Flux 2 Dev | Yes (via `/edit`) | Development variant. |
-| `fal-ai/flux-2/flash` | Flux 2 Flash | Yes (via `/edit`) | Fast variant. |
+| `fal-ai/flux-2/dev` | Flux 2 Dev | Yes (via edit sibling) | Development variant. |
+| `fal-ai/flux-2/flash` | Flux 2 Flash | Yes (via edit sibling) | Fast variant. |
 | `fal-ai/flux-2/flash/edit` | Flux 2 Flash Edit | Yes (`image_urls`) | Explicit edit endpoint. |
-| `fal-ai/flux-2/klein/4b` | Flux 2 Klein 4B | Yes (via `/edit`) | Smaller Flux 2 variant. |
+| `fal-ai/flux-2/klein/4b` | Flux 2 Klein 4B | Yes (via edit sibling) | Smaller Flux 2 variant. |
 | `fal-ai/flux-2/klein/4b/edit` | Flux 2 Klein 4B Edit | Yes (`image_urls`) | Explicit edit endpoint. |
-| `fal-ai/flux-2/klein/9b` | Flux 2 Klein 9B | Yes (via `/edit`) | Larger Klein variant. |
+| `fal-ai/flux-2/klein/9b` | Flux 2 Klein 9B | Yes (via edit sibling) | Larger Klein variant. |
 | `fal-ai/flux-2/klein/9b/edit` | Flux 2 Klein 9B Edit | Yes (`image_urls`) | Explicit edit endpoint. |
-| `fal-ai/flux-2/klein/4b/base` | Flux 2 Klein 4B Base | Yes (via `/edit`) | Klein base variant. |
+| `fal-ai/flux-2/klein/4b/base` | Flux 2 Klein 4B Base | Yes (via edit sibling) | Klein base variant. |
 | `fal-ai/flux-2/klein/4b/base/edit` | Flux 2 Klein 4B Base Edit | Yes (`image_urls`) | Explicit edit endpoint. |
-| `fal-ai/flux-2/klein/9b/base` | Flux 2 Klein 9B Base | Yes (via `/edit`) | Klein base variant. |
+| `fal-ai/flux-2/klein/9b/base` | Flux 2 Klein 9B Base | Yes (via edit sibling) | Klein base variant. |
 | `fal-ai/flux-2/klein/9b/base/edit` | Flux 2 Klein 9B Base Edit | Yes (`image_urls`) | Explicit edit endpoint. |
-| `fal-ai/flux-2-flex` | Flux 2 Flex | Yes (via `/edit`) | Flexible variant. |
+| `fal-ai/flux-2-flex` | Flux 2 Flex | Yes (via edit sibling) | Flexible variant. |
 | `fal-ai/flux-2-flex/edit` | Flux 2 Flex Edit | Yes (`image_urls`) | Explicit edit endpoint. |
 
 **Options:** `seed` (int), `guidance_scale` (float), `acceleration` (string), `enable_prompt_expansion` (bool), `num_inference_steps` (int).
 
-Flux 2 models support references via the `/edit` endpoint. When characters with reference images are present, storyboard-gen uploads refs and routes to the `/edit` endpoint with `image_urls`. Without references, uses the base endpoint for text-to-image. You can also select the explicit `/edit` model ID to always use the edit endpoint.
+Flux 2 models support references via their edit sibling endpoint. When characters with reference images are present, storyboard-gen uploads refs and routes to the edit endpoint with `image_urls`. Without references, uses the base endpoint for text-to-image. You can also select an explicit edit model ID to always use the edit endpoint.
 
-### Flux 2 Pro / Max (stills)
+#### Flux 2 Pro / Max
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
-| `fal-ai/flux-2-pro` | Flux 2 Pro | Yes (multi-ref via `image_urls` + `/edit`) | Routes to `/edit` endpoint with refs; `@imageN` prompt syntax. |
+| `fal-ai/flux-2-pro` | Flux 2 Pro | Yes (multi-ref via `image_urls`) | Routes to edit endpoint with refs; `@imageN` prompt syntax. |
 | `fal-ai/flux-2-pro/edit` | Flux 2 Pro Edit | Yes (`image_urls`, `@imageN`) | Explicit edit endpoint. |
-| `fal-ai/flux-2-max` | Flux 2 Max | Yes (multi-ref via `image_urls` + `/edit`) | Higher quality variant of Flux 2 Pro. Same reference mechanism. |
+| `fal-ai/flux-2-max` | Flux 2 Max | Yes (multi-ref via `image_urls`) | Higher quality variant of Flux 2 Pro. Same reference mechanism. |
 | `fal-ai/flux-2-max/edit` | Flux 2 Max Edit | Yes (`image_urls`, `@imageN`) | Explicit edit endpoint. |
 
-Flux 2 Pro/Max support multi-reference stills via the `/edit` endpoint. When characters with reference images are present, storyboard-gen:
+Flux 2 Pro/Max support multi-reference stills via the edit endpoint. When characters with reference images are present, storyboard-gen:
 1. Uploads all character references to CDN
 2. Rewrites `@character_id` tokens to `@imageN` (1-indexed, lowercase)
-3. Routes to the `/edit` endpoint with `image_urls`
+3. Routes to the edit endpoint with `image_urls`
 
 Without references, uses the base endpoint for text-to-image.
 
 **Options:** `seed` (int), `guidance_scale` (float), `num_images` (int), `output_format` (string).
 
-### Instant Character (stills)
+### Stills — Kontext family
 
-| Model ID | Name | Reference support | Notes |
-|----------|------|-------------------|-------|
-| `fal-ai/instant-character` | Instant Character | Yes (single ref via `image_url`) | Character-consistent stills from a single reference image. |
-
-Instant Character takes a single reference image via `image_url`. If multiple references are provided, the first existing file is used.
-
-**Options:** `seed` (int), `num_images` (int), `output_format` (string).
-
-### Kontext (stills)
+#### Kontext
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
@@ -168,7 +202,7 @@ Instant Character takes a single reference image via `image_url`. If multiple re
 
 **Options:** `seed` (int), `guidance_scale` (float).
 
-### Kontext Max Multi (stills)
+#### Kontext Max Multi
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
@@ -178,7 +212,7 @@ Kontext Multi uses `aspect_ratio` directly (raw ratio strings). The model infers
 
 **Options:** `seed` (int), `guidance_scale` (float), `enhance_prompt` (bool).
 
-### Kling O1 Image (stills)
+### Stills — Kling
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
@@ -188,7 +222,9 @@ O1 Image uses `aspect_ratio` directly (raw ratio strings, not `image_size` prese
 
 **Options:** `resolution` (`"1K"` or `"2K"`), `num_images` (int), `output_format` (string).
 
-### Ideogram Character (stills)
+### Stills — Ideogram
+
+#### Ideogram Character
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
@@ -203,9 +239,9 @@ The model defaults to `style: "AUTO"` (overridable via `options.style`). No safe
 
 **Options:** `style` (string, e.g. `"AUTO"`, `"GENERAL"`, `"REALISTIC"`, `"DESIGN"`), `seed` (int).
 
-**Note:** If you configure `style_reference` but use a non-Ideogram model, storyboard-gen logs a warning and ignores the style references (see [reference warnings](#reference-image-warnings)).
+**Note:** If you configure `style_reference` but use a non-Ideogram model, storyboard-gen logs a warning and ignores the style references (see [reference image warnings](#reference-image-warnings)).
 
-### Ideogram V3 (stills)
+#### Ideogram V3
 
 | Model ID | Name | Reference support | Notes |
 |----------|------|-------------------|-------|
@@ -215,7 +251,7 @@ Ideogram V3 uses `image_size` presets. Supports style references via `image_urls
 
 **Options:** `style` (string, e.g. `"AUTO"`, `"GENERAL"`, `"REALISTIC"`, `"DESIGN"`), `seed` (int).
 
-### Grok Imagine Image (stills) — xAI
+### Stills — Grok (xAI)
 
 | Model ID | Name | Price | Reference support | Notes |
 |----------|------|-------|-------------------|-------|
@@ -224,13 +260,23 @@ Ideogram V3 uses `image_size` presets. Supports style references via `image_urls
 
 Grok Image uses raw `aspect_ratio` strings (not `image_size` presets). Wide range of aspect ratios supported: `2:1`, `20:9`, `19.5:9`, `16:9`, `4:3`, `3:2`, `1:1`, `2:3`, `3:4`, `9:16`, `9:19.5`, `9:20`, `1:2`.
 
-When characters with reference images are present, storyboard-gen routes to the `/edit` endpoint with `image_urls` (max 3). Without references, uses the base text-to-image endpoint.
+When characters with reference images are present, storyboard-gen routes to the edit endpoint with `image_urls` (max 3). Without references, uses the base text-to-image endpoint.
 
 **Options:** `num_images` (int), `output_format` (`"jpeg"`, `"png"`, `"webp"`).
 
 **Note:** No `enable_safety_checker`, `seed`, or `safety_tolerance` parameters are available.
 
-### Seedream (stills) — ByteDance
+### Stills — Instant Character
+
+| Model ID | Name | Reference support | Notes |
+|----------|------|-------------------|-------|
+| `fal-ai/instant-character` | Instant Character | Yes (single ref via `image_url`) | Character-consistent stills from a single reference image. |
+
+Instant Character takes a single reference image via `image_url`. If multiple references are provided, the first existing file is used.
+
+**Options:** `seed` (int), `num_images` (int), `output_format` (string).
+
+### Stills — Seedream (ByteDance)
 
 | Model ID | Name | Price | Reference support | Notes |
 |----------|------|-------|-------------------|-------|
@@ -239,11 +285,11 @@ When characters with reference images are present, storyboard-gen routes to the 
 | `fal-ai/bytedance/seedream/v5/lite/text-to-image` | Seedream v5 Lite | ~$0.04/image | No (t2i) | Latest model. Web search + reasoning. |
 | `fal-ai/bytedance/seedream/v5/lite/edit` | Seedream v5 Lite Edit | ~$0.04/image | Yes (`image_urls` up to 10) | Multi-reference editing. |
 
-Seedream uses `image_size` presets. When characters with reference images are present, routes to the `/edit` endpoint with `image_urls`.
+Seedream uses `image_size` presets. When characters with reference images are present, routes to the edit endpoint with `image_urls`.
 
 **Options:** `seed` (int), `num_images` (int), `max_images` (int).
 
-### Hunyuan Image (stills) — Tencent
+### Stills — Hunyuan Image (Tencent)
 
 | Model ID | Name | Price | Reference support | Notes |
 |----------|------|-------|-------------------|-------|
@@ -253,7 +299,7 @@ Hunyuan Image uses `image_size` presets. No reference image support. Supports de
 
 **Options:** `guidance_scale` (float, default 7.5), `num_inference_steps` (int, default 28), `negative_prompt` (string), `enable_prompt_expansion` (bool), `seed` (int), `output_format` (`"jpeg"`, `"png"`).
 
-### Recraft (stills)
+### Stills — Recraft
 
 | Model ID | Name | Price | Reference support | Notes |
 |----------|------|-------|-------------------|-------|
@@ -263,82 +309,80 @@ Recraft uses `image_size` presets. Notable for its colour control parameters.
 
 **Options:** `colors` (list of `{r, g, b}` RGB objects), `background_color` (`{r, g, b}` RGB object).
 
-### FireRed (stills)
+### Stills — other models
 
-| Model ID | Name | Price | Reference support | Notes |
-|----------|------|-------|-------------------|-------|
-| `fal-ai/firered-image-edit-v1.1` | FireRed Edit V1.1 | TBC | Yes (`image_urls`) | Image editing model. `image_size` presets. |
+#### FireRed
 
-FireRed is an edit-focused model. The model ID is the endpoint directly — no suffix routing.
+| Model ID | Name | Reference support | Notes |
+|----------|------|-------------------|-------|
+| `fal-ai/firered-image-edit-v1.1` | FireRed Edit V1.1 | Yes (`image_urls`) | Image editing model. `image_size` presets. |
 
 **Options:** `seed` (int), `num_images` (int), `output_format` (string).
 
-### Qwen Image (stills) — Alibaba
+#### Qwen Image (Alibaba)
 
-| Model ID | Name | Price | Reference support | Notes |
-|----------|------|-------|-------------------|-------|
-| `fal-ai/qwen-image-2512` | Qwen Image | TBC | No | `image_size` presets. |
-| `fal-ai/qwen-image-edit-2511` | Qwen Image Edit | TBC | Yes (`image_urls`) | Image editing variant. |
-
-**Options:** `seed` (int), `num_images` (int).
-
-### GLM Image (stills) — Zhipu
-
-| Model ID | Name | Price | Reference support | Notes |
-|----------|------|-------|-------------------|-------|
-| `fal-ai/glm-image` | GLM Image | TBC | No (t2i) | `image_size` presets. |
-| `fal-ai/glm-image/image-to-image` | GLM Image I2I | TBC | Yes (`image_urls`) | Image-to-image variant. |
-
-GLM Image routes to the `/image-to-image` endpoint when references are present.
+| Model ID | Name | Reference support | Notes |
+|----------|------|-------------------|-------|
+| `fal-ai/qwen-image-2512` | Qwen Image | No | `image_size` presets. |
+| `fal-ai/qwen-image-edit-2511` | Qwen Image Edit | Yes (`image_urls`) | Image editing variant. |
 
 **Options:** `seed` (int), `num_images` (int).
 
-### Nano Banana (stills)
+#### GLM Image (Zhipu)
 
-| Model ID | Name | Price | Reference support | Notes |
-|----------|------|-------|-------------------|-------|
-| `fal-ai/nano-banana-2` | Nano Banana 2 | TBC | Yes (via `/edit`) | Uses raw `aspect_ratio` strings. |
-| `fal-ai/nano-banana-2/edit` | Nano Banana 2 Edit | TBC | Yes (`image_urls`) | Explicit edit endpoint. |
-| `fal-ai/nano-banana-pro` | Nano Banana Pro | TBC | Yes (via `/edit`) | Higher quality variant. |
-| `fal-ai/nano-banana-pro/edit` | Nano Banana Pro Edit | TBC | Yes (`image_urls`) | Explicit edit endpoint. |
+| Model ID | Name | Reference support | Notes |
+|----------|------|-------------------|-------|
+| `fal-ai/glm-image` | GLM Image | No (t2i) | `image_size` presets. |
+| `fal-ai/glm-image/image-to-image` | GLM Image I2I | Yes (`image_urls`) | Image-to-image variant. |
+
+GLM Image routes to the image-to-image endpoint when references are present.
+
+**Options:** `seed` (int), `num_images` (int).
+
+#### Nano Banana
+
+| Model ID | Name | Reference support | Notes |
+|----------|------|-------------------|-------|
+| `fal-ai/nano-banana-2` | Nano Banana 2 | Yes (via edit sibling) | Uses raw `aspect_ratio` strings. |
+| `fal-ai/nano-banana-2/edit` | Nano Banana 2 Edit | Yes (`image_urls`) | Explicit edit endpoint. |
+| `fal-ai/nano-banana-pro` | Nano Banana Pro | Yes (via edit sibling) | Higher quality variant. |
+| `fal-ai/nano-banana-pro/edit` | Nano Banana Pro Edit | Yes (`image_urls`) | Explicit edit endpoint. |
 
 **Options:** `resolution` (`"0.5K"` – `"4K"`), `safety_tolerance` (1–6), `seed` (int).
 
-### Emu 3.5 (stills) — Meta
+#### Emu 3.5 (Meta)
 
-| Model ID | Name | Price | Reference support | Notes |
-|----------|------|-------|-------------------|-------|
-| `fal-ai/emu-3.5-image/text-to-image` | Emu 3.5 | TBC | No (t2i) | Uses raw `aspect_ratio` strings. |
-| `fal-ai/emu-3.5-image/edit-image` | Emu 3.5 Edit | TBC | Yes (`image_urls`) | Image editing via `/edit-image` endpoint. |
-
-Emu 3.5 uses raw `aspect_ratio` strings and a non-standard edit endpoint suffix (`/edit-image` instead of `/edit`).
+| Model ID | Name | Reference support | Notes |
+|----------|------|-------------------|-------|
+| `fal-ai/emu-3.5-image/text-to-image` | Emu 3.5 | No (t2i) | Uses raw `aspect_ratio` strings. |
+| `fal-ai/emu-3.5-image/edit-image` | Emu 3.5 Edit | Yes (`image_url`) | Image editing endpoint. |
 
 **Options:** `seed` (int), `num_images` (int).
 
-### GPT Image (stills) — OpenAI via FAL
+#### GPT Image (OpenAI via FAL)
 
-| Model ID | Name | Price | Reference support | Notes |
-|----------|------|-------|-------------------|-------|
-| `fal-ai/gpt-image-1.5` | GPT Image 1.5 | TBC | Yes (via `/edit`) | Fixed sizes: 1024x1024, 1536x1024, 1024x1536. |
-| `fal-ai/gpt-image-1.5/edit` | GPT Image 1.5 Edit | TBC | Yes (`image_urls`) | Explicit edit endpoint. Supports `mask_image_url`. |
+| Model ID | Name | Reference support | Notes |
+|----------|------|-------------------|-------|
+| `fal-ai/gpt-image-1.5` | GPT Image 1.5 | Yes (via edit sibling) | Fixed sizes: 1024x1024, 1536x1024, 1024x1536. |
+| `fal-ai/gpt-image-1.5/edit` | GPT Image 1.5 Edit | Yes (`image_urls`) | Explicit edit endpoint. Supports `mask_image_url`. |
 
 GPT Image uses literal pixel dimensions (`1024x1024`, `1536x1024`, `1024x1536`) mapped from the project aspect ratio via the `"pixel"` sizing mode.
 
 **Options:** `quality` (string), `background` (string), `seed` (int).
 
-### Reve (stills)
+#### Reve
 
-| Model ID | Name | Price | Reference support | Notes |
-|----------|------|-------|-------------------|-------|
-| `fal-ai/reve/text-to-image` | Reve | TBC | Yes (via `/edit`) | Uses raw `aspect_ratio` strings. |
-| `fal-ai/reve/fast/edit` | Reve Fast Edit | TBC | Yes (`image_url`) | Fast edit variant. |
-| `fal-ai/reve/fast/remix` | Reve Fast Remix | TBC | Yes (`image_urls`, 1–6 refs) | Multi-reference remix. |
+| Model ID | Name | Reference support | Notes |
+|----------|------|-------------------|-------|
+| `fal-ai/reve/text-to-image` | Reve | No | Text-to-image only. Uses raw `aspect_ratio` strings. |
+| `fal-ai/reve/fast/edit` | Reve Fast Edit | Yes (`image_url`) | Fast edit variant. Select directly for ref-based editing. |
+| `fal-ai/reve/fast/remix` | Reve Fast Remix | Yes (`image_urls`, 1–6 refs) | Multi-reference remix. |
 
-Reve uses raw `aspect_ratio` strings. The remix endpoint takes multiple references via `image_urls`.
+Reve uses raw `aspect_ratio` strings. The remix endpoint takes multiple references via `image_urls`. To use reference images with Reve, select the edit or remix model directly.
 
 **Options:** `seed` (int), `num_images` (int).
 
-### Kling (clips)
+### Clips — Kling
 
 | Model ID | Name | Notes |
 |----------|------|-------|
@@ -350,7 +394,7 @@ Reve uses raw `aspect_ratio` strings. The remix endpoint takes multiple referenc
 
 **Clip options:** `cfg_scale` (float), `negative_prompt` (string), `generate_audio` (bool, default false).
 
-### Grok Imagine Video (clips) — xAI
+### Clips — Grok Video (xAI)
 
 | Model ID | Name | Price | Notes |
 |----------|------|-------|-------|
@@ -363,7 +407,7 @@ Grok video uses `duration` as an integer (1–15 seconds), `aspect_ratio` as raw
 
 **Clip options:** `resolution` (`"480p"`, `"720p"`).
 
-### Seedance (clips) — ByteDance
+### Clips — Seedance (ByteDance)
 
 | Model ID | Name | Price | Notes |
 |----------|------|-------|-------|
@@ -374,7 +418,7 @@ Seedance uses `duration` as a string enum (`"4"` through `"12"`), `aspect_ratio`
 
 **Clip options:** `resolution` (`"480p"`, `"720p"`, `"1080p"`), `camera_fixed` (bool), `seed` (int), `generate_audio` (bool).
 
-### Hunyuan Video (clips) — Tencent
+### Clips — Hunyuan Video (Tencent)
 
 | Model ID | Name | Price | Notes |
 |----------|------|-------|-------|
@@ -385,7 +429,7 @@ Hunyuan Video uses `aspect_ratio` (only `16:9` and `9:16` supported) and `num_fr
 
 **Clip options:** `num_frames` (int, 1–121), `num_inference_steps` (int, 1–50), `negative_prompt` (string), `seed` (int), `enable_prompt_expansion` (bool).
 
-### Wan (clips)
+### Clips — Wan
 
 | Model ID | Name | Price | Notes |
 |----------|------|-------|-------|
@@ -400,7 +444,7 @@ Wan 2.6 uses `duration` as a string enum (`"5"`, `"10"`, `"15"`), `aspect_ratio`
 
 **Clip options:** `resolution` (`"720p"`, `"1080p"`), `audio_url` (string), `multi_shots` (bool), `enable_prompt_expansion` (bool), `negative_prompt` (string), `seed` (int).
 
-### MiniMax (clips)
+### Clips — MiniMax
 
 | Model ID | Name | Notes |
 |----------|------|-------|
@@ -409,6 +453,39 @@ Wan 2.6 uses `duration` as a string enum (`"5"`, `"10"`, `"15"`), `aspect_ratio`
 MiniMax Subject Reference takes a single reference image via `subject_reference_image_url`. Use scene `reference` or character references — the first existing image is uploaded and passed to the API.
 
 **Clip options:** Any model-specific options via the passthrough `options` dict.
+
+### Options passthrough
+
+The `options` field in provider config is a passthrough dict — any key/value pairs are merged directly into the API request. Use it for model-specific parameters like `seed`, `guidance_scale`, `num_inference_steps`, etc. Check the model's FAL API docs for supported parameters. If you pass something the model doesn't accept, you'll get an API error.
+
+---
+
+## Replicate (`backend: replicate`)
+
+Replicate models are accessed via the `replicate` SDK. Stills only — clips are not supported.
+
+| Model ID | Name | Price | Reference support | Notes |
+|----------|------|-------|-------------------|-------|
+| `black-forest-labs/flux-1.1-pro` | Flux Pro 1.1 | $0.04/image | No | Text-to-image only. |
+| `black-forest-labs/flux-dev` | Flux Dev | $0.025/image | Yes (`image` parameter) | Supports image-to-image with a single reference. Non-commercial licence. |
+
+**Options:** `seed` (int), `output_quality` (0–100), `prompt_upsampling` (bool).
+
+### Safety defaults
+
+| Default injected | Override via |
+|-----------------|--------------|
+| `safety_tolerance: 6` | `options.safety_tolerance` |
+
+### Authentication
+
+```bash
+REPLICATE_API_TOKEN=your-replicate-token
+```
+
+---
+
+## Reference images
 
 ### `@character_id` prompt syntax
 
@@ -472,11 +549,18 @@ scenes:
       @boy and @mum walking through a sunlit garden.
 ```
 
-### Options passthrough
+### Reference image warnings
 
-The `options` field in provider config is a passthrough dict — any key/value pairs are merged directly into the API request. Use it for model-specific parameters like `seed`, `guidance_scale`, `num_inference_steps`, etc. Check the model's FAL API docs for supported parameters. If you pass something the model doesn't accept, you'll get an API error.
+storyboard-gen checks for reference/model mismatches and logs warnings. These warnings appear during both `--dry-run` and real generation:
 
-### Safety defaults
+| Condition | Warning |
+|-----------|---------|
+| `style_reference` configured but model is not Ideogram (Character or V3) | Style references will be ignored |
+| Character or scene references configured but model is Flux 2 | References will be ignored |
+
+---
+
+## Safety defaults
 
 storyboard-gen injects safety defaults before merging user options, so user `options` always win:
 
@@ -488,106 +572,33 @@ storyboard-gen injects safety defaults before merging user options, so user `opt
 | Hunyuan Image | `enable_safety_checker: false` | `options.enable_safety_checker` |
 | Recraft | `enable_safety_checker: false` | `options.enable_safety_checker` |
 | Kontext / Kontext Multi | `safety_tolerance: "6"` | `options.safety_tolerance` |
-| FireRed | No default | — |
-| Qwen Image / Qwen Image Edit | No default | — |
-| GLM Image | No default | — |
-| Nano Banana | No default | — |
-| Emu 3.5 | No default | — |
-| GPT Image | No default | — |
-| Reve | No default | — |
-| Grok Image | No toggle | — |
-| Kling O1 Image | No toggle | — |
-| Ideogram Character / V3 | No toggle | — |
-| Grok clips | No toggle | — |
+| Replicate Flux | `safety_tolerance: 6` | `options.safety_tolerance` |
 | Seedance clips | `generate_audio: false`, `enable_safety_checker: false` | `options.*` |
-| Hunyuan Video clips | No toggle | — |
 | Wan 2.6 clips | `enable_safety_checker: false` | `options.enable_safety_checker` |
-| Kling clips | No default | — |
-| Wan (legacy) clips | No default | — |
-| MiniMax clips | No default | — |
+| All others | No default | — |
 
-### Authentication
+**Audio on clips:** All clip providers disable audio generation by default where a toggle is available. Google Veo sets `generate_audio=False`; FAL Kling and Seedance set `generate_audio: false`. Grok video and Hunyuan video have no audio toggle (Grok generates audio inherently; Hunyuan has no audio support). This prevents unwanted AI-generated audio from interfering with your project's audio track.
 
-```bash
-FAL_KEY=your-fal-key
+---
+
+## Pricing
+
+Pricing is available via `--dry-run` (CLI) and in the GUI scene list and generate dialog. Pricing lookup follows a priority chain: project.yaml override > FAL live API > static defaults. FAL models use the FAL pricing API (session-cached). Google models (Imagen, Veo) use built-in static defaults.
+
+You can override pricing for any provider in `project.yaml`:
+
+```yaml
+providers:
+  still:
+    backend: fal
+    model: fal-ai/flux-pro/v1.1
+    pricing:
+      unit_price: 0.05
+      unit: image
+      # currency defaults to USD
 ```
 
----
-
-## Replicate (`backend: replicate`)
-
-Replicate models are accessed via the `replicate` SDK. Stills only — clips are not supported.
-
-| Model ID | Name | Price | Reference support | Notes |
-|----------|------|-------|-------------------|-------|
-| `black-forest-labs/flux-1.1-pro` | Flux Pro 1.1 | $0.04/image | No | Text-to-image only. |
-| `black-forest-labs/flux-dev` | Flux Dev | $0.025/image | Yes (`image` parameter) | Supports image-to-image with a single reference. Non-commercial licence. |
-
-**Options:** `seed` (int), `output_quality` (0–100), `prompt_upsampling` (bool).
-
-### Safety defaults
-
-| Default injected | Override via |
-|-----------------|--------------|
-| `safety_tolerance: 6` | `options.safety_tolerance` |
-
-### Authentication
-
-```bash
-REPLICATE_API_TOKEN=your-replicate-token
-```
-
----
-
-## Reference image warnings
-
-storyboard-gen checks for reference/model mismatches and logs warnings. These warnings appear during both `--dry-run` and real generation:
-
-| Condition | Warning |
-|-----------|---------|
-| `style_reference` configured but model is not Ideogram (Character or V3) | Style references will be ignored |
-| Character or scene references configured but model is Flux 2 | References will be ignored |
-
----
-
-## Choosing a model
-
-### For stills
-
-| Need | Recommended model | Why |
-|------|-------------------|-----|
-| Best quality, no references | `imagen-4.0-generate-001` (Google) | Strongest photorealistic output |
-| Fastest Google | `imagen-4.0-fast-generate-001` (Google) | Same quality tier, faster generation |
-| Cheapest option | `xai/grok-imagine-image` (FAL/xAI) | ~$0.02/image, good quality |
-| Reference image consistency | `fal-ai/flux-general` (FAL) | Best reference support with LoRAs |
-| Multi-character with refs | `fal-ai/flux-2-pro` (FAL) | Multi-ref via `@imageN` + `/edit` endpoint |
-| Character from single ref | `fal-ai/instant-character` (FAL) | Purpose-built for character consistency |
-| Multi-character consistency | `fal-ai/kling-image/o1` (FAL) | `@ImageN` mapping + `image_urls` |
-| Multi-ref, implicit mapping | `fal-ai/flux-pro/kontext/max/multi` (FAL) | Model infers associations |
-| Style transfer from a reference | `fal-ai/flux-pro/kontext` (FAL) | Purpose-built for image-to-image (also supports text-to-image) |
-| Character + style refs | `fal-ai/ideogram/character` (FAL) | Dual-channel: identity + aesthetic |
-| Typography | `fal-ai/ideogram/v3` (FAL) | Best text rendering in images |
-| Design with colour control | `fal-ai/recraft/v4/text-to-image` (FAL) | RGB palette control |
-| 4K resolution | `fal-ai/bytedance/seedream/v4.5/text-to-image` (FAL) | Supports `auto_4K` preset |
-| Fast iteration | `fal-ai/flux-2/turbo` (FAL) | Fastest generation time |
-| Budget with refs (non-commercial) | `fal-ai/flux/dev` (FAL) | ~$0.025/image, reference support, non-commercial licence |
-| No API key setup | `black-forest-labs/flux-dev` (Replicate) | Simple token-based auth |
-
-### For clips
-
-| Need | Recommended model | Why |
-|------|-------------------|-----|
-| Best quality | `veo-3.1-fast-generate-001` (Google) | Most capable video model |
-| Higher quality Google | `veo-3.1-generate-001` (Google) | Standard (non-fast) Veo |
-| Fastest generation | `xai/grok-imagine-video/text-to-video` (FAL/xAI) | ~17s generation, up to 15s clips |
-| Cheapest clips | `xai/grok-imagine-video/text-to-video` (FAL/xAI) | ~$0.05–0.07/s |
-| 1080p resolution | `fal-ai/bytedance/seedance/v1.5/pro/text-to-video` (FAL) | Supports 1080p |
-| Multi-character consistency | `fal-ai/kling-video/o3/*/image-to-video` (FAL) | Character elements support |
-| Multi-shot narratives | `wan/v2.6/text-to-video` (FAL) | `multi_shots` for scene segmentation |
-| End-frame control | `fal-ai/bytedance/seedance/v1.5/pro/image-to-video` (FAL) | `end_image_url` support |
-| Image-to-video | Any model with `source_frame` | Auto-routes endpoint |
-| Subject reference video | `fal-ai/minimax/video-01-subject-reference` (FAL) | Subject consistency from ref image |
-| Competitive price | `fal-ai/hunyuan-video-v1.5/text-to-video` (FAL) | ~$0.075/s |
+**Note:** Cost estimates are indicative. FAL prices are fetched live from the FAL pricing API. Google and Replicate prices are static defaults that may be outdated. Google pricing is from the [Gemini API pricing page](https://ai.google.dev/gemini-api/docs/pricing); Replicate pricing is from [replicate.com/pricing](https://replicate.com/pricing) as of 2026-03-11. Use `--dry-run` for current estimates, or override per model in `project.yaml`.
 
 ---
 
@@ -599,7 +610,7 @@ storyboard-gen checks for reference/model mismatches and logs warnings. These wa
 |-------------|-------------------|---------------|-------------|------|
 | Google Imagen | Yes (up to 3 refs) | No | N/A | GCP / API key |
 | FAL Flux 1.x | Yes (1 ref) | `enable_safety_checker` | `image_size` presets | FAL_KEY |
-| FAL Flux 2 / Klein | Yes (via `/edit`) | `enable_safety_checker` | `image_size` presets | FAL_KEY |
+| FAL Flux 2 / Klein | Yes (via edit sibling) | `enable_safety_checker` | `image_size` presets | FAL_KEY |
 | FAL Flux 2 Pro/Max | Yes (multi, `@imageN`) | `enable_safety_checker` | `image_size` presets | FAL_KEY |
 | FAL Kontext | Yes (1 ref, i2i) | `safety_tolerance` | Raw strings (i2i) / presets (t2i) | FAL_KEY |
 | FAL Kontext Multi | Yes (multi) | `safety_tolerance` | Raw strings | FAL_KEY |
@@ -608,14 +619,14 @@ storyboard-gen checks for reference/model mismatches and logs warnings. These wa
 | FAL Ideogram Character | Yes (dual-channel) | No | `image_size` presets | FAL_KEY |
 | FAL Ideogram V3 | Style refs only | No | `image_size` presets | FAL_KEY |
 | FAL Grok Image (xAI) | Yes (edit, max 3) | No | Raw strings | FAL_KEY |
-| FAL Seedream (ByteDance) | Yes (edit, v4.5) | `enable_safety_checker` | `image_size` presets | FAL_KEY |
+| FAL Seedream (ByteDance) | Yes (edit sibling) | `enable_safety_checker` | `image_size` presets | FAL_KEY |
 | FAL Hunyuan Image (Tencent) | No | `enable_safety_checker` | `image_size` presets | FAL_KEY |
 | FAL Recraft | No | `enable_safety_checker` | `image_size` presets | FAL_KEY |
 | FAL FireRed | Yes (`image_urls`) | No | `image_size` presets | FAL_KEY |
-| FAL Nano Banana | Yes (via `/edit`) | No | Raw strings | FAL_KEY |
-| FAL Emu 3.5 (Meta) | Yes (via `/edit-image`) | No | Raw strings | FAL_KEY |
-| FAL GPT Image (OpenAI) | Yes (via `/edit`) | No | Pixel dimensions | FAL_KEY |
-| FAL Reve | Yes (via `/edit`, `/remix`) | No | Raw strings | FAL_KEY |
+| FAL Nano Banana | Yes (via edit sibling) | No | Raw strings | FAL_KEY |
+| FAL Emu 3.5 (Meta) | Yes (via edit endpoint) | No | Raw strings | FAL_KEY |
+| FAL GPT Image (OpenAI) | Yes (via edit sibling) | No | Pixel dimensions | FAL_KEY |
+| FAL Reve | Yes (edit/remix models) | No | Raw strings | FAL_KEY |
 | Replicate Flux | Yes (1 ref, some models) | `safety_tolerance` | N/A | Token |
 
 ### Clip models
@@ -638,3 +649,10 @@ storyboard-gen checks for reference/model mismatches and logs warnings. These wa
 - [project-yaml-spec.md](project-yaml-spec.md) — complete `project.yaml` schema with provider configuration examples
 - [architecture.md](architecture.md) — how providers are resolved and how generation works
 - [VISION.md](VISION.md) — project goals and non-goals
+
+---
+
+## Changelog
+
+- **4.0** (2026-03-16): Reorganized for readability — added table of contents, moved choosing/comparison/safety/pricing to top-level sections, grouped FAL stills by family, updated edit routing to use EDIT_SIBLINGS (#128), fixed Reve reference support description.
+- **3.7** (2026-03-15): Added Reve models, updated endpoint preservation docs.

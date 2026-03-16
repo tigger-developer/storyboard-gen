@@ -122,6 +122,41 @@ BACKEND_MODELS: dict[str, list[str]] = {
 }
 
 
+# Explicit T2I → edit endpoint mapping.
+# Used by EditHandler to route to the correct edit endpoint
+# when references are present. Eliminates suffix-stripping heuristics.
+# Both keys and values must exist in BACKEND_MODELS["fal"].
+EDIT_SIBLINGS: dict[str, str] = {
+    # Flux 2
+    "fal-ai/flux-2": "fal-ai/flux-2/edit",
+    "fal-ai/flux-2/turbo": "fal-ai/flux-2/turbo/edit",
+    "fal-ai/flux-2/dev": "fal-ai/flux-2/edit",
+    "fal-ai/flux-2/flash": "fal-ai/flux-2/flash/edit",
+    "fal-ai/flux-2/klein/4b": "fal-ai/flux-2/klein/4b/edit",
+    "fal-ai/flux-2/klein/9b": "fal-ai/flux-2/klein/9b/edit",
+    "fal-ai/flux-2/klein/4b/base": "fal-ai/flux-2/klein/4b/base/edit",
+    "fal-ai/flux-2/klein/9b/base": "fal-ai/flux-2/klein/9b/base/edit",
+    "fal-ai/flux-2-flex": "fal-ai/flux-2-flex/edit",
+    # Flux 2 Pro / Max
+    "fal-ai/flux-2-pro": "fal-ai/flux-2-pro/edit",
+    "fal-ai/flux-2-max": "fal-ai/flux-2-max/edit",
+    # Grok Image (xAI)
+    "xai/grok-imagine-image": "xai/grok-imagine-image/edit",
+    # Seedream (ByteDance)
+    "fal-ai/bytedance/seedream/v4.5/text-to-image": "fal-ai/bytedance/seedream/v4.5/edit",
+    "fal-ai/bytedance/seedream/v5/lite/text-to-image": "fal-ai/bytedance/seedream/v5/lite/edit",
+    # GLM Image (Zhipu)
+    "fal-ai/glm-image": "fal-ai/glm-image/image-to-image",
+    # Emu 3.5 (Meta)
+    "fal-ai/emu-3.5-image/text-to-image": "fal-ai/emu-3.5-image/edit-image",
+    # GPT Image (OpenAI via FAL)
+    "fal-ai/gpt-image-1.5": "fal-ai/gpt-image-1.5/edit",
+    # Nano Banana
+    "fal-ai/nano-banana-2": "fal-ai/nano-banana-2/edit",
+    "fal-ai/nano-banana-pro": "fal-ai/nano-banana-pro/edit",
+}
+
+
 def get_backends() -> list[str]:
     """Return list of known backend names."""
     return list(BACKEND_MODELS.keys())

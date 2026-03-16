@@ -2525,23 +2525,8 @@ class TestStillHandlerIsABC:
         assert isinstance(handler, StillHandler)
 
 
-class TestEditHandlerEditSuffix:
-    """Tests for EditHandler edit_suffix parameter (#114)."""
-
-    def test_default_edit_suffix_is_edit(self):
-        """Default edit_suffix should be /edit."""
-        h = EditHandler(["test"])
-        assert h._edit_suffix == "/edit"
-
-    def test_custom_edit_suffix(self):
-        """Custom edit_suffix should be stored."""
-        h = EditHandler(["test"], edit_suffix="/edit-image")
-        assert h._edit_suffix == "/edit-image"
-
-    def test_none_edit_suffix(self):
-        """None edit_suffix means model ID is the endpoint."""
-        h = EditHandler(["test"], edit_suffix=None)
-        assert h._edit_suffix is None
+class TestEditHandlerPatternMatching:
+    """Tests for EditHandler pattern matching (#114, #128)."""
 
     @pytest.mark.parametrize(
         "model_id,handler_pattern",
@@ -4120,7 +4105,7 @@ class TestFalErrorCleaning:
 
 
 class TestStripT2iEndpointPreservation:
-    """Models with strip_t2i=False must preserve /text-to-image in endpoint (#126)."""
+    """Models must use their model ID directly as the T2I endpoint (#126, #128)."""
 
     @patch("storyboard_gen.providers.fal.fal_client")
     def test_seedream_v45_preserves_text_to_image_endpoint(self, mock_fal, tmp_path):
@@ -4154,9 +4139,7 @@ class TestStripT2iEndpointPreservation:
         mock_fal.subscribe.return_value = {
             "images": [{"url": "https://fal.media/files/out.png"}],
         }
-        provider = FalProvider(
-            model="fal-ai/bytedance/seedream/v5/lite/text-to-image"
-        )
+        provider = FalProvider(model="fal-ai/bytedance/seedream/v5/lite/text-to-image")
 
         with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
             mock_dl.return_value = b"png-bytes"
@@ -4292,3 +4275,121 @@ class TestStripT2iEndpointPreservation:
         # Assert
         call_args = mock_fal.subscribe.call_args
         assert call_args.args[0] == "fal-ai/reve/text-to-image"
+
+
+class TestEditHandlerNoStripT2i:
+    """AC7: strip_t2i parameter must not exist on EditHandler (#128)."""
+
+    def test_strip_t2i_absent_from_init_signature(self):
+        """EditHandler.__init__ should not accept strip_t2i."""
+        import inspect
+
+        sig = inspect.signature(EditHandler.__init__)
+        assert "strip_t2i" not in sig.parameters, (
+            "strip_t2i parameter still present in EditHandler.__init__"
+        )
+
+    def test_strip_t2i_absent_from_instance(self):
+        """EditHandler instance should not have _strip_t2i attribute."""
+        h = EditHandler(["test"])
+        assert not hasattr(h, "_strip_t2i"), (
+            "_strip_t2i attribute still present on EditHandler instance"
+        )
+
+
+class TestEditHandlerNoEditSuffix:
+    """AC4: edit_suffix parameter removed — edit routing uses EDIT_SIBLINGS (#128)."""
+
+    def test_edit_suffix_absent_from_init_signature(self):
+        """EditHandler.__init__ should not accept edit_suffix."""
+        import inspect
+
+        sig = inspect.signature(EditHandler.__init__)
+        assert "edit_suffix" not in sig.parameters, (
+            "edit_suffix parameter still present in EditHandler.__init__"
+        )
+
+    def test_edit_suffix_absent_from_instance(self):
+        """EditHandler instance should not have _edit_suffix attribute."""
+        h = EditHandler(["test"])
+        assert not hasattr(h, "_edit_suffix"), (
+            "_edit_suffix attribute still present on EditHandler instance"
+        )
+
+
+class TestEditHandlerEndpointsFromRegistry:
+    """AC4: All endpoints used by EditHandler must be registered models (#128)."""
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_t2i_endpoint_equals_model_id(self, mock_fal, tmp_path):
+        """T2I endpoint must be the model ID itself, not derived."""
+        from storyboard_gen.model_registry import BACKEND_MODELS
+
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        fal_models = BACKEND_MODELS.get("fal", [])
+        # Pick a few representative models that previously needed strip_t2i
+        models_to_check = [
+            "fal-ai/bytedance/seedream/v4.5/text-to-image",
+            "fal-ai/bytedance/seedream/v5/lite/text-to-image",
+            "fal-ai/hunyuan-image/v3/text-to-image",
+            "fal-ai/recraft/v4/text-to-image",
+            "fal-ai/emu-3.5-image/text-to-image",
+            "fal-ai/reve/text-to-image",
+            "fal-ai/flux-2",
+            "xai/grok-imagine-image",
+        ]
+
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            for model_id in models_to_check:
+                provider = FalProvider(model=model_id)
+                provider.generate_still(
+                    prompt="Test prompt",
+                    output_path=tmp_path / "out.png",
+                    aspect_ratio="16:9",
+                )
+                endpoint = mock_fal.subscribe.call_args.args[0]
+                assert endpoint == model_id, (
+                    f"T2I endpoint {endpoint} != model ID {model_id}"
+                )
+                assert endpoint in fal_models, (
+                    f"T2I endpoint {endpoint} not in registry"
+                )
+
+    @patch("storyboard_gen.providers.fal.fal_client")
+    def test_edit_endpoint_is_registered_model(self, mock_fal, tmp_path):
+        """Edit endpoint must be a model that exists in the registry."""
+        from storyboard_gen.model_registry import BACKEND_MODELS, EDIT_SIBLINGS
+
+        mock_fal.subscribe.return_value = {
+            "images": [{"url": "https://fal.media/files/out.png"}],
+        }
+        mock_fal.upload_file.return_value = "https://fal.media/files/ref.png"
+        fal_models = set(BACKEND_MODELS.get("fal", []))
+
+        ref_img = tmp_path / "ref.jpg"
+        ref_img.write_bytes(b"img-data")
+        chars = [Character(id="boy", description="A boy", reference=[ref_img])]
+
+        # Check all T2I models that have edit siblings
+        with patch("storyboard_gen.providers.fal._download_url") as mock_dl:
+            mock_dl.return_value = b"png-bytes"
+            for t2i_model, expected_edit in EDIT_SIBLINGS.items():
+                provider = FalProvider(model=t2i_model)
+                provider.generate_still(
+                    prompt="Test with ref",
+                    output_path=tmp_path / "out.png",
+                    aspect_ratio="16:9",
+                    scene_characters=chars,
+                    project_dir=tmp_path,
+                )
+                endpoint = mock_fal.subscribe.call_args.args[0]
+                assert endpoint == expected_edit, (
+                    f"Edit endpoint for {t2i_model}: got {endpoint}, "
+                    f"expected {expected_edit}"
+                )
+                assert endpoint in fal_models, (
+                    f"Edit endpoint {endpoint} not in registry"
+                )
