@@ -1679,7 +1679,8 @@ class TestErrorDialog:
 
         scene = window._project.scenes[0]
 
-        window._on_gen_error(scene, "Scene 1: fal-client is not installed")
+        with patch("storyboard_gen.gui.app.QMessageBox"):
+            window._on_gen_error(scene, "Scene 1: fal-client is not installed")
 
         text = window.console.text_edit.toPlainText()
         assert "fal-client is not installed" in text
@@ -3017,7 +3018,8 @@ class TestConcurrentGeneration:
             assert str(scene.number) in window._workers
 
             # Act — simulate error + deferred cleanup
-            window._on_gen_error(scene, "API timeout")
+            with patch("storyboard_gen.gui.app.QMessageBox"):
+                window._on_gen_error(scene, "API timeout")
             window._cleanup_worker(str(scene.number))
 
             # Assert
@@ -5576,8 +5578,8 @@ class TestYamlViewerFontSize:
 class TestGenerationErrorNonModal:
     """Generation errors should not block UI — issue #97."""
 
-    def test_gen_error_logs_to_console_not_modal(self, qtbot, gui_project_dir):
-        """_on_gen_error should log to console, not show modal dialog."""
+    def test_gen_error_shows_error_dialog(self, qtbot, gui_project_dir):
+        """_on_gen_error should show error via _show_error (#122 AC1)."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
@@ -5592,10 +5594,37 @@ class TestGenerationErrorNonModal:
 
             window._start_scene_generation(scene)
 
-            # Act — simulate error (should NOT show modal)
+            # Act — simulate error (should show dialog via _show_error)
             with patch.object(window, "_show_error") as mock_show:
                 window._on_gen_error(scene, "API error: timeout")
-                mock_show.assert_not_called()
+                mock_show.assert_called_once_with("API error: timeout")
+
+    def test_gen_error_resets_scene_state(self, qtbot, gui_project_dir):
+        """Scene state should return to idle after error (#122 AC4)."""
+        from storyboard_gen.gui.app import MainWindow
+        from storyboard_gen.gui.scene_list import SceneItemWidget
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        scene = window._project.scenes[0]
+
+        with patch("storyboard_gen.gui.app.GenerateWorker") as mock_cls:
+            mock_worker = mock_cls.return_value
+            mock_worker.isRunning.return_value = True
+
+            window._start_scene_generation(scene)
+
+            with patch("storyboard_gen.gui.app.QMessageBox"):
+                window._on_gen_error(scene, "API error: timeout")
+
+            # Assert — scene item returned to idle (gen button re-enabled)
+            item = window.scene_list.list_widget.itemWidget(
+                window.scene_list.list_widget.item(0)
+            )
+            assert isinstance(item, SceneItemWidget)
+            assert item._gen_btn.isEnabled()
 
         # Error should appear in console
         assert "API error: timeout" in window.console.text_edit.toPlainText()
@@ -5620,7 +5649,8 @@ class TestGenerationErrorNonModal:
             window._start_scene_generation(scene_0)
 
             # Error on scene 0
-            window._on_gen_error(scene_0, "API error")
+            with patch("storyboard_gen.gui.app.QMessageBox"):
+                window._on_gen_error(scene_0, "API error")
             window._cleanup_worker(str(scene_0.number))
 
             # Scene 1's generate button should be enabled
@@ -5753,7 +5783,8 @@ class TestWorkerLifecycle:
             window._start_scene_generation(scene)
 
             # Act — simulate error
-            window._on_gen_error(scene, "API error")
+            with patch("storyboard_gen.gui.app.QMessageBox"):
+                window._on_gen_error(scene, "API error")
 
             # Assert — worker still in _workers
             assert str(scene.number) in window._workers
@@ -7304,10 +7335,10 @@ class TestSceneModelSelector:
         text = editor.text_edit.toPlainText()
         assert "fal-ai/flux-general" in text
 
-    def test_save_with_empty_combo_clears_model_from_yaml(
+    def test_save_with_empty_combo_shows_warning_and_clears_on_apply(
         self, qtbot, model_override_project_dir
     ):
-        """Clearing the combo text and saving should remove model from file."""
+        """Clearing combo and saving shows warning; Apply clears model (#124)."""
         from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
 
         editor = SceneYamlEditor()
@@ -7319,10 +7350,124 @@ class TestSceneModelSelector:
         # Verify model is present in YAML text
         assert "model:" in editor.text_edit.toPlainText()
 
-        # Act — clear combo text, then save
+        # Act — clear combo text, then save (Apply = trust combo)
         editor._model_combo.setCurrentText("")
-        editor._save()
+        with patch("storyboard_gen.gui.scene_yaml_editor.QMessageBox") as mock_mb:
+            mock_mb.warning.return_value = mock_mb.Apply
+            editor._save()
 
         # Assert — model override removed from the saved file
         saved_block = editor.text_edit.toPlainText()
         assert "model:" not in saved_block
+
+
+# ---------------------------------------------------------------------------
+# YAML editor model override conflict warning — issue #124
+# ---------------------------------------------------------------------------
+
+
+class TestYamlEditorModelConflictWarning:
+    """YAML editor should warn when combo and YAML text disagree (#124)."""
+
+    def test_save_shows_warning_when_yaml_model_deleted(
+        self, qtbot, model_override_project_dir
+    ):
+        """Deleting model: from YAML while combo still set shows warning (AC1)."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Combo has a model, YAML has model: line
+        assert editor._model_combo.currentText().strip() != ""
+        assert "model:" in editor.text_edit.toPlainText()
+
+        # Act — manually delete the model: line from YAML text
+        text = editor.text_edit.toPlainText()
+        import re
+
+        text = re.sub(r"^\s*model:.*\n?", "", text, flags=re.MULTILINE)
+        text = re.sub(r"^\s*provider:.*\n?", "", text, flags=re.MULTILINE)
+        editor.text_edit.setPlainText(text)
+
+        # Save should trigger a warning dialog
+        with patch("storyboard_gen.gui.scene_yaml_editor.QMessageBox") as mock_mb:
+            mock_mb.warning.return_value = mock_mb.Cancel
+            editor._save()
+            mock_mb.warning.assert_called_once()
+
+    def test_save_shows_warning_when_yaml_model_changed(
+        self, qtbot, model_override_project_dir
+    ):
+        """Changing model: in YAML to differ from combo shows warning (AC2)."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Change the model in YAML text to something different from combo
+        text = editor.text_edit.toPlainText()
+        import re
+
+        text = re.sub(
+            r"(model:\s*).*", r"\1fal-ai/different-model", text, flags=re.MULTILINE
+        )
+        editor.text_edit.setPlainText(text)
+
+        with patch("storyboard_gen.gui.scene_yaml_editor.QMessageBox") as mock_mb:
+            mock_mb.warning.return_value = mock_mb.Cancel
+            editor._save()
+            mock_mb.warning.assert_called_once()
+
+    def test_save_no_warning_when_combo_and_yaml_agree(
+        self, qtbot, model_override_project_dir
+    ):
+        """No warning when combo and YAML agree (AC7 regression)."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Don't change anything — combo and YAML should agree
+        with patch("storyboard_gen.gui.scene_yaml_editor.QMessageBox") as mock_mb:
+            editor._save()
+            mock_mb.warning.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Cmd+, keybinding for YAML editor toggle — issue #125
+# ---------------------------------------------------------------------------
+
+
+class TestCommaShortcut:
+    """Ctrl+, shortcut should toggle the YAML editor (#125)."""
+
+    def test_comma_shortcut_toggles_yaml_editor(self, qtbot, gui_project_dir):
+        """Ctrl+, shortcut exists and is connected to _on_toggle_yaml (AC1)."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        assert hasattr(window, "_shortcut_edit_yaml2")
+        assert window._shortcut_edit_yaml2.key().toString() == "Ctrl+,"
+
+    def test_yaml_editor_tooltip_shows_both_shortcuts(self, qtbot, gui_project_dir):
+        """Toolbar button tooltip mentions both shortcuts (AC2)."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        tooltip = window._btn_yaml_editor.toolTip()
+        assert "Shift+Y" in tooltip
+        assert "," in tooltip

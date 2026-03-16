@@ -355,3 +355,30 @@ class TestReplicateRefFieldName:
         # Assert — flux-dev uses 'image'
         input_args = mock_replicate.run.call_args.kwargs["input"]
         assert "image" in input_args
+
+
+# ---------------------------------------------------------------------------
+# Replicate error cleaning — issue #122
+# ---------------------------------------------------------------------------
+
+
+class TestReplicateErrorCleaning:
+    """Replicate provider should pass exc.args[0] to clean_api_error (#122)."""
+
+    @patch("storyboard_gen.providers.replicate.replicate")
+    def test_replicate_error_uses_args_not_str(self, mock_replicate, tmp_path):
+        """Error cleaning should use exc.args[0] for structured errors (AC5)."""
+        error_data = [{"loc": ["body"], "msg": "Model failed", "type": "value_error"}]
+
+        class FakeError(Exception):
+            pass
+
+        mock_replicate.run.side_effect = FakeError(error_data)
+        provider = ReplicateProvider(model="black-forest-labs/flux-1.1-pro")
+
+        with pytest.raises(RuntimeError, match="Model failed"):
+            provider.generate_still(
+                prompt="A hero",
+                output_path=tmp_path / "out.png",
+                aspect_ratio="9:16",
+            )

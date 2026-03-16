@@ -99,7 +99,7 @@ class ReplicateProvider(ImageProvider):
                 "Replicate API error for %s: %s", self.model, exc, exc_info=True
             )
             raise RuntimeError(
-                f"Replicate API error: {clean_api_error(str(exc))}"
+                f"Replicate API error: {clean_api_error(exc.args[0] if exc.args else str(exc))}"
             ) from exc
 
         if output is None:

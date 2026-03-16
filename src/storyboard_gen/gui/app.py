@@ -188,7 +188,7 @@ class MainWindow(QMainWindow):
         self.toolbar.addWidget(self._btn_yaml_viewer)
 
         self._btn_yaml_editor = self._make_toolbar_button(
-            "✏️", f"Edit YAML ({mod}+Shift+Y)", self._on_toggle_yaml
+            "✏️", f"Edit YAML ({mod}+Shift+Y / {mod}+,)", self._on_toggle_yaml
         )
         self.toolbar.addWidget(self._btn_yaml_editor)
 
@@ -267,6 +267,8 @@ class MainWindow(QMainWindow):
         self._shortcut_output.activated.connect(self._on_output)
         self._shortcut_edit_yaml = QShortcut(QKeySequence("Ctrl+Shift+Y"), self)
         self._shortcut_edit_yaml.activated.connect(self._on_toggle_yaml)
+        self._shortcut_edit_yaml2 = QShortcut(QKeySequence("Ctrl+,"), self)
+        self._shortcut_edit_yaml2.activated.connect(self._on_toggle_yaml)
         self._shortcut_env = QShortcut(QKeySequence("Ctrl+E"), self)
         self._shortcut_env.activated.connect(self._on_edit_env)
 
@@ -749,13 +751,13 @@ class MainWindow(QMainWindow):
     def _on_gen_error(self, scene: Scene, message: str) -> None:
         """Handle generation error for a specific scene.
 
-        Logs to console instead of showing a modal dialog to avoid
-        blocking interaction with other scenes (#97).
+        Shows error via _show_error (console + QMessageBox) so the user
+        always sees failures, even with the console collapsed (#122).
 
         Worker removal deferred to ``_cleanup_worker`` via ``finished``.
         """
         scene_key = str(scene.number)
-        self.console.append_message(f"ERROR: {message}")
+        self._show_error(message)
         self.scene_list.set_scene_state(scene_key, "idle")
         self._update_actions_enabled()
         self._update_progress()
