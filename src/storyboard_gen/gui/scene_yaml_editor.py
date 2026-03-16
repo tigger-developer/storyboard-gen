@@ -246,6 +246,10 @@ class SceneYamlEditor(QWidget):
         self._model_combo.currentTextChanged.connect(self._on_model_text_changed)
         # Inject model into YAML when user picks from completer popup
         completer.activated.connect(self._on_model_selected)
+        # Inject model into YAML when user picks from combo dropdown (#127)
+        self._model_combo.activated.connect(
+            lambda idx: self._on_model_selected(self._model_combo.itemText(idx))
+        )
 
         model_bar.addWidget(self._model_combo, stretch=1)
 
@@ -366,27 +370,29 @@ class SceneYamlEditor(QWidget):
         yaml_val = yaml_model or None
 
         if combo_val != yaml_val:
-            result = QMessageBox.warning(
-                self,
-                "Model Override Conflict",
-                f'The model selector shows "{combo_val or "(none)"}" '
-                f'but the YAML text has "{yaml_val or "(none)"}".\n\n'
-                "Which version should be saved?",
-                QMessageBox.Save | QMessageBox.Apply | QMessageBox.Cancel,
-                QMessageBox.Cancel,
-            )
-            if result == QMessageBox.Save:
-                # Trust the YAML text — leave it as-is
-                pass
-            elif result == QMessageBox.Apply:
-                # Trust the combo — sync combo into YAML
-                if combo_text:
-                    self._on_model_selected(combo_text)
-                else:
+            if combo_val:
+                # Combo has a value — trust it, inject into YAML silently (#127)
+                self._on_model_selected(combo_text)
+            elif yaml_val:
+                # Combo empty but YAML has model — warn (#124)
+                result = QMessageBox.warning(
+                    self,
+                    "Model Override Conflict",
+                    f'The model selector is empty but the YAML text has '
+                    f'"{yaml_val}".\n\n'
+                    "Which version should be saved?",
+                    QMessageBox.Save | QMessageBox.Apply | QMessageBox.Cancel,
+                    QMessageBox.Cancel,
+                )
+                if result == QMessageBox.Save:
+                    # Trust the YAML text — leave it as-is
+                    pass
+                elif result == QMessageBox.Apply:
+                    # Trust the combo — clear model from YAML
                     self._on_clear_model()
-            else:
-                # Cancel — abort save
-                return
+                else:
+                    # Cancel — abort save
+                    return
 
         new_text = self.text_edit.toPlainText()
 
