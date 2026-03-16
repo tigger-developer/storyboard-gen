@@ -183,12 +183,12 @@ class MainWindow(QMainWindow):
         self.toolbar.addSeparator()
 
         self._btn_yaml_viewer = self._make_toolbar_button(
-            "📄", f"View YAML ({mod}+Y)", self._on_view_yaml
+            "📄", f"View YAML ({mod}+Y / {mod}+,)", self._on_view_yaml
         )
         self.toolbar.addWidget(self._btn_yaml_viewer)
 
         self._btn_yaml_editor = self._make_toolbar_button(
-            "✏️", f"Edit YAML ({mod}+Shift+Y / {mod}+,)", self._on_toggle_yaml
+            "✏️", f"Edit YAML ({mod}+Shift+Y)", self._on_toggle_yaml
         )
         self.toolbar.addWidget(self._btn_yaml_editor)
 
@@ -268,7 +268,7 @@ class MainWindow(QMainWindow):
         self._shortcut_edit_yaml = QShortcut(QKeySequence("Ctrl+Shift+Y"), self)
         self._shortcut_edit_yaml.activated.connect(self._on_toggle_yaml)
         self._shortcut_edit_yaml2 = QShortcut(QKeySequence("Ctrl+,"), self)
-        self._shortcut_edit_yaml2.activated.connect(self._on_toggle_yaml)
+        self._shortcut_edit_yaml2.activated.connect(self._on_view_yaml)
         self._shortcut_env = QShortcut(QKeySequence("Ctrl+E"), self)
         self._shortcut_env.activated.connect(self._on_edit_env)
 

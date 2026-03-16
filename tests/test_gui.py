@@ -7369,10 +7369,10 @@ class TestSceneModelSelector:
 class TestYamlEditorModelConflictWarning:
     """YAML editor should warn when combo and YAML text disagree (#124)."""
 
-    def test_save_shows_warning_when_yaml_model_deleted(
+    def test_save_auto_injects_when_yaml_model_deleted_but_combo_set(
         self, qtbot, model_override_project_dir
     ):
-        """Deleting model: from YAML while combo still set shows warning (AC1)."""
+        """Deleting model: from YAML while combo set auto-injects (#127)."""
         from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
 
         editor = SceneYamlEditor()
@@ -7381,9 +7381,8 @@ class TestYamlEditorModelConflictWarning:
         yaml_path = model_override_project_dir / "project.yaml"
         editor.load_scene("1", yaml_path)
 
-        # Combo has a model, YAML has model: line
-        assert editor._model_combo.currentText().strip() != ""
-        assert "model:" in editor.text_edit.toPlainText()
+        combo_model = editor._model_combo.currentText().strip()
+        assert combo_model != ""
 
         # Act — manually delete the model: line from YAML text
         text = editor.text_edit.toPlainText()
@@ -7393,16 +7392,15 @@ class TestYamlEditorModelConflictWarning:
         text = re.sub(r"^\s*provider:.*\n?", "", text, flags=re.MULTILINE)
         editor.text_edit.setPlainText(text)
 
-        # Save should trigger a warning dialog
+        # Save should auto-inject combo value, no warning
         with patch("storyboard_gen.gui.scene_yaml_editor.QMessageBox") as mock_mb:
-            mock_mb.warning.return_value = mock_mb.Cancel
             editor._save()
-            mock_mb.warning.assert_called_once()
+            mock_mb.warning.assert_not_called()
 
-    def test_save_shows_warning_when_yaml_model_changed(
+    def test_save_auto_injects_when_yaml_model_changed_but_combo_set(
         self, qtbot, model_override_project_dir
     ):
-        """Changing model: in YAML to differ from combo shows warning (AC2)."""
+        """Changing model: in YAML while combo set auto-injects combo (#127)."""
         from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
 
         editor = SceneYamlEditor()
@@ -7410,6 +7408,9 @@ class TestYamlEditorModelConflictWarning:
 
         yaml_path = model_override_project_dir / "project.yaml"
         editor.load_scene("1", yaml_path)
+
+        combo_model = editor._model_combo.currentText().strip()
+        assert combo_model != ""
 
         # Change the model in YAML text to something different from combo
         text = editor.text_edit.toPlainText()
@@ -7420,10 +7421,10 @@ class TestYamlEditorModelConflictWarning:
         )
         editor.text_edit.setPlainText(text)
 
+        # Save should auto-inject combo value, no warning
         with patch("storyboard_gen.gui.scene_yaml_editor.QMessageBox") as mock_mb:
-            mock_mb.warning.return_value = mock_mb.Cancel
             editor._save()
-            mock_mb.warning.assert_called_once()
+            mock_mb.warning.assert_not_called()
 
     def test_save_no_warning_when_combo_and_yaml_agree(
         self, qtbot, model_override_project_dir
@@ -7449,10 +7450,10 @@ class TestYamlEditorModelConflictWarning:
 
 
 class TestCommaShortcut:
-    """Ctrl+, shortcut should toggle the YAML editor (#125)."""
+    """Ctrl+, shortcut should open project YAML viewer (#125)."""
 
-    def test_comma_shortcut_toggles_yaml_editor(self, qtbot, gui_project_dir):
-        """Ctrl+, shortcut exists and is connected to _on_toggle_yaml (AC1)."""
+    def test_comma_shortcut_opens_project_yaml(self, qtbot, gui_project_dir):
+        """Ctrl+, shortcut exists and is connected to _on_view_yaml (AC1)."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
@@ -7461,8 +7462,18 @@ class TestCommaShortcut:
         assert hasattr(window, "_shortcut_edit_yaml2")
         assert window._shortcut_edit_yaml2.key().toString() == "Ctrl+,"
 
-    def test_yaml_editor_tooltip_shows_both_shortcuts(self, qtbot, gui_project_dir):
-        """Toolbar button tooltip mentions both shortcuts (AC2)."""
+    def test_yaml_viewer_tooltip_shows_comma_shortcut(self, qtbot, gui_project_dir):
+        """YAML viewer tooltip mentions Cmd+, shortcut (AC2)."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+
+        tooltip = window._btn_yaml_viewer.toolTip()
+        assert "," in tooltip
+
+    def test_yaml_editor_tooltip_no_comma_shortcut(self, qtbot, gui_project_dir):
+        """YAML editor tooltip should NOT mention Cmd+, (AC3)."""
         from storyboard_gen.gui.app import MainWindow
 
         window = MainWindow()
@@ -7470,4 +7481,122 @@ class TestCommaShortcut:
 
         tooltip = window._btn_yaml_editor.toolTip()
         assert "Shift+Y" in tooltip
-        assert "," in tooltip
+        assert "," not in tooltip
+
+
+# ---------------------------------------------------------------------------
+# Scene YAML editor combo → save workflow — issue #127
+# ---------------------------------------------------------------------------
+
+
+class TestYamlEditorComboSaveWorkflow:
+    """Combo selection should auto-inject model on save without warning (#127)."""
+
+    def test_combo_dropdown_selection_injects_into_yaml(
+        self, qtbot, model_override_project_dir
+    ):
+        """Selecting from combo dropdown auto-injects model into YAML (AC1)."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Simulate selecting a different model from the combo dropdown
+        new_model = "fal-ai/flux/dev"
+        # Add item so activated signal works
+        editor._model_combo.addItem(new_model)
+        idx = editor._model_combo.findText(new_model)
+        # Emit activated signal (simulates dropdown selection)
+        editor._model_combo.activated.emit(idx)
+
+        # Assert — model should be injected into YAML text
+        assert new_model in editor.text_edit.toPlainText()
+
+    def test_save_after_combo_selection_no_warning(
+        self, qtbot, model_override_project_dir
+    ):
+        """Cmd+S after combo selection saves without warning dialog (AC2)."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Change combo to a different model (simulating user typing)
+        editor._model_combo.setCurrentText("fal-ai/flux/dev")
+
+        with patch("storyboard_gen.gui.scene_yaml_editor.QMessageBox") as mock_mb:
+            editor._save()
+            mock_mb.warning.assert_not_called()
+
+    def test_save_with_cleared_combo_warns_when_yaml_has_model(
+        self, qtbot, model_override_project_dir
+    ):
+        """Clearing combo + save still warns when YAML has model (AC3, #124)."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Clear the combo but leave model in YAML text
+        editor._model_combo.setCurrentText("")
+
+        with patch("storyboard_gen.gui.scene_yaml_editor.QMessageBox") as mock_mb:
+            mock_mb.warning.return_value = mock_mb.Cancel
+            editor._save()
+            mock_mb.warning.assert_called_once()
+
+    def test_save_after_yaml_model_deleted_no_warning_if_combo_empty(
+        self, qtbot, model_override_project_dir
+    ):
+        """No warning when both combo and YAML have no model (AC4)."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Remove model from YAML text and clear combo
+        import re
+
+        text = editor.text_edit.toPlainText()
+        text = re.sub(r"^\s*model:.*\n?", "", text, flags=re.MULTILINE)
+        editor.text_edit.setPlainText(text)
+        editor._model_combo.setCurrentText("")
+
+        with patch("storyboard_gen.gui.scene_yaml_editor.QMessageBox") as mock_mb:
+            editor._save()
+            mock_mb.warning.assert_not_called()
+
+    def test_typed_combo_model_auto_injected_on_save(
+        self, qtbot, model_override_project_dir
+    ):
+        """Typing model in combo + save auto-injects into YAML (AC5)."""
+        from storyboard_gen.gui.scene_yaml_editor import SceneYamlEditor
+
+        editor = SceneYamlEditor()
+        qtbot.addWidget(editor)
+
+        yaml_path = model_override_project_dir / "project.yaml"
+        editor.load_scene("1", yaml_path)
+
+        # Type a new model in the combo (doesn't trigger _on_model_selected)
+        new_model = "fal-ai/recraft/v4/text-to-image"
+        editor._model_combo.setCurrentText(new_model)
+
+        with patch("storyboard_gen.gui.scene_yaml_editor.QMessageBox") as mock_mb:
+            editor._save()
+            mock_mb.warning.assert_not_called()
+
+        # Verify model was injected into YAML text
+        assert new_model in editor.text_edit.toPlainText()
