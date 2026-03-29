@@ -873,10 +873,10 @@ class MainWindow(QMainWindow):
         currently_hidden = self.console.isHidden()
         self.console.setVisible(currently_hidden)
 
-    # ----- Output (Assemble / Kdenlive) -----
+    # ----- Output (Assemble / Kdenlive / FCPXML) -----
 
     def _on_output(self) -> None:
-        """Open the Output dialog and dispatch to assemble or kdenlive."""
+        """Open the Output dialog and dispatch to assemble, kdenlive, or fcpxml."""
         if not self._project:
             return
 
@@ -886,6 +886,8 @@ class MainWindow(QMainWindow):
             options = dialog.get_options()
             if options["mode"] == "kdenlive":
                 self._run_kdenlive(options)
+            elif options["mode"] == "fcpxml":
+                self._run_fcpxml(options)
             else:
                 self._run_assemble(options)
 
@@ -988,6 +990,54 @@ class MainWindow(QMainWindow):
             self.console.append_message(f"Kdenlive export complete: {output_path}")
         except (RuntimeError, OSError) as exc:
             self._show_error(f"Kdenlive export failed: {exc}")
+
+    def _run_fcpxml(self, options: dict) -> None:
+        """Export a Final Cut Pro project file.
+
+        Args:
+            options: Output dialog options (preview, audio, output).
+        """
+        if not self._project or not self._output_dir:
+            return
+
+        from storyboard_gen.fcpxml import generate_fcpxml
+
+        self.console.append_message("Exporting Final Cut Pro project...")
+
+        try:
+            audio_path = None
+            subtitles_path = None
+            if not options.get("preview"):
+                if options.get("audio"):
+                    audio_path = options["audio"]
+                elif self._project.audio:
+                    audio_path = self._project.audio
+                    if not audio_path.exists():
+                        self.console.append_message(
+                            f"Warning: Audio not found: {audio_path}"
+                        )
+                        audio_path = None
+
+                if self._project.subtitles:
+                    subtitles_path = self._project.subtitles
+                    if not subtitles_path.exists():
+                        self.console.append_message(
+                            f"Warning: Subtitles not found: {subtitles_path}"
+                        )
+                        subtitles_path = None
+
+            output_filename = options.get("output", f"{self._project.title}.fcpxml")
+
+            output_path = generate_fcpxml(
+                self._project,
+                self._output_dir,
+                output_filename=output_filename,
+                audio_path=audio_path,
+                subtitles_path=subtitles_path,
+            )
+            self.console.append_message(f"Final Cut Pro export complete: {output_path}")
+        except (RuntimeError, OSError) as exc:
+            self._show_error(f"FCPXML export failed: {exc}")
 
     # ----- About dialog -----
 

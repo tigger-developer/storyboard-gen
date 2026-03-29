@@ -1,5 +1,5 @@
 # ABOUTME: Command-line interface for storyboard-gen.
-# ABOUTME: Subcommands: generate, assemble, kdenlive, validate, list, init, schema.
+# ABOUTME: Subcommands: generate, assemble, kdenlive, fcpxml, validate, list, init, schema.
 
 import argparse
 import importlib.resources
@@ -17,6 +17,7 @@ from storyboard_gen.generate import (
     generate_still,
     resolve_provider_config,
 )
+from storyboard_gen.fcpxml import generate_fcpxml
 from storyboard_gen.kdenlive import generate_kdenlive
 from storyboard_gen.ken_burns import apply_ken_burns
 from storyboard_gen.models import CAMERA_PROMPTS, format_scene_number
@@ -174,6 +175,49 @@ def _add_kdenlive_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_fcpxml_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Add the 'fcpxml' subcommand parser."""
+    fcpxml_parser = subparsers.add_parser(
+        "fcpxml",
+        help="Export a Final Cut Pro project for timeline editing",
+        description=(
+            "Generate a Final Cut Pro (.fcpxml) project file from the storyboard. "
+            "Includes Ken Burns transform effects on stills and an audio track if "
+            "configured. Open the result in Final Cut Pro for fine-tuning."
+        ),
+        epilog=(
+            "examples:\n"
+            "  storyboard-gen fcpxml                            Export with Ken Burns effects\n"
+            "  storyboard-gen fcpxml --output my_project.fcpxml Custom output name\n"
+            "  storyboard-gen fcpxml --preview                  Export without audio"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    fcpxml_parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Output filename (default: {title}.fcpxml)",
+    )
+    fcpxml_parser.add_argument(
+        "--audio",
+        type=str,
+        default=None,
+        help="Audio file to include (overrides project.yaml)",
+    )
+    fcpxml_parser.add_argument(
+        "--subtitles",
+        type=str,
+        default=None,
+        help="Subtitle file to include — SRT, VTT, ASS/SSA (overrides project.yaml)",
+    )
+    fcpxml_parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Export without audio or subtitles",
+    )
+
+
 def _add_init_parser(subparsers: argparse._SubParsersAction) -> None:
     """Add the 'init' subcommand parser."""
     init_parser = subparsers.add_parser(
@@ -221,6 +265,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_generate_parser(subparsers)
     _add_assemble_parser(subparsers)
     _add_kdenlive_parser(subparsers)
+    _add_fcpxml_parser(subparsers)
     subparsers.add_parser(
         "validate",
         help="Validate project.yaml and show summary",
@@ -297,6 +342,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_assemble(args)
     if args.command == "kdenlive":
         return _cmd_kdenlive(args)
+    if args.command == "fcpxml":
+        return _cmd_fcpxml(args)
     if args.command == "init":
         return _cmd_init(args)
     if args.command == "schema":
@@ -537,6 +584,51 @@ def _cmd_kdenlive(args: argparse.Namespace) -> int:
         subtitles_path=subtitles_path,
     )
     print(f"Kdenlive project: {output_path}")
+    return 0
+
+
+def _cmd_fcpxml(args: argparse.Namespace) -> int:
+    """Export a Final Cut Pro project file for timeline editing."""
+    project = load_project()
+    output_dir = Path.cwd() / "output"
+
+    # Resolve audio: --preview → None; --audio → override; project.yaml → default
+    audio_path = None
+    if not args.preview:
+        if args.audio:
+            audio_path = Path(args.audio).resolve()
+        elif project.audio:
+            audio_path = project.audio
+
+        if audio_path and not audio_path.exists():
+            logging.warning(
+                "Audio file not found: %s — exporting without audio", audio_path
+            )
+            audio_path = None
+
+    # Resolve subtitles: --preview → None; --subtitles → override; project.yaml → default
+    subtitles_path = None
+    if not args.preview:
+        if args.subtitles:
+            subtitles_path = Path(args.subtitles).resolve()
+        elif project.subtitles:
+            subtitles_path = project.subtitles
+
+        if subtitles_path and not subtitles_path.exists():
+            logging.warning(
+                "Subtitles file not found: %s — exporting without subtitles",
+                subtitles_path,
+            )
+            subtitles_path = None
+
+    output_path = generate_fcpxml(
+        project,
+        output_dir,
+        output_filename=args.output,
+        audio_path=audio_path,
+        subtitles_path=subtitles_path,
+    )
+    print(f"FCPXML project: {output_path}")
     return 0
 
 

@@ -1,4 +1,4 @@
-# ABOUTME: Dialog for choosing output mode (Assemble MP4 or Kdenlive export).
+# ABOUTME: Dialog for choosing output mode (Assemble MP4, Kdenlive, or FCPXML export).
 # ABOUTME: Provides preview mode, audio override, and output filename options.
 
 from pathlib import Path
@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 class OutputDialog(QDialog):
     """Dialog for selecting output mode and options.
 
-    Modes: Assemble (MP4) or Kdenlive export (.kdenlive).
+    Modes: Assemble (MP4), Kdenlive export (.kdenlive), or Final Cut Pro (.fcpxml).
     Options: preview mode (no audio), audio file override, output filename.
     """
 
@@ -39,10 +39,12 @@ class OutputDialog(QDialog):
         mode_group = QGroupBox("Output mode")
         self._radio_assemble = QRadioButton("Assemble (MP4)")
         self._radio_kdenlive = QRadioButton("Kdenlive export")
+        self._radio_fcpxml = QRadioButton("Final Cut Pro export")
         self._radio_kdenlive.setChecked(True)
 
         mode_layout = QVBoxLayout()
         mode_layout.addWidget(self._radio_kdenlive)
+        mode_layout.addWidget(self._radio_fcpxml)
         mode_layout.addWidget(self._radio_assemble)
         mode_group.setLayout(mode_layout)
 
@@ -50,6 +52,7 @@ class OutputDialog(QDialog):
         self._default_title = default_title
         self._radio_assemble.toggled.connect(self._update_default_filename)
         self._radio_kdenlive.toggled.connect(self._update_default_filename)
+        self._radio_fcpxml.toggled.connect(self._update_default_filename)
 
         # Options
         self._preview_check = QCheckBox("Preview mode (no audio)")
@@ -89,12 +92,18 @@ class OutputDialog(QDialog):
     def _update_default_filename(self) -> None:
         """Update the default filename when mode changes."""
         current = self._filename_edit.text()
+        # Strip any known extension
+        base = current
+        for ext in (".kdenlive", ".fcpxml", ".mp4"):
+            if base.endswith(ext):
+                base = base[: -len(ext)]
+                break
         if self._radio_kdenlive.isChecked():
-            if current.endswith(".mp4"):
-                self._filename_edit.setText(current.rsplit(".mp4", 1)[0] + ".kdenlive")
+            self._filename_edit.setText(base + ".kdenlive")
+        elif self._radio_fcpxml.isChecked():
+            self._filename_edit.setText(base + ".fcpxml")
         else:
-            if current.endswith(".kdenlive"):
-                self._filename_edit.setText(current.rsplit(".kdenlive", 1)[0] + ".mp4")
+            self._filename_edit.setText(base + ".mp4")
 
     def _browse_audio(self) -> None:
         """Open a file dialog to select an audio file."""
@@ -115,8 +124,14 @@ class OutputDialog(QDialog):
         Returns:
             Dict with keys: mode, preview, audio, output.
         """
+        if self._radio_kdenlive.isChecked():
+            mode = "kdenlive"
+        elif self._radio_fcpxml.isChecked():
+            mode = "fcpxml"
+        else:
+            mode = "assemble"
         return {
-            "mode": "kdenlive" if self._radio_kdenlive.isChecked() else "assemble",
+            "mode": mode,
             "preview": self._preview_check.isChecked(),
             "audio": self._audio_path,
             "output": self._filename_edit.text(),

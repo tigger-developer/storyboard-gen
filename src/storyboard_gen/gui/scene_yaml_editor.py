@@ -377,7 +377,7 @@ class SceneYamlEditor(QWidget):
                 result = QMessageBox.warning(
                     self,
                     "Model Override Conflict",
-                    f'The model selector is empty but the YAML text has '
+                    f"The model selector is empty but the YAML text has "
                     f'"{yaml_val}".\n\n'
                     "Which version should be saved?",
                     QMessageBox.Save | QMessageBox.Apply | QMessageBox.Cancel,
