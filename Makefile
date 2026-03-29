@@ -14,7 +14,7 @@ LOCAL_BIN := $(HOME)/.local/bin
 VERSION_FILE := src/storyboard_gen/__init__.py
 CURRENT_VERSION := $(shell grep '__version__' $(VERSION_FILE) 2>/dev/null | sed 's/.*"\(.*\)".*/\1/')
 
-.PHONY: help install install-gui test lint lint-fix clean sync release formula brew-upgrade gui gui-verbose app
+.PHONY: help install install-gui test test-one-off lint lint-fix clean sync release formula brew-upgrade gui gui-verbose app
 
 help: ## Show this help
 	@echo "storyboard-gen v$(CURRENT_VERSION)"
@@ -45,7 +45,14 @@ install-gui: install ## Install with GUI dependencies (PySide6)
 	@echo "Installed: $(LOCAL_BIN)/storyboard-gen-gui"
 
 test: ## Run all tests
-	$(PYTEST) tests/ -v
+	$(PYTEST) tests/regression/ -v
+
+test-one-off: ## Run one-off tests. Usage: make test-one-off [ISSUE=123]
+ifdef ISSUE
+	$(PYTEST) tests/one_off/ -v -k "$(ISSUE)"
+else
+	$(PYTEST) tests/one_off/ -v
+endif
 
 lint: ## Run Ruff linter and formatter check
 	$(RUFF) check src/ tests/

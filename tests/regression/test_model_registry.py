@@ -105,7 +105,7 @@ class TestGetAllModels:
 class TestRegistrySyncWithDocs:
     """Verify BACKEND_MODELS stays in sync with docs/models.md."""
 
-    _DOCS_PATH = Path(__file__).resolve().parent.parent / "docs" / "models.md"
+    _DOCS_PATH = Path(__file__).resolve().parent.parent.parent / "docs" / "models.md"
 
     # Section heading → backend mapping
     _SECTION_BACKENDS = {
