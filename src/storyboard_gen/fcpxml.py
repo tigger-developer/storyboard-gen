@@ -145,13 +145,15 @@ def _build_fcpxml(
         asset_attrs = {
             "id": asset_id,
             "name": f"scene_{format_scene_number(scene.number)}",
-            "src": _file_uri(clip_path),
             "start": "0s",
             "duration": "0s" if is_still else duration_rational,
             "hasVideo": "1",
             "format": format_id,
         }
-        ET.SubElement(resources, "asset", **asset_attrs)
+        asset_elem = ET.SubElement(resources, "asset", **asset_attrs)
+        ET.SubElement(
+            asset_elem, "media-rep", kind="original-media", src=_file_uri(clip_path)
+        )
         assets.append((asset_id, scene, duration_rational, is_still))
         asset_id_counter += 1
 
@@ -159,18 +161,20 @@ def _build_fcpxml(
     audio_asset_id = None
     if audio_path is not None:
         audio_asset_id = f"r{asset_id_counter}"
-        ET.SubElement(
+        audio_asset = ET.SubElement(
             resources,
             "asset",
             id=audio_asset_id,
             name=audio_path.stem,
-            src=_file_uri(audio_path),
             start="0s",
             duration="0s",
             hasAudio="1",
             audioSources="1",
             audioChannels="2",
             audioRate="48000",
+        )
+        ET.SubElement(
+            audio_asset, "media-rep", kind="original-media", src=_file_uri(audio_path)
         )
         asset_id_counter += 1
 

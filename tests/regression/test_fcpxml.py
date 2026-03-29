@@ -117,7 +117,14 @@ class TestFcpxmlStructure:
         assert root.get("version") == "1.11"
         assert root.find("resources") is not None
         assert root.find("resources/format") is not None
-        assert root.find("resources/asset") is not None
+        asset = root.find("resources/asset")
+        assert asset is not None
+        # DTD 1.11: src lives on media-rep, not on asset
+        assert asset.get("src") is None
+        media_rep = asset.find("media-rep")
+        assert media_rep is not None
+        assert media_rep.get("kind") == "original-media"
+        assert media_rep.get("src") is not None
         assert root.find("library") is not None
         assert root.find("library/event") is not None
         assert root.find("library/event/project") is not None
@@ -151,6 +158,11 @@ class TestFcpxmlStructure:
         assert asset.get("hasVideo") == "1"
         # Clip assets have non-zero duration
         assert asset.get("duration") != "0s"
+        # DTD 1.11: src on media-rep, not asset
+        assert asset.get("src") is None
+        media_rep = asset.find("media-rep")
+        assert media_rep is not None
+        assert media_rep.get("src") is not None
 
     @pytest.mark.regression(test_id="RT-003")
     def test_multi_scene_mixed_valid(self, tmp_path):
@@ -391,6 +403,11 @@ class TestAudioLane:
             a for a in root.findall("resources/asset") if a.get("hasAudio") == "1"
         ]
         assert len(audio_assets) == 1
+        # DTD 1.11: src on media-rep, not asset
+        assert audio_assets[0].get("src") is None
+        audio_mr = audio_assets[0].find("media-rep")
+        assert audio_mr is not None
+        assert audio_mr.get("src") is not None
         # Audio element on timeline
         audio_elems = tree.findall(".//audio")
         assert len(audio_elems) >= 1
