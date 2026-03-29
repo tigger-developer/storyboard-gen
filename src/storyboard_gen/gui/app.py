@@ -95,8 +95,8 @@ class MainWindow(QMainWindow):
         self._content_splitter.addWidget(self.preview)
         self._content_splitter.addWidget(self.yaml_editor)
         self._content_splitter.setStretchFactor(0, 1)
-        self._content_splitter.setStretchFactor(1, 2)
-        self._content_splitter.setStretchFactor(2, 2)
+        self._content_splitter.setStretchFactor(1, 1)
+        self._content_splitter.setStretchFactor(2, 1)
 
         # YAML editor hidden by default (toggleable like console)
         self.yaml_editor.setVisible(False)
@@ -772,6 +772,11 @@ class MainWindow(QMainWindow):
         self._update_actions_enabled()
         self._update_progress()
 
+    def showEvent(self, event) -> None:
+        """Equalize content panes on first show."""
+        super().showEvent(event)
+        self._equalize_content_panes()
+
     def closeEvent(self, event) -> None:
         """Save window layout and wait for workers before closing."""
         # Persist window geometry and splitter states (#119)
@@ -812,10 +817,45 @@ class MainWindow(QMainWindow):
 
     # ----- YAML editor toggle -----
 
+    def _equalize_content_panes(self) -> None:
+        """Set all visible content panes to equal width."""
+        from PySide6.QtWidgets import QSizePolicy
+
+        total = self._content_splitter.width()
+        if total <= 0:
+            return
+        count = self._content_splitter.count()
+        visible = sum(
+            1 for i in range(count) if not self._content_splitter.widget(i).isHidden()
+        )
+        if visible <= 0:
+            return
+        # Temporarily override size policies so setSizes can achieve equality
+        saved = []
+        for i in range(count):
+            w = self._content_splitter.widget(i)
+            saved.append((w.minimumWidth(), w.sizePolicy()))
+            w.setMinimumWidth(0)
+            policy = w.sizePolicy()
+            policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+            w.setSizePolicy(policy)
+        each = total // visible
+        sizes = [
+            each if not self._content_splitter.widget(i).isHidden() else 0
+            for i in range(count)
+        ]
+        self._content_splitter.setSizes(sizes)
+        # Restore original policies
+        for i in range(count):
+            w = self._content_splitter.widget(i)
+            w.setMinimumWidth(saved[i][0])
+            w.setSizePolicy(saved[i][1])
+
     def _on_toggle_yaml(self) -> None:
         """Toggle the YAML editor pane visibility."""
         currently_hidden = self.yaml_editor.isHidden()
         self.yaml_editor.setVisible(currently_hidden)
+        self._equalize_content_panes()
 
     def _on_save_yaml(self) -> None:
         """Save the scene YAML editor if it is visible and has unsaved changes."""

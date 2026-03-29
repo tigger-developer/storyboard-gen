@@ -3454,7 +3454,7 @@ class TestQuotedSceneNumbers:
 
         yaml_path = tmp_path / "project.yaml"
         yaml_path.write_text(
-            "title: \"Test\"\nscenes:\n"
+            'title: "Test"\nscenes:\n'
             "  - number: '10a'\n    title: \"Quoted scene\"\n    type: still\n"
             "    duration: 3\n    prompt: >\n      A test.\n"
         )
@@ -3470,7 +3470,7 @@ class TestQuotedSceneNumbers:
         yaml_path = tmp_path / "project.yaml"
         yaml_path.write_text(
             'title: "Test"\nscenes:\n'
-            "  - number: 10a\n    title: \"Unquoted scene\"\n    type: still\n"
+            '  - number: 10a\n    title: "Unquoted scene"\n    type: still\n'
             "    duration: 3\n    prompt: >\n      A test.\n"
         )
 
@@ -3488,7 +3488,7 @@ class TestQuotedSceneNumbers:
         yaml_path = tmp_path / "project.yaml"
         yaml_path.write_text(
             'title: "Test"\nscenes:\n'
-            "  - number: 1\n    title: \"Only scene\"\n    type: still\n"
+            '  - number: 1\n    title: "Only scene"\n    type: still\n'
             "    duration: 3\n    prompt: >\n      A test.\n"
         )
 
@@ -7669,3 +7669,105 @@ class TestYamlEditorComboSaveWorkflow:
 
         # Verify model was injected into YAML text
         assert new_model in editor.text_edit.toPlainText()
+
+
+class TestEqualWidthContentPanes:
+    """Equal-width default for content panes when YAML editor is toggled (#130)."""
+
+    @staticmethod
+    def _assert_sizes_equal(sizes, *, tolerance=1):
+        """Assert all sizes in the list are equal within pixel tolerance.
+
+        Qt splitters distribute integer pixels — a ±1px difference is
+        unavoidable when the total doesn't divide evenly.
+        """
+        for i in range(1, len(sizes)):
+            assert abs(sizes[0] - sizes[i]) <= tolerance, (
+                f"Pane sizes not equal within {tolerance}px: {sizes}"
+            )
+
+    @pytest.mark.regression(test_id="RT-026")
+    def test_toggle_yaml_on_equalizes_three_panes(self, qtbot, gui_project_dir):
+        """RT-026: Toggling YAML editor on gives all three panes equal width."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+        window.resize(900, 600)
+        window.show()
+        qtbot.waitExposed(window)
+
+        # Act — toggle YAML editor on
+        window._on_toggle_yaml()
+
+        # Assert — all three splitter sizes equal and non-zero
+        sizes = window._content_splitter.sizes()
+        assert len(sizes) == 3
+        assert sizes[0] > 0
+        self._assert_sizes_equal(sizes)
+
+    @pytest.mark.regression(test_id="RT-027")
+    def test_equalize_content_panes_three_visible(self, qtbot, gui_project_dir):
+        """RT-027: _equalize_content_panes() directly gives three equal panes."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+        window.resize(900, 600)
+        window.show()
+        qtbot.waitExposed(window)
+
+        # Arrange — make YAML editor visible with unequal sizes
+        window.yaml_editor.setVisible(True)
+        window._content_splitter.setSizes([100, 400, 400])
+
+        # Act
+        window._equalize_content_panes()
+
+        # Assert
+        sizes = window._content_splitter.sizes()
+        assert sizes[0] > 0
+        self._assert_sizes_equal(sizes)
+
+    @pytest.mark.regression(test_id="RT-028")
+    def test_toggle_yaml_off_equalizes_two_panes(self, qtbot, gui_project_dir):
+        """RT-028: Toggling YAML editor off gives both remaining panes equal width."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+        window.resize(900, 600)
+        window.show()
+        qtbot.waitExposed(window)
+
+        # Arrange — show then hide
+        window._on_toggle_yaml()
+        window._on_toggle_yaml()
+
+        # Assert — two visible panes with equal sizes
+        sizes = window._content_splitter.sizes()
+        visible_sizes = [s for s in sizes if s > 0]
+        assert len(visible_sizes) == 2
+        self._assert_sizes_equal(visible_sizes)
+
+    @pytest.mark.regression(test_id="RT-029")
+    def test_initial_state_two_panes_equal(self, qtbot, gui_project_dir):
+        """RT-029: Initial state with YAML editor hidden has two equal panes."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+        window.resize(900, 600)
+        window.show()
+        qtbot.waitExposed(window)
+
+        # Assert — initial state: YAML editor hidden, two equal panes
+        assert window.yaml_editor.isHidden()
+        sizes = window._content_splitter.sizes()
+        visible_sizes = [s for s in sizes if s > 0]
+        assert len(visible_sizes) == 2
+        self._assert_sizes_equal(visible_sizes)
