@@ -210,12 +210,13 @@ def _build_fcpxml(
         tcStart="0s",
         tcFormat="NDF",
         audioLayout="stereo",
-        audioRate="48000",
+        audioRate="48k",
     )
     spine = ET.SubElement(sequence, "spine")
 
     # Place clips on the spine
     offset_seconds = 0.0
+    subtitle_counter = 0
     for asset_id, scene, duration_rational, is_still in assets:
         offset_rational = _rational_time(offset_seconds, fps)
         clip = ET.SubElement(
@@ -270,10 +271,12 @@ def _build_fcpxml(
                             duration=_rational_time(local_duration, fps),
                             name="Subtitle",
                         )
+                        subtitle_counter += 1
+                        ts_id = f"ts{subtitle_counter}"
                         text_elem = ET.SubElement(title, "text")
-                        ts = ET.SubElement(text_elem, "text-style", ref="ts1")
+                        ts = ET.SubElement(text_elem, "text-style", ref=ts_id)
                         ts.text = cue_text
-                        ts_def = ET.SubElement(title, "text-style-def", id="ts1")
+                        ts_def = ET.SubElement(title, "text-style-def", id=ts_id)
                         ET.SubElement(
                             ts_def,
                             "text-style",

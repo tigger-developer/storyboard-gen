@@ -479,6 +479,9 @@ class TestSubtitles:
         effects = tree.findall(".//resources/effect")
         assert len(effects) == 1
         assert effects[0].get("name") == "Basic Title"
+        # text-style-def IDs must be unique across the document
+        ts_ids = [d.get("id") for d in tree.findall(".//text-style-def")]
+        assert len(ts_ids) == len(set(ts_ids)), f"Duplicate text-style-def IDs: {ts_ids}"
 
     @pytest.mark.regression(test_id="RT-016")
     def test_no_subtitles(self, tmp_path):
