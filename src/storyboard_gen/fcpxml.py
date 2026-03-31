@@ -267,12 +267,10 @@ def _build_fcpxml(
                 audioRole="dialogue",
             )
 
-        # Ken Burns transform (stills only)
+        # Ken Burns crop (stills only)
         ken_burns = scene.ken_burns if is_still else None
         if ken_burns and ken_burns != "static":
-            _add_ken_burns_transform(
-                clip, ken_burns, width, height, scene.duration, fps
-            )
+            _add_ken_burns_crop(clip, ken_burns, width, height)
 
         # Audio lane (attached to first clip only, spanning full timeline)
         if audio_asset_id is not None and offset_seconds == 0.0:
@@ -326,88 +324,81 @@ def _build_fcpxml(
     return root
 
 
-def _add_ken_burns_transform(
+def _add_ken_burns_crop(
     clip: ET.Element,
     ken_burns: str,
     width: int,
     height: int,
-    duration: float,
-    fps: int,
 ) -> None:
-    """Add FCP-native transform keyframes for Ken Burns effects.
+    """Add FCP-native Ken Burns effect using adjust-crop pan mode.
 
-    Uses adjust-transform with keyframed scale and position parameters.
+    FCP represents Ken Burns as ``<adjust-crop mode="pan">`` with two
+    ``<pan-rect>`` children defining start and end crop rectangles.
+    Values are percentage insets from each edge: left, top, right, bottom.
+    Full frame = all zeros; zoomed = positive insets.
     """
-    duration_rational = _rational_time(duration, fps)
+    # For a 1.2x scale, the cropped region is 1/1.2 = 83.3% of the frame.
+    # Inset on each side = (1 - 1/scale) / 2 * 100
+    inset_pct = (1 - 1 / _KB_SCALE) / 2 * 100
+    # Horizontal and vertical insets may differ for panning
+    h_inset = round(inset_pct, 4)
+    v_inset = round(inset_pct, 4)
+
+    # Full frame (no crop)
+    full = {"left": "0", "top": "0", "right": "0", "bottom": "0"}
+    # Uniformly cropped (zoomed in)
+    zoomed = {
+        "left": str(h_inset),
+        "top": str(v_inset),
+        "right": str(h_inset),
+        "bottom": str(v_inset),
+    }
 
     if ken_burns == "zoom_in":
-        start_scale = "1 1"
-        end_scale = f"{_KB_SCALE} {_KB_SCALE}"
-        start_pos = "0 0"
-        end_pos = "0 0"
+        # Start full, end zoomed
+        start_rect = full
+        end_rect = zoomed
     elif ken_burns == "zoom_out":
-        start_scale = f"{_KB_SCALE} {_KB_SCALE}"
-        end_scale = "1 1"
-        start_pos = "0 0"
-        end_pos = "0 0"
+        # Start zoomed, end full
+        start_rect = zoomed
+        end_rect = full
     elif ken_burns == "pan_ltr":
-        pan_offset = round(width * (_KB_SCALE - 1) / 2)
-        start_scale = f"{_KB_SCALE} {_KB_SCALE}"
-        end_scale = f"{_KB_SCALE} {_KB_SCALE}"
-        start_pos = f"{-pan_offset} 0"
-        end_pos = f"{pan_offset} 0"
+        # Pan left to right: start cropped on left, end cropped on right
+        h_total = h_inset * 2
+        start_rect = {
+            "left": str(round(h_total, 4)),
+            "top": str(v_inset),
+            "right": "0",
+            "bottom": str(v_inset),
+        }
+        end_rect = {
+            "left": "0",
+            "top": str(v_inset),
+            "right": str(round(h_total, 4)),
+            "bottom": str(v_inset),
+        }
     elif ken_burns == "pan_rtl":
-        pan_offset = round(width * (_KB_SCALE - 1) / 2)
-        start_scale = f"{_KB_SCALE} {_KB_SCALE}"
-        end_scale = f"{_KB_SCALE} {_KB_SCALE}"
-        start_pos = f"{pan_offset} 0"
-        end_pos = f"{-pan_offset} 0"
+        # Pan right to left: start cropped on right, end cropped on left
+        h_total = h_inset * 2
+        start_rect = {
+            "left": "0",
+            "top": str(v_inset),
+            "right": str(round(h_total, 4)),
+            "bottom": str(v_inset),
+        }
+        end_rect = {
+            "left": str(round(h_total, 4)),
+            "top": str(v_inset),
+            "right": "0",
+            "bottom": str(v_inset),
+        }
     else:
-        logger.warning("Unknown ken_burns value %r, skipping transform", ken_burns)
+        logger.warning("Unknown ken_burns value %r, skipping crop", ken_burns)
         return
 
-    transform = ET.SubElement(
-        clip,
-        "adjust-transform",
-        position=start_pos,
-        scale=start_scale,
-    )
-
-    # Scale keyframes
-    scale_param = ET.SubElement(
-        transform, "param", name="scale", key="1", value=start_scale
-    )
-    scale_anim = ET.SubElement(scale_param, "keyframeAnimation")
-    ET.SubElement(
-        scale_anim,
-        "keyframe",
-        time="0s",
-        value=start_scale,
-    )
-    ET.SubElement(
-        scale_anim,
-        "keyframe",
-        time=duration_rational,
-        value=end_scale,
-    )
-
-    # Position keyframes
-    pos_param = ET.SubElement(
-        transform, "param", name="position", key="2", value=start_pos
-    )
-    pos_anim = ET.SubElement(pos_param, "keyframeAnimation")
-    ET.SubElement(
-        pos_anim,
-        "keyframe",
-        time="0s",
-        value=start_pos,
-    )
-    ET.SubElement(
-        pos_anim,
-        "keyframe",
-        time=duration_rational,
-        value=end_pos,
-    )
+    crop = ET.SubElement(clip, "adjust-crop", mode="pan")
+    ET.SubElement(crop, "pan-rect", **start_rect)
+    ET.SubElement(crop, "pan-rect", **end_rect)
 
 
 def _parse_subtitles(subtitles_path: Path) -> list[tuple[float, float, str]]:

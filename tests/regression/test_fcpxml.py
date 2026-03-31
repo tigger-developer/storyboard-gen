@@ -298,10 +298,10 @@ class TestTimelinePlacement:
 # ---- AC131.3: Ken Burns transforms ----
 
 
-class TestKenBurnsTransform:
-    """AC131.3: Ken Burns effects as FCP-native transforms."""
+class TestKenBurnsCrop:
+    """AC131.3: Ken Burns effects as FCP-native adjust-crop pan mode."""
 
-    def _get_transform(self, tmp_path, ken_burns):
+    def _get_crop(self, tmp_path, ken_burns):
         """Helper: generate FCPXML with a single still and given ken_burns."""
         scenes = [
             {
@@ -318,70 +318,70 @@ class TestKenBurnsTransform:
         output_dir = project_dir / "output"
         result = generate_fcpxml(project, output_dir)
         tree = ET.parse(result)
-        # Stills use <video> element
         clip = tree.find(".//video")
-        return clip.find("adjust-transform")
+        return clip.find("adjust-crop")
 
     @pytest.mark.regression(test_id="RT-007")
-    def test_zoom_in_increasing_scale(self, tmp_path):
-        """RT-007: zoom_in → transform keyframes with increasing scale."""
-        transform = self._get_transform(tmp_path, "zoom_in")
-        assert transform is not None
-        scale_param = transform.find("param[@name='scale']")
-        assert scale_param is not None
-        keyframes = scale_param.findall(".//keyframe")
-        assert len(keyframes) == 2
-        assert keyframes[0].get("value") == "1 1"
-        assert keyframes[1].get("value") == "1.2 1.2"
+    def test_zoom_in_start_full_end_cropped(self, tmp_path):
+        """RT-007: zoom_in → start full frame, end cropped (zoomed in)."""
+        crop = self._get_crop(tmp_path, "zoom_in")
+        assert crop is not None
+        assert crop.get("mode") == "pan"
+        rects = crop.findall("pan-rect")
+        assert len(rects) == 2
+        # Start: full frame (all zeros)
+        assert rects[0].get("left") == "0"
+        assert rects[0].get("top") == "0"
+        # End: cropped (positive insets)
+        assert float(rects[1].get("left")) > 0
+        assert float(rects[1].get("top")) > 0
 
     @pytest.mark.regression(test_id="RT-008")
-    def test_zoom_out_decreasing_scale(self, tmp_path):
-        """RT-008: zoom_out → transform keyframes with decreasing scale."""
-        transform = self._get_transform(tmp_path, "zoom_out")
-        assert transform is not None
-        scale_param = transform.find("param[@name='scale']")
-        keyframes = scale_param.findall(".//keyframe")
-        assert keyframes[0].get("value") == "1.2 1.2"
-        assert keyframes[1].get("value") == "1 1"
+    def test_zoom_out_start_cropped_end_full(self, tmp_path):
+        """RT-008: zoom_out → start cropped (zoomed in), end full frame."""
+        crop = self._get_crop(tmp_path, "zoom_out")
+        assert crop is not None
+        rects = crop.findall("pan-rect")
+        # Start: cropped
+        assert float(rects[0].get("left")) > 0
+        assert float(rects[0].get("top")) > 0
+        # End: full frame
+        assert rects[1].get("left") == "0"
+        assert rects[1].get("top") == "0"
 
     @pytest.mark.regression(test_id="RT-009")
-    def test_pan_ltr_position_shift(self, tmp_path):
-        """RT-009: pan_ltr → left-to-right position keyframes."""
-        transform = self._get_transform(tmp_path, "pan_ltr")
-        assert transform is not None
-        pos_param = transform.find("param[@name='position']")
-        keyframes = pos_param.findall(".//keyframe")
-        start_x = int(keyframes[0].get("value").split()[0])
-        end_x = int(keyframes[1].get("value").split()[0])
-        # Pan left-to-right: start position is negative, end is positive
-        assert start_x < 0
-        assert end_x > 0
+    def test_pan_ltr_crop_shifts_right(self, tmp_path):
+        """RT-009: pan_ltr → start cropped on left, end cropped on right."""
+        crop = self._get_crop(tmp_path, "pan_ltr")
+        assert crop is not None
+        rects = crop.findall("pan-rect")
+        # Start: left inset > right inset
+        assert float(rects[0].get("left")) > float(rects[0].get("right"))
+        # End: right inset > left inset
+        assert float(rects[1].get("right")) > float(rects[1].get("left"))
 
     @pytest.mark.regression(test_id="RT-010")
-    def test_pan_rtl_position_shift(self, tmp_path):
-        """RT-010: pan_rtl → right-to-left position keyframes."""
-        transform = self._get_transform(tmp_path, "pan_rtl")
-        assert transform is not None
-        pos_param = transform.find("param[@name='position']")
-        keyframes = pos_param.findall(".//keyframe")
-        start_x = int(keyframes[0].get("value").split()[0])
-        end_x = int(keyframes[1].get("value").split()[0])
-        # Pan right-to-left: start position is positive, end is negative
-        assert start_x > 0
-        assert end_x < 0
+    def test_pan_rtl_crop_shifts_left(self, tmp_path):
+        """RT-010: pan_rtl → start cropped on right, end cropped on left."""
+        crop = self._get_crop(tmp_path, "pan_rtl")
+        assert crop is not None
+        rects = crop.findall("pan-rect")
+        # Start: right inset > left inset
+        assert float(rects[0].get("right")) > float(rects[0].get("left"))
+        # End: left inset > right inset
+        assert float(rects[1].get("left")) > float(rects[1].get("right"))
 
     @pytest.mark.regression(test_id="RT-011")
-    def test_static_no_transform(self, tmp_path):
-        """RT-011: static or absent ken_burns → no transform keyframes."""
+    def test_static_no_crop(self, tmp_path):
+        """RT-011: static or absent ken_burns → no adjust-crop element."""
         static_dir = tmp_path / "static"
         static_dir.mkdir()
-        transform = self._get_transform(static_dir, "static")
-        assert transform is None
-        # Also test None
+        crop = self._get_crop(static_dir, "static")
+        assert crop is None
         none_dir = tmp_path / "none"
         none_dir.mkdir()
-        transform_none = self._get_transform(none_dir, None)
-        assert transform_none is None
+        crop_none = self._get_crop(none_dir, None)
+        assert crop_none is None
 
 
 # ---- AC131.4: Audio lane ----
