@@ -383,16 +383,12 @@ def _add_ken_burns_transform(
         "keyframe",
         time="0s",
         value=start_scale,
-        interp="easeOut",
-        curve="smooth",
     )
     ET.SubElement(
         scale_anim,
         "keyframe",
         time=duration_rational,
         value=end_scale,
-        interp="easeIn",
-        curve="smooth",
     )
 
     # Position keyframes
@@ -405,16 +401,12 @@ def _add_ken_burns_transform(
         "keyframe",
         time="0s",
         value=start_pos,
-        interp="easeOut",
-        curve="smooth",
     )
     ET.SubElement(
         pos_anim,
         "keyframe",
         time=duration_rational,
         value=end_pos,
-        interp="easeIn",
-        curve="smooth",
     )
 
 
