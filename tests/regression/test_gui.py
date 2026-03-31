@@ -7771,3 +7771,62 @@ class TestEqualWidthContentPanes:
         visible_sizes = [s for s in sizes if s > 0]
         assert len(visible_sizes) == 2
         self._assert_sizes_equal(visible_sizes)
+
+
+class TestOutputFilenameConsistency:
+    """AC132.2: GUI default filenames match CLI snake_case convention (#132)."""
+
+    @pytest.mark.regression(test_id="RT-032")
+    def test_output_dialog_default_is_snake_case(self, qtbot, gui_project_dir):
+        """RT-032: GUI OutputDialog default_title uses filename_stem."""
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # The project title from gui_project_dir fixture
+        stem = window._project.filename_stem
+        assert stem == stem.replace(" ", "_").lower()
+
+    @pytest.mark.regression(test_id="RT-033")
+    def test_gui_kdenlive_fallback_is_snake_case(self, qtbot, gui_project_dir):
+        """RT-033: GUI _run_kdenlive fallback filename is snake_case."""
+        from unittest.mock import patch
+
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Call _run_kdenlive with empty options to trigger fallback
+        with patch("storyboard_gen.kdenlive.generate_kdenlive") as mock_gen:
+            mock_gen.return_value = (
+                gui_project_dir / "output" / "final" / "test.kdenlive"
+            )
+            window._run_kdenlive({"preview": True})
+            call_kwargs = mock_gen.call_args
+            filename = call_kwargs[1]["output_filename"]
+            assert " " not in filename
+            assert filename == f"{window._project.filename_stem}.kdenlive"
+
+    @pytest.mark.regression(test_id="RT-034")
+    def test_gui_fcpxml_fallback_is_snake_case(self, qtbot, gui_project_dir):
+        """RT-034: GUI _run_fcpxml fallback filename is snake_case."""
+        from unittest.mock import patch
+
+        from storyboard_gen.gui.app import MainWindow
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.open_project(gui_project_dir)
+
+        # Call _run_fcpxml with empty options to trigger fallback
+        with patch("storyboard_gen.fcpxml.generate_fcpxml") as mock_gen:
+            mock_gen.return_value = gui_project_dir / "output" / "final" / "test.fcpxml"
+            window._run_fcpxml({"preview": True})
+            call_kwargs = mock_gen.call_args
+            filename = call_kwargs[1]["output_filename"]
+            assert " " not in filename
+            assert filename == f"{window._project.filename_stem}.fcpxml"

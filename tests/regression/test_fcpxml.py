@@ -674,3 +674,34 @@ class TestGuiIntegration:
         # Start with kdenlive (default), switch to fcpxml
         dialog._radio_fcpxml.setChecked(True)
         assert dialog._filename_edit.text().endswith(".fcpxml")
+
+
+class TestFcpxmlDefaultFilename:
+    """AC132.1: CLI fcpxml default filename is snake_case (#132)."""
+
+    @pytest.mark.regression(test_id="RT-031")
+    def test_cli_fcpxml_default_filename_snake_case(self, tmp_path):
+        """RT-031: CLI fcpxml with multi-word title → snake_case filename."""
+        scenes = [
+            {
+                "number": 1,
+                "title": "Opening",
+                "type": "still",
+                "duration": 5,
+                "prompt": "A scene.",
+            },
+        ]
+        project_dir = _make_project_dir(tmp_path, scenes=scenes)
+        # Override title to multi-word
+        import yaml as _yaml
+
+        data = _yaml.safe_load((project_dir / "project.yaml").read_text())
+        data["title"] = "My Great Project"
+        (project_dir / "project.yaml").write_text(_yaml.dump(data))
+
+        project = _load_project_from(project_dir)
+        output_dir = project_dir / "output"
+        result = generate_fcpxml(project, output_dir)
+
+        # Assert — filename is snake_case
+        assert result.name == "my_great_project.fcpxml"

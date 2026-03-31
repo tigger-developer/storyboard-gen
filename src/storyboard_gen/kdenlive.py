@@ -52,7 +52,7 @@ def generate_kdenlive(
             )
 
     if output_filename is None:
-        output_filename = f"{project.title}.kdenlive"
+        output_filename = f"{project.filename_stem}.kdenlive"
 
     final_dir = output_dir / "final"
     final_dir.mkdir(parents=True, exist_ok=True)

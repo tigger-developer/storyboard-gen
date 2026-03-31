@@ -98,6 +98,11 @@ class Project:
     audio: Path | None = None
     subtitles: Path | None = None
 
+    @property
+    def filename_stem(self) -> str:
+        """Return a filesystem-safe snake_case version of the project title."""
+        return self.title.replace(" ", "_").lower()
+
     def get_scene(self, number: str) -> Scene:
         """Return a scene by number. Raises ValueError if not found."""
         lookup = str(number)

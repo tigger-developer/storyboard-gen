@@ -880,7 +880,7 @@ class MainWindow(QMainWindow):
         if not self._project:
             return
 
-        default_title = self._project.title.replace(" ", "_").lower()
+        default_title = self._project.filename_stem
         dialog = OutputDialog(default_title=default_title, parent=self)
         if dialog.exec():
             options = dialog.get_options()
@@ -978,7 +978,9 @@ class MainWindow(QMainWindow):
                         )
                         subtitles_path = None
 
-            output_filename = options.get("output", f"{self._project.title}.kdenlive")
+            output_filename = options.get(
+                "output", f"{self._project.filename_stem}.kdenlive"
+            )
 
             output_path = generate_kdenlive(
                 self._project,
@@ -1026,7 +1028,9 @@ class MainWindow(QMainWindow):
                         )
                         subtitles_path = None
 
-            output_filename = options.get("output", f"{self._project.title}.fcpxml")
+            output_filename = options.get(
+                "output", f"{self._project.filename_stem}.fcpxml"
+            )
 
             output_path = generate_fcpxml(
                 self._project,

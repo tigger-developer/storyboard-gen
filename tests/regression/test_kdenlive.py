@@ -445,8 +445,8 @@ class TestGenerateKdenlive:
         # Act
         result = generate_kdenlive(project, output_dir)
 
-        # Assert — default filename derived from project title
-        assert result.name == "Kdenlive Test.kdenlive"
+        # Assert — default filename is snake_case from project title
+        assert result.name == "kdenlive_test.kdenlive"
 
     def test_custom_output_filename(self, tmp_path):
         # Arrange
@@ -1630,3 +1630,35 @@ class TestProbeAudio:
 
         # Assert
         assert result is None
+
+
+class TestKdenliveDefaultFilename:
+    """AC132.1: CLI kdenlive default filename is snake_case (#132)."""
+
+    @pytest.mark.regression(test_id="RT-030")
+    def test_cli_kdenlive_default_filename_snake_case(self, tmp_path):
+        """RT-030: CLI kdenlive with multi-word title → snake_case filename."""
+        scenes = [
+            {
+                "number": 1,
+                "title": "Opening",
+                "type": "still",
+                "duration": 5,
+                "prompt": "A scene.",
+            },
+        ]
+        data = {
+            "title": "My Great Project",
+            "aspect_ratio": "9:16",
+            "scenes": scenes,
+        }
+        (tmp_path / "project.yaml").write_text(yaml.dump(data))
+        output = tmp_path / "output"
+        (output / "stills").mkdir(parents=True)
+        (output / "stills" / "scene_01.png").write_bytes(b"fake")
+
+        project = _load_project_from(tmp_path)
+        result = generate_kdenlive(project, output)
+
+        # Assert — filename is snake_case
+        assert result.name == "my_great_project.kdenlive"
