@@ -272,7 +272,7 @@ def _build_fcpxml(
         if ken_burns and ken_burns != "static":
             _add_ken_burns_crop(clip, ken_burns, width, height)
 
-        # Audio lane (attached to first clip only, spanning full timeline)
+        # Audio lane (attached to first clip, spanning full timeline)
         if audio_asset_id is not None and offset_seconds == 0.0:
             ET.SubElement(
                 clip,
@@ -282,7 +282,7 @@ def _build_fcpxml(
                 offset="0s",
                 duration=total_rational,
                 start="0s",
-                role="music",
+                role="music.music-1",
             )
 
         # Subtitle titles (attached to clips they overlap)

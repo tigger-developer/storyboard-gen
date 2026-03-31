@@ -419,6 +419,7 @@ class TestAudioLane:
         audio_elems = tree.findall(".//audio")
         assert len(audio_elems) >= 1
         assert audio_elems[0].get("lane") == "-1"
+        assert audio_elems[0].get("role") == "music.music-1"
 
     @pytest.mark.regression(test_id="RT-013")
     def test_no_audio_path(self, tmp_path):
