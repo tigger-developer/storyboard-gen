@@ -1,7 +1,8 @@
 # ABOUTME: Final Cut Pro FCPXML project file generator for storyboard-gen.
-# ABOUTME: Exports an FCPXML 1.11 project for timeline editing with Ken Burns transform effects.
+# ABOUTME: Exports an FCPXML 1.14 project for timeline editing with Ken Burns transform effects.
 
 import logging
+import uuid
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -12,11 +13,15 @@ from storyboard_gen.models import Project, Scene, format_scene_number
 
 logger = logging.getLogger(__name__)
 
-# FCPXML version targeting Final Cut Pro 10.7+
-_FCPXML_VERSION = "1.11"
+# FCPXML version targeting Final Cut Pro 12 (Creator Studio)
+_FCPXML_VERSION = "1.14"
 
 # Scale factor for pan/zoom effects (matches ken_burns.py's 1.2x)
 _KB_SCALE = 1.2
+
+# FCP uses a large start offset for stills placed on the timeline.
+# This matches the value observed in FCP 12 exports.
+_STILL_START = "3600s"
 
 
 def generate_fcpxml(
@@ -63,7 +68,12 @@ def generate_fcpxml(
     dom = xml.dom.minidom.parseString(rough_string)
     pretty_xml = dom.toprettyxml(indent="  ", encoding=None)
 
-    output_path.write_text(pretty_xml)
+    # Insert DOCTYPE and fix encoding in XML declaration
+    lines = pretty_xml.split("\n", 1)
+    xml_decl = '<?xml version="1.0" encoding="UTF-8"?>'
+    output_text = xml_decl + "\n<!DOCTYPE fcpxml>\n" + lines[1]
+
+    output_path.write_text(output_text, encoding="utf-8")
     logger.info("FCPXML project: %s", output_path)
     return output_path
 
@@ -101,6 +111,11 @@ def _file_uri(path: Path) -> str:
     return "file://" + quote(abs_path, safe="/:")
 
 
+def _make_uid() -> str:
+    """Generate a UUID string for FCPXML uid attributes."""
+    return str(uuid.uuid4()).upper()
+
+
 # AssetInfo: (asset_id, scene, duration_rational, is_still)
 AssetInfo = tuple[str, Scene, str, bool]
 
@@ -126,7 +141,6 @@ def _build_fcpxml(
         resources,
         "format",
         id=format_id,
-        name=f"FFVideoFormat{height}p{fps}",
         frameDuration=_frame_duration(fps),
         width=str(width),
         height=str(height),
@@ -145,11 +159,18 @@ def _build_fcpxml(
         asset_attrs = {
             "id": asset_id,
             "name": f"scene_{format_scene_number(scene.number)}",
+            "uid": _make_uid().replace("-", ""),
             "start": "0s",
             "duration": "0s" if is_still else duration_rational,
             "hasVideo": "1",
             "format": format_id,
+            "videoSources": "1",
         }
+        if not is_still:
+            asset_attrs["hasAudio"] = "1"
+            asset_attrs["audioSources"] = "1"
+            asset_attrs["audioChannels"] = "2"
+            asset_attrs["audioRate"] = "48000"
         asset_elem = ET.SubElement(resources, "asset", **asset_attrs)
         ET.SubElement(
             asset_elem, "media-rep", kind="original-media", src=_file_uri(clip_path)
@@ -166,6 +187,7 @@ def _build_fcpxml(
             "asset",
             id=audio_asset_id,
             name=audio_path.stem,
+            uid=_make_uid().replace("-", ""),
             start="0s",
             duration="0s",
             hasAudio="1",
@@ -200,8 +222,8 @@ def _build_fcpxml(
 
     # Library → Event → Project → Sequence → Spine
     library = ET.SubElement(root, "library")
-    event = ET.SubElement(library, "event", name=project.title)
-    proj = ET.SubElement(event, "project", name=project.title)
+    event = ET.SubElement(library, "event", name=project.title, uid=_make_uid())
+    proj = ET.SubElement(event, "project", name=project.title, uid=_make_uid())
     sequence = ET.SubElement(
         proj,
         "sequence",
@@ -219,16 +241,31 @@ def _build_fcpxml(
     subtitle_counter = 0
     for asset_id, scene, duration_rational, is_still in assets:
         offset_rational = _rational_time(offset_seconds, fps)
-        clip = ET.SubElement(
-            spine,
-            "asset-clip",
-            ref=asset_id,
-            offset=offset_rational,
-            duration=duration_rational,
-            start="0s",
-            format=format_id,
-            name=scene.title,
-        )
+
+        if is_still:
+            # FCP uses <video> for still images on the spine
+            clip = ET.SubElement(
+                spine,
+                "video",
+                ref=asset_id,
+                offset=offset_rational,
+                name=scene.title,
+                start=_STILL_START,
+                duration=duration_rational,
+            )
+        else:
+            # FCP uses <asset-clip> for video clips
+            clip = ET.SubElement(
+                spine,
+                "asset-clip",
+                ref=asset_id,
+                offset=offset_rational,
+                name=scene.title,
+                duration=duration_rational,
+                format=format_id,
+                tcFormat="NDF",
+                audioRole="dialogue",
+            )
 
         # Ken Burns transform (stills only)
         ken_burns = scene.ken_burns if is_still else None
@@ -255,9 +292,7 @@ def _build_fcpxml(
             for cue_start, cue_end, cue_text in subtitle_cues:
                 clip_start = offset_seconds
                 clip_end = offset_seconds + scene.duration
-                # Check if cue overlaps this clip
                 if cue_start < clip_end and cue_end > clip_start:
-                    # Offset within this clip
                     local_start = max(0.0, cue_start - clip_start)
                     local_end = min(scene.duration, cue_end - clip_start)
                     local_duration = local_end - local_start

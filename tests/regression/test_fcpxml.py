@@ -114,12 +114,12 @@ class TestFcpxmlStructure:
         tree = ET.parse(result)
         root = tree.getroot()
         assert root.tag == "fcpxml"
-        assert root.get("version") == "1.11"
+        assert root.get("version") == "1.14"
         assert root.find("resources") is not None
         assert root.find("resources/format") is not None
         asset = root.find("resources/asset")
         assert asset is not None
-        # DTD 1.11: src lives on media-rep, not on asset
+        # src lives on media-rep, not on asset
         assert asset.get("src") is None
         media_rep = asset.find("media-rep")
         assert media_rep is not None
@@ -158,7 +158,7 @@ class TestFcpxmlStructure:
         assert asset.get("hasVideo") == "1"
         # Clip assets have non-zero duration
         assert asset.get("duration") != "0s"
-        # DTD 1.11: src on media-rep, not asset
+        # src on media-rep, not asset
         assert asset.get("src") is None
         media_rep = asset.find("media-rep")
         assert media_rep is not None
@@ -180,8 +180,10 @@ class TestFcpxmlStructure:
         assets = root.findall("resources/asset")
         assert len(assets) == 3
         spine = root.find("library/event/project/sequence/spine")
-        clips = spine.findall("asset-clip")
-        assert len(clips) == 3
+        # Stills use <video>, clips use <asset-clip>
+        videos = spine.findall("video")
+        asset_clips = spine.findall("asset-clip")
+        assert len(videos) + len(asset_clips) == 3
 
 
 # ---- AC131.2: Timeline placement and duration ----
@@ -219,7 +221,8 @@ class TestTimelinePlacement:
         # Assert
         tree = ET.parse(result)
         spine = tree.find(".//spine")
-        clips = spine.findall("asset-clip")
+        # Stills use <video> elements
+        clips = spine.findall("video")
         assert clips[0].get("offset") == "0s"
         assert clips[0].get("duration") == _rational_time(3, 30)
         assert clips[1].get("offset") == _rational_time(3, 30)
@@ -246,7 +249,8 @@ class TestTimelinePlacement:
 
         # Assert
         tree = ET.parse(result)
-        clip = tree.find(".//asset-clip")
+        # Still uses <video> element
+        clip = tree.find(".//video")
         # 7.5s * 30fps = 225 frames → 225 * 100 / 3000 = 22500/3000s
         assert clip.get("duration") == "22500/3000s"
 
@@ -285,7 +289,9 @@ class TestTimelinePlacement:
 
         # Assert
         tree = ET.parse(result)
-        clips = tree.findall(".//spine/asset-clip")
+        spine = tree.find(".//spine")
+        # Stills are <video>, clips are <asset-clip> — collect all in order
+        clips = list(spine)
         assert [c.get("name") for c in clips] == ["Alpha", "Beta", "Gamma"]
 
 
@@ -312,7 +318,8 @@ class TestKenBurnsTransform:
         output_dir = project_dir / "output"
         result = generate_fcpxml(project, output_dir)
         tree = ET.parse(result)
-        clip = tree.find(".//asset-clip")
+        # Stills use <video> element
+        clip = tree.find(".//video")
         return clip.find("adjust-transform")
 
     @pytest.mark.regression(test_id="RT-007")
@@ -398,13 +405,13 @@ class TestAudioLane:
         # Assert
         tree = ET.parse(result)
         root = tree.getroot()
-        # Audio asset in resources
+        # Audio-only asset in resources (hasAudio but no hasVideo)
         audio_assets = [
-            a for a in root.findall("resources/asset") if a.get("hasAudio") == "1"
+            a
+            for a in root.findall("resources/asset")
+            if a.get("hasAudio") == "1" and a.get("hasVideo") is None
         ]
         assert len(audio_assets) == 1
-        # DTD 1.11: src on media-rep, not asset
-        assert audio_assets[0].get("src") is None
         audio_mr = audio_assets[0].find("media-rep")
         assert audio_mr is not None
         assert audio_mr.get("src") is not None
@@ -426,10 +433,12 @@ class TestAudioLane:
         # Assert
         tree = ET.parse(result)
         root = tree.getroot()
-        audio_assets = [
-            a for a in root.findall("resources/asset") if a.get("hasAudio") == "1"
+        audio_only_assets = [
+            a
+            for a in root.findall("resources/asset")
+            if a.get("hasAudio") == "1" and a.get("hasVideo") is None
         ]
-        assert len(audio_assets) == 0
+        assert len(audio_only_assets) == 0
         assert tree.findall(".//audio") == []
 
     @pytest.mark.regression(test_id="RT-014")
@@ -481,7 +490,9 @@ class TestSubtitles:
         assert effects[0].get("name") == "Basic Title"
         # text-style-def IDs must be unique across the document
         ts_ids = [d.get("id") for d in tree.findall(".//text-style-def")]
-        assert len(ts_ids) == len(set(ts_ids)), f"Duplicate text-style-def IDs: {ts_ids}"
+        assert len(ts_ids) == len(set(ts_ids)), (
+            f"Duplicate text-style-def IDs: {ts_ids}"
+        )
 
     @pytest.mark.regression(test_id="RT-016")
     def test_no_subtitles(self, tmp_path):
