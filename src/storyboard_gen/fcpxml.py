@@ -334,15 +334,16 @@ def _add_ken_burns_crop(
 
     FCP represents Ken Burns as ``<adjust-crop mode="pan">`` with two
     ``<pan-rect>`` children defining start and end crop rectangles.
-    Values are percentage insets from each edge: left, top, right, bottom.
+    All four values (left, top, right, bottom) are in units of
+    **percentage of original frame height** — even the horizontal ones.
     Full frame = all zeros; zoomed = positive insets.
     """
-    # For a 1.2x scale, the cropped region is 1/1.2 = 83.3% of the frame.
-    # Inset on each side = (1 - 1/scale) / 2 * 100
-    inset_pct = (1 - 1 / _KB_SCALE) / 2 * 100
-    # Horizontal and vertical insets may differ for panning
-    h_inset = round(inset_pct, 4)
-    v_inset = round(inset_pct, 4)
+    # For a 1.2x scale, crop fraction per side = (1 - 1/scale) / 2
+    crop_frac = (1 - 1 / _KB_SCALE) / 2
+    # Top/bottom: straightforward % of height
+    v_inset = round(crop_frac * 100, 4)
+    # Left/right: convert from width-fraction to height-percentage units
+    h_inset = round(crop_frac * width / height * 100, 4)
 
     # Full frame (no crop)
     full = {"left": "0", "top": "0", "right": "0", "bottom": "0"}
