@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import quote
 
+from storyboard_gen.kdenlive import _probe_audio
 from storyboard_gen.ken_burns import ASPECT_DIMENSIONS
 from storyboard_gen.models import Project, Scene, format_scene_number
 
@@ -178,10 +179,22 @@ def _build_fcpxml(
         assets.append((asset_id, scene, duration_rational, is_still))
         asset_id_counter += 1
 
-    # Audio asset
+    # Audio asset — probe file for actual sample rate, channels, and duration
     audio_asset_id = None
+    audio_format_id = None
     if audio_path is not None:
+        # Audio-only format (FCP uses FFVideoFormatRateUndefined for audio)
+        audio_format_id = f"r{asset_id_counter}"
+        ET.SubElement(
+            resources, "format", id=audio_format_id, name="FFVideoFormatRateUndefined"
+        )
+        asset_id_counter += 1
+
         audio_asset_id = f"r{asset_id_counter}"
+        audio_info = _probe_audio(audio_path)
+        sample_rate = int(audio_info["sample_rate"]) if audio_info else 48000
+        channels = str(audio_info["channels"]) if audio_info else "2"
+        audio_duration = _probe_audio_duration(audio_path, sample_rate)
         audio_asset = ET.SubElement(
             resources,
             "asset",
@@ -189,11 +202,11 @@ def _build_fcpxml(
             name=audio_path.stem,
             uid=_make_uid().replace("-", ""),
             start="0s",
-            duration="0s",
+            duration=audio_duration,
             hasAudio="1",
             audioSources="1",
-            audioChannels="2",
-            audioRate="48000",
+            audioChannels=channels,
+            audioRate=str(sample_rate),
         )
         ET.SubElement(
             audio_asset, "media-rep", kind="original-media", src=_file_uri(audio_path)
@@ -223,6 +236,19 @@ def _build_fcpxml(
     # Library → Event → Project → Sequence → Spine
     library = ET.SubElement(root, "library")
     event = ET.SubElement(library, "event", name=project.title, uid=_make_uid())
+
+    # Register audio as event-level clip so FCP imports the media
+    if audio_asset_id is not None:
+        ET.SubElement(
+            event,
+            "asset-clip",
+            ref=audio_asset_id,
+            name=audio_path.stem,
+            duration=audio_duration,
+            format=audio_format_id,
+            audioRole="dialogue",
+        )
+
     proj = ET.SubElement(event, "project", name=project.title, uid=_make_uid())
     sequence = ET.SubElement(
         proj,
@@ -274,15 +300,24 @@ def _build_fcpxml(
 
         # Audio lane (attached to first clip, spanning full timeline)
         if audio_asset_id is not None and offset_seconds == 0.0:
+            # Duration in simple seconds matching FCP's export format
+            total_secs = (
+                f"{int(total_duration)}s"
+                if total_duration == int(total_duration)
+                else f"{total_duration}s"
+            )
+            # Offset matches parent video's start for correct alignment
+            audio_offset = _STILL_START if is_still else "0s"
             ET.SubElement(
                 clip,
-                "audio",
+                "asset-clip",
                 ref=audio_asset_id,
                 lane="-1",
-                offset="0s",
-                duration=total_rational,
-                start="0s",
-                role="music.music-1",
+                offset=audio_offset,
+                name=audio_path.stem,
+                duration=total_secs,
+                format=audio_format_id,
+                audioRole="dialogue",
             )
 
         # Subtitle titles (attached to clips they overlap)
@@ -294,7 +329,8 @@ def _build_fcpxml(
                     local_start = max(0.0, cue_start - clip_start)
                     local_end = min(scene.duration, cue_end - clip_start)
                     local_duration = local_end - local_start
-                    if local_duration > 0:
+                    # Skip subtitles shorter than one frame (FCP rejects 0-duration titles)
+                    if local_duration >= 1.0 / fps:
                         title = ET.SubElement(
                             clip,
                             "title",
@@ -303,6 +339,21 @@ def _build_fcpxml(
                             offset=_rational_time(local_start, fps),
                             duration=_rational_time(local_duration, fps),
                             name="Subtitle",
+                        )
+                        # Params required by Basic Title for rendering
+                        ET.SubElement(
+                            title,
+                            "param",
+                            name="Flatten",
+                            key="9999/999166631/999166633/2/351",
+                            value="1",
+                        )
+                        ET.SubElement(
+                            title,
+                            "param",
+                            name="Alignment",
+                            key="9999/999166631/999166633/2/354/999169573/401",
+                            value="1 (Center)",
                         )
                         subtitle_counter += 1
                         ts_id = f"ts{subtitle_counter}"
@@ -400,6 +451,53 @@ def _add_ken_burns_crop(
     crop = ET.SubElement(clip, "adjust-crop", mode="pan")
     ET.SubElement(crop, "pan-rect", **start_rect)
     ET.SubElement(crop, "pan-rect", **end_rect)
+
+
+def _probe_audio_duration(audio_path: Path, sample_rate: int) -> str:
+    """Probe audio file duration and return as FCPXML rational time.
+
+    FCP expects audio asset duration expressed in the file's native
+    sample rate, e.g. ``1560964/44100s`` for a 44.1kHz file.
+    Falls back to ``0s`` if ffprobe is unavailable.
+    """
+    import json
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_entries",
+                "format=duration",
+                str(audio_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return "0s"
+
+    if result.returncode != 0:
+        return "0s"
+
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return "0s"
+
+    duration_str = data.get("format", {}).get("duration")
+    if not duration_str:
+        return "0s"
+
+    duration_secs = float(duration_str)
+    # Convert to samples at native rate for exact representation
+    samples = round(duration_secs * sample_rate)
+    return f"{samples}/{sample_rate}s"
 
 
 def _parse_subtitles(subtitles_path: Path) -> list[tuple[float, float, str]]:

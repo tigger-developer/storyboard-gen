@@ -415,11 +415,13 @@ class TestAudioLane:
         audio_mr = audio_assets[0].find("media-rep")
         assert audio_mr is not None
         assert audio_mr.get("src") is not None
-        # Audio element on timeline
-        audio_elems = tree.findall(".//audio")
-        assert len(audio_elems) >= 1
-        assert audio_elems[0].get("lane") == "-1"
-        assert audio_elems[0].get("role") == "music.music-1"
+        # Audio asset-clip on timeline (lane -1)
+        audio_clips = [
+            c
+            for c in tree.findall(".//asset-clip")
+            if c.get("lane") == "-1"
+        ]
+        assert len(audio_clips) == 1
 
     @pytest.mark.regression(test_id="RT-013")
     def test_no_audio_path(self, tmp_path):
@@ -440,7 +442,10 @@ class TestAudioLane:
             if a.get("hasAudio") == "1" and a.get("hasVideo") is None
         ]
         assert len(audio_only_assets) == 0
-        assert tree.findall(".//audio") == []
+        audio_clips = [
+            c for c in tree.findall(".//asset-clip") if c.get("lane") == "-1"
+        ]
+        assert len(audio_clips) == 0
 
     @pytest.mark.regression(test_id="RT-014")
     def test_preview_suppresses_audio(self, tmp_path):
@@ -456,7 +461,10 @@ class TestAudioLane:
 
         # Assert
         tree = ET.parse(result)
-        assert tree.findall(".//audio") == []
+        audio_clips = [
+            c for c in tree.findall(".//asset-clip") if c.get("lane") == "-1"
+        ]
+        assert len(audio_clips) == 0
 
 
 # ---- AC131.5: Subtitles ----
