@@ -696,7 +696,7 @@ CHARACTERS
     reference     (list)              Reference image paths (relative to project dir).
 
 SCENE FIELDS
-  number          (int)               Scene number. Default: auto (1-indexed).
+  number          (string)            Scene identifier — used for ordering and filenames. Default: auto (1-indexed).
   title           (string)            Human-readable title. Default: "Scene N".
   type            (string)            "still" or "clip". Default: "still".
   prompt          (string)            Scene description for the AI model.

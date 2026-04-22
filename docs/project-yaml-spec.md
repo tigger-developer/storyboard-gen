@@ -1,3 +1,4 @@
+sanitize: defaulting to oed + symbols
 <!-- Version: 2.4 | Last updated: 2026-03-12 -->
 
 # project.yaml Specification
@@ -29,15 +30,15 @@ my-project/
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `title` | string | **yes** | — | Project title |
+| `title` | string | **yes** | - | Project title |
 | `aspect_ratio` | string | no | `"16:9"` | Output aspect ratio |
 | `audio` | string | no | `null` | Path to audio file for assembly (relative to project dir) |
-| `subtitles` | string | no | `null` | Path to subtitle file for Kdenlive export — SRT, VTT, ASS/SSA (relative to project dir) |
+| `subtitles` | string | no | `null` | Path to subtitle file for Kdenlive export - SRT, VTT, ASS/SSA (relative to project dir) |
 | `style_prefix` | string | no | `""` | Visual style description prepended to every scene prompt |
 | `style_reference` | list | no | `[]` | Style reference image paths for Ideogram Character (`image_urls`) |
-| `providers` | object | no | — | AI provider configuration (defaults to Google) |
+| `providers` | object | no | - | AI provider configuration (defaults to Google) |
 | `characters` | object | no | `{}` | Named characters with descriptions and reference images |
-| `scenes` | list | **yes** | — | At least one scene required |
+| `scenes` | list | **yes** | - | At least one scene required |
 
 ### `aspect_ratio`
 
@@ -103,7 +104,7 @@ providers:
 |-------|------|----------|-------------|
 | `backend` | string | **yes** | `"google"`, `"fal"`, or `"replicate"` |
 | `model` | string | **yes** | Provider-specific model identifier |
-| `options` | object | no | Passthrough dict — any key/value pairs are merged directly into the API request. Use this for model-specific parameters like `seed`, `guidance_scale`, `num_inference_steps`, etc. Safety defaults are injected automatically (see [docs/models.md](models.md#safety-defaults)). |
+| `options` | object | no | Passthrough dict - any key/value pairs are merged directly into the API request. Use this for model-specific parameters like `seed`, `guidance_scale`, `num_inference_steps`, etc. Safety defaults are injected automatically (see [docs/models.md](models.md#safety-defaults)). |
 
 ### Available backends and models
 
@@ -111,34 +112,34 @@ providers:
 
 | Model | Type | Description |
 |-------|------|-------------|
-| `imagen-4.0-generate-001` | still | Imagen 4 — default for stills |
-| `imagen-3.0-capability-001` | still | Imagen 3 Capability — used automatically for single-reference edits |
-| `veo-3.1-fast-generate-001` | clip | Veo 3.1 Fast — default for clips |
+| `imagen-4.0-generate-001` | still | Imagen 4 - default for stills |
+| `imagen-3.0-capability-001` | still | Imagen 3 Capability - used automatically for single-reference edits |
+| `veo-3.1-fast-generate-001` | clip | Veo 3.1 Fast - default for clips |
 
-**Auth:** Two mutually exclusive paths — when `USE_VERTEX=true` is set, `GEMINI_API_KEY` is ignored. See [docs/models.md](models.md#authentication) for full details including how to switch Google accounts.
+**Auth:** Two mutually exclusive paths - when `USE_VERTEX=true` is set, `GEMINI_API_KEY` is ignored. See [docs/models.md](models.md#authentication) for full details including how to switch Google accounts.
 
 #### FAL.ai (`backend: fal`)
 
 | Model | Type | Description |
 |-------|------|-------------|
 | `fal-ai/flux-general` | still | Flux with reference image support, LoRAs, ControlNets |
-| `fal-ai/flux-pro/v1.1` | still | Flux Pro 1.1 — high quality text-to-image |
-| `fal-ai/flux-2` | still | Flux 2 — no reference image support |
-| `fal-ai/flux-2/turbo` | still | Flux 2 Turbo — fast, no reference image support |
-| `fal-ai/flux-pro/kontext` | still | Kontext — image-to-image (with ref) or text-to-image (without) |
-| `fal-ai/flux-pro/kontext/max/multi` | still | Kontext Max Multi — multiple reference images, model infers associations |
-| `fal-ai/kling-image/o1` | still | Kling O1 Image — multi-character stills with `@ImageN` mapping |
-| `fal-ai/ideogram/character` | still | Ideogram Character — dual-channel refs (character + style) |
-| `fal-ai/kling-video/v2.1/pro/text-to-video` | clip | Kling v2.1 Pro — text-to-video |
-| `fal-ai/kling-video/v2.1/pro/image-to-video` | clip | Kling v2.1 Pro — image-to-video (with source_frame) |
-| `fal-ai/kling-video/v3/standard/image-to-video` | clip | Kling v3 Standard — image-to-video |
-| `fal-ai/kling-video/o3/standard/image-to-video` | clip | Kling O3 Standard — supports character elements |
+| `fal-ai/flux-pro/v1.1` | still | Flux Pro 1.1 - high quality text-to-image |
+| `fal-ai/flux-2` | still | Flux 2 - no reference image support |
+| `fal-ai/flux-2/turbo` | still | Flux 2 Turbo - fast, no reference image support |
+| `fal-ai/flux-pro/kontext` | still | Kontext - image-to-image (with ref) or text-to-image (without) |
+| `fal-ai/flux-pro/kontext/max/multi` | still | Kontext Max Multi - multiple reference images, model infers associations |
+| `fal-ai/kling-image/o1` | still | Kling O1 Image - multi-character stills with `@ImageN` mapping |
+| `fal-ai/ideogram/character` | still | Ideogram Character - dual-channel refs (character + style) |
+| `fal-ai/kling-video/v2.1/pro/text-to-video` | clip | Kling v2.1 Pro - text-to-video |
+| `fal-ai/kling-video/v2.1/pro/image-to-video` | clip | Kling v2.1 Pro - image-to-video (with source_frame) |
+| `fal-ai/kling-video/v3/standard/image-to-video` | clip | Kling v3 Standard - image-to-video |
+| `fal-ai/kling-video/o3/standard/image-to-video` | clip | Kling O3 Standard - supports character elements |
 
 **Still options (Flux 1.x):** `seed` (int), `num_inference_steps` (1-50), `guidance_scale` (0-20), `reference_strength` (float).
 
 **Still options (Flux 2):** `seed` (int), `guidance_scale` (float), `acceleration` (string), `enable_prompt_expansion` (bool). No reference image support.
 
-Safety defaults are injected automatically — see [docs/models.md](models.md#safety-defaults) for what's injected and how to override.
+Safety defaults are injected automatically - see [docs/models.md](models.md#safety-defaults) for what's injected and how to override.
 
 **Clip options:** `cfg_scale` (float), `negative_prompt` (string), `generate_audio` (bool, default false).
 
@@ -150,14 +151,14 @@ Requires `FAL_KEY` in `.env`.
 
 | Model | Type | Description |
 |-------|------|-------------|
-| `black-forest-labs/flux-1.1-pro` | still | Flux Pro 1.1 — text-to-image only |
-| `black-forest-labs/flux-dev` | still | Flux Dev — supports image-to-image with references |
+| `black-forest-labs/flux-1.1-pro` | still | Flux Pro 1.1 - text-to-image only |
+| `black-forest-labs/flux-dev` | still | Flux Dev - supports image-to-image with references |
 
 **Options:** `seed` (int), `output_quality` (0-100), `prompt_upsampling` (bool).
 
-Safety defaults are injected automatically — see [docs/models.md](models.md#safety-defaults-1) for details.
+Safety defaults are injected automatically - see [docs/models.md](models.md#safety-defaults-1) for details.
 
-Stills only — does not support clips. Requires `REPLICATE_API_TOKEN` in `.env`.
+Stills only - does not support clips. Requires `REPLICATE_API_TOKEN` in `.env`.
 
 ### Provider selection priority
 
@@ -209,10 +210,10 @@ You can reference characters in scene prompts using `@character_id` (e.g. `@hero
 
 | Model | Mapping | Description |
 |-------|---------|-------------|
-| Kling O3 clips | `@hero` → `@Element1` | Mapped to O3's character element system |
-| Kling O1 Image stills | `@hero` → `@Image1` | Mapped to O1's image reference system |
-| Kontext Max Multi stills | `@hero` → `hero` | `@` stripped; model infers from context |
-| All other models | `@hero` → `hero` | `@` stripped; name remains as text |
+| Kling O3 clips | `@hero` -> `@Element1` | Mapped to O3's character element system |
+| Kling O1 Image stills | `@hero` -> `@Image1` | Mapped to O1's image reference system |
+| Kontext Max Multi stills | `@hero` -> `hero` | `@` stripped; model infers from context |
+| All other models | `@hero` -> `hero` | `@` stripped; name remains as text |
 
 When no `@character_id` tokens are present, O3 and O1 auto-prepend `@ElementN is <description>.` / `@ImageN is <description>.` lines for each character.
 
@@ -290,22 +291,22 @@ scenes:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `number` | int | no | auto (1-indexed) | Scene number — used for ordering and filenames |
+| `number` | string | no | auto (1-indexed) | Scene identifier - used for ordering and filenames. Purely numeric values are zero-padded to 2 digits in filenames (e.g. `1` -> `scene_01.png`). Alphanumeric values are used as-is (e.g. `sc03b` -> `scene_sc03b.png`). |
 | `title` | string | no | `"Scene N"` | Human-readable scene title |
 | `type` | string | no | `"still"` | `"still"` or `"clip"` |
 | `prompt` | string | no | `""` | Scene description for the AI model |
-| `duration` | number | no | `5` | Duration in seconds (supports decimals, e.g. `2.5`) — match to voice-over timing |
-| `camera` | string | no | `null` | Camera angle — injected into AI prompt automatically (see table below) |
+| `duration` | number | no | `5` | Duration in seconds (supports decimals, e.g. `2.5`) - match to voice-over timing |
+| `camera` | string | no | `null` | Camera angle - injected into AI prompt automatically (see table below) |
 | `ken_burns` | string | no | `null` | Ken Burns effect for stills (ignored for clips) |
 | `characters` | list | no | `[]` | Character IDs from the `characters` section |
 | `provider` | object | no | `null` | Per-scene provider override (same format as `providers.still`) |
-| `model` | string | no | `null` | Shorthand model override — alternative to a full `provider:` block |
+| `model` | string | no | `null` | Shorthand model override - alternative to a full `provider:` block |
 | `reference` | list | no | `[]` | Per-scene reference image paths (overrides character refs) |
 | `source_frame` | string | no | `null` | Path to first frame for image-to-video generation (clips only) |
 | `last_frame` | string | no | `null` | Path to end frame for interpolation (clips only, requires `source_frame`) |
 | `extend_from` | string | no | `null` | Scene number to extend from (clips only, mutually exclusive with `source_frame`) |
 | `seed` | int | no | `null` | Reproducibility seed passed to the model |
-| `variants` | int | no | `1` | Number of video takes to generate (1–4, clips only) |
+| `variants` | int | no | `1` | Number of video takes to generate (1-4, clips only) |
 
 ### `type`
 
@@ -347,11 +348,11 @@ Standard camera values are automatically injected into the AI prompt as descript
 | `DUTCH` | Camera tilted 20 degrees off-axis, creating unease. |
 | `null` (omitted) | No camera phrasing injected. |
 
-The camera phrasing is inserted between the `style_prefix` and character descriptions in the assembled prompt. Prompt assembly order: **style prefix → camera → characters → scene prompt**.
+The camera phrasing is inserted between the `style_prefix` and character descriptions in the assembled prompt. Prompt assembly order: **style prefix -> camera -> characters -> scene prompt**.
 
 ### `model`
 
-Shorthand for overriding only the model on a single scene, without specifying a full `provider:` block. Cannot be combined with `provider:` on the same scene — use one or the other.
+Shorthand for overriding only the model on a single scene, without specifying a full `provider:` block. Cannot be combined with `provider:` on the same scene - use one or the other.
 
 ```yaml
   - number: 9
@@ -414,7 +415,7 @@ Path to an end frame for interpolation-style clip generation. Only valid on `typ
 
 ### `extend_from`
 
-Scene number of a previously generated clip to extend. Only valid on `type: clip` scenes. Mutually exclusive with `source_frame` — you cannot set both. The model continues the video from where the referenced scene left off.
+Scene number of a previously generated clip to extend. Only valid on `type: clip` scenes. Mutually exclusive with `source_frame` - you cannot set both. The model continues the video from where the referenced scene left off.
 
 ```yaml
   - number: 4
@@ -439,7 +440,7 @@ Integer seed for reproducible generation. When set, the same prompt and seed pro
 
 ### `variants`
 
-Number of video takes to generate for a clip scene (1–4, default 1). Only meaningful for clips. When set to more than 1, multiple candidate clips are generated so you can pick the best take.
+Number of video takes to generate for a clip scene (1-4, default 1). Only meaningful for clips. When set to more than 1, multiple candidate clips are generated so you can pick the best take.
 
 ```yaml
   - number: 2
@@ -584,7 +585,7 @@ Run `storyboard-gen validate` to check your `project.yaml` for errors before gen
 - `last_frame` without `source_frame`
 - `extend_from` on a non-clip scene
 - `extend_from` and `source_frame` both set (mutually exclusive)
-- `variants` outside the range 1–4
+- `variants` outside the range 1-4
 
 ## CLI commands
 
@@ -611,6 +612,7 @@ storyboard-gen --version                             # Show version
 
 ## See also
 
-- [models.md](models.md) — full model reference with capabilities, options, and safety defaults
-- [architecture.md](architecture.md) — technical architecture and data flow
-- [VISION.md](VISION.md) — project goals and non-goals
+- [models.md](models.md) - full model reference with capabilities, options, and safety defaults
+- [architecture.md](architecture.md) - technical architecture and data flow
+- [VISION.md](VISION.md) - project goals and non-goals
+46 symbol replacements
