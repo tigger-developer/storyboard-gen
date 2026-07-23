@@ -108,4 +108,4 @@ my-project/
 
 ## Licence
 
-MIT. Copyright Taḋg Paul O'Brien.
+MIT. Copyright Tadhg O'Brien O'Brien.

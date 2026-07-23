@@ -7,7 +7,7 @@ setup(
     name="storyboard-gen",
     version="0.72.0",
     description="Generate video stills and clips from a YAML storyboard using AI image/video APIs",
-    author="Taḋg Paul O'Brien",
+    author="Tadhg O'Brien O'Brien",
     license="MIT",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
