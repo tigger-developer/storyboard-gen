@@ -1,4 +1,4 @@
-<!-- Version: 1.0 | Last updated: 2026-02-21 -->
+<!-- Version: 1.1 | Last updated: 2026-08-27 -->
 
 # Quickstart
 
@@ -71,7 +71,7 @@ pip install storyboard-gen[all]
 ### From source (all platforms)
 
 ```bash
-git clone https://github.com/tigger04/storyboard-gen.git
+git clone https://github.com/tigger-developer/storyboard-gen.git
 cd storyboard-gen
 make install                            # macOS / Linux
 source .venv/bin/activate
@@ -144,6 +144,7 @@ storyboard-gen generate --all          # Generate everything
 storyboard-gen assemble                # Assemble final video with audio
 storyboard-gen assemble --preview      # Assemble without audio
 storyboard-gen kdenlive                # Export Kdenlive project for editing
+storyboard-gen fcpxml                  # Export Final Cut Pro project for editing
 ```
 
 ### GUI (optional)
@@ -164,3 +165,9 @@ storyboard-gen-gui ~/Movies/my-proj    # Launch with a project
 - [project-yaml-spec.md](project-yaml-spec.md) — complete `project.yaml` schema with examples
 - [architecture.md](architecture.md) — technical architecture and data flow
 - [VISION.md](VISION.md) — project goals and non-goals
+
+---
+
+## Changelog
+
+- **1.1** (2026-08-27): Added Final Cut Pro export to the first-run workflow.

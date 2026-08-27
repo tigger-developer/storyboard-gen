@@ -10,16 +10,17 @@ The idea is simple: separate the creative decisions (what your video looks like)
 2. **Generate clips** — AI-rendered video from your scene prompts (Google Veo, FAL Kling/Wan/MiniMax)
 3. **Apply Ken Burns effects** — zoom, pan, and static effects on stills via FFmpeg
 4. **Assemble** — concatenate everything in scene order with optional audio
-5. **Export to Kdenlive** — full editing project (see below)
+5. **Export to Kdenlive or Final Cut Pro** — full editing project (see below)
 
 Multiple AI providers are supported — use one or mix and match per scene. See [docs/models.md](docs/models.md) for the full model reference.
 
-### Kdenlive export
+### Editor project exports
 
-Where AI generation meets real video editing. The `kdenlive` command generates a complete Kdenlive project file — every scene on the timeline at the correct duration, Ken Burns effects as native Kdenlive transforms, and audio included. Open the `.kdenlive` file and you have a working first cut ready for editing: adjust timing, tweak keyframes, add titles, swap scenes, or re-render at any resolution.
+Where AI generation meets real video editing. The `kdenlive` command generates a complete Kdenlive project file, while `fcpxml` generates a Final Cut Pro project. Both exports place every scene on the timeline at the correct duration, apply native Ken Burns effects, and include configured audio and subtitles. Open the exported project in the selected editor to adjust timing, tweak keyframes, add titles, swap scenes, or render at any resolution.
 
 ```bash
 storyboard-gen kdenlive                 # Export Kdenlive project for editing
+storyboard-gen fcpxml                   # Export Final Cut Pro project for editing
 ```
 
 <img width="2040" height="1279" alt="image" src="https://github.com/user-attachments/assets/62876b0d-e692-4615-b1d6-4553c26de6ce" />
@@ -39,6 +40,7 @@ cd ~/Movies/my-project
 storyboard-gen generate --all               # Generate everything
 storyboard-gen assemble                     # Assemble final video
 storyboard-gen kdenlive                     # Export Kdenlive project
+storyboard-gen fcpxml                       # Export Final Cut Pro project
 ```
 
 See [docs/quickstart.md](docs/quickstart.md) for full installation instructions (macOS, Linux, Windows), provider setup, and GUI.
@@ -59,6 +61,7 @@ See [docs/quickstart.md](docs/quickstart.md) for full installation instructions 
 | [docs/quickstart.md](docs/quickstart.md) | Installation (macOS, Linux, Windows), project setup, first run |
 | [docs/VISION.md](docs/VISION.md) | Project vision, goals, and non-goals |
 | [docs/architecture.md](docs/architecture.md) | Technical architecture and data flow |
+| [docs/storyboard-gen-help.md](docs/storyboard-gen-help.md) | Source for top-level CLI help text |
 | [docs/models.md](docs/models.md) | AI model reference — capabilities, options, safety defaults, choosing guide |
 | [docs/project-yaml-spec.md](docs/project-yaml-spec.md) | Complete `project.yaml` schema with examples |
 
@@ -68,7 +71,7 @@ See [docs/quickstart.md](docs/quickstart.md) for full installation instructions 
 |----------|---------|
 | `src/storyboard_gen/` | Tool source code (CLI + optional GUI) |
 | `src/storyboard_gen/gui/` | Optional PySide6 graphical interface |
-| `tests/` | Test suite (1166 tests) |
+| `tests/` | Regression and one-off test suites |
 | `scripts/release.sh` | Release automation |
 | `Makefile` | Build, test, lint, release targets |
 

@@ -1,5 +1,7 @@
 # Veo 3.1 Clip Generation Support
 
+> Historical implementation specification. The features described here have been implemented and later extended across providers. For current supported fields and behaviour, use [docs/project-yaml-spec.md](docs/project-yaml-spec.md), [docs/models.md](docs/models.md), and [docs/architecture.md](docs/architecture.md).
+
 ## Background
 
 storyboard-gen currently generates video clips via Veo but passes only a

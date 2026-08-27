@@ -11,6 +11,7 @@ import yaml
 import pytest
 
 import storyboard_gen
+from storyboard_gen import cli
 from storyboard_gen.cli import main
 
 
@@ -749,6 +750,77 @@ class TestCliVersion:
         assert exit_code == 0
         output = capsys.readouterr().out
         assert storyboard_gen.__version__ in output
+
+
+class TestCliTopLevelHelp:
+    """Regression tests for the documented top-level CLI help."""
+
+    def test_help_from_checkout_points_to_local_readme_RT133_1(self, capsys):
+        # Arrange & Act
+        with pytest.raises(SystemExit):
+            main(["--help"])
+        output = capsys.readouterr().out
+
+        # Assert
+        checkout_root = cli._checkout_root()
+        assert checkout_root is not None
+        assert f"README: {checkout_root / 'README.md'}" in output
+
+    def test_help_falls_back_to_github_readme_when_document_is_unavailable_RT133_2(
+        self, capsys, monkeypatch
+    ):
+        # Arrange
+        monkeypatch.setattr(cli, "_checkout_root", lambda: None)
+        monkeypatch.setattr(
+            cli,
+            "_installed_help_document_path",
+            lambda: Path("/missing/storyboard-gen-help.md"),
+        )
+
+        # Act
+        with pytest.raises(SystemExit):
+            main(["--help"])
+        output = capsys.readouterr().out
+
+        # Assert
+        assert "README: https://github.com/tigger-developer/storyboard-gen" in output
+        assert output.count("README:") == 1
+
+    def test_help_from_installed_document_points_to_github_readme_RT133_3(
+        self, capsys, monkeypatch, tmp_path
+    ):
+        # Arrange
+        help_document = tmp_path / "storyboard-gen-help.md"
+        help_document.write_text("README: {README_POINTER}\n")
+        monkeypatch.setattr(cli, "_checkout_root", lambda: None)
+        monkeypatch.setattr(cli, "_installed_help_document_path", lambda: help_document)
+
+        # Act
+        with pytest.raises(SystemExit):
+            main(["--help"])
+        output = capsys.readouterr().out
+
+        # Assert
+        assert "README: https://github.com/tigger-developer/storyboard-gen" in output
+        assert output.count("README:") == 1
+
+
+class TestCliExportHelp:
+    """Regression tests for documented export defaults."""
+
+    @pytest.mark.parametrize(
+        "command, extension", [("kdenlive", "kdenlive"), ("fcpxml", "fcpxml")]
+    )
+    def test_export_help_describes_snake_case_default_RT133_4(
+        self, command, extension, capsys
+    ):
+        # Arrange & Act
+        with pytest.raises(SystemExit):
+            main([command, "--help"])
+        output = capsys.readouterr().out
+
+        # Assert
+        assert f"default: {{snake_case_title}}.{extension}" in output
 
 
 class TestExpandSceneArgs:

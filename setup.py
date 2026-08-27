@@ -12,6 +12,7 @@ setup(
     package_dir={"": "src"},
     packages=find_packages(where="src"),
     package_data={"storyboard_gen": ["templates/*"]},
+    data_files=[("share/storyboard-gen/docs", ["docs/storyboard-gen-help.md"])],
     python_requires=">=3.12",
     install_requires=[
         "google-genai>=1.0.0",

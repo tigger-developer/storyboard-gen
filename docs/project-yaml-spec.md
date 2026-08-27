@@ -1,9 +1,8 @@
-sanitize: defaulting to oed + symbols
-<!-- Version: 2.4 | Last updated: 2026-03-12 -->
+<!-- Version: 2.5 | Last updated: 2026-08-27 -->
 
 # project.yaml Specification
 
-This is the complete schema reference for `project.yaml`, the storyboard definition file used by [storyboard-gen](https://github.com/tigger04/storyboard-gen).
+This is the complete schema reference for `project.yaml`, the storyboard definition file used by [storyboard-gen](https://github.com/tigger-developer/storyboard-gen).
 
 ## File location
 
@@ -33,7 +32,7 @@ my-project/
 | `title` | string | **yes** | - | Project title |
 | `aspect_ratio` | string | no | `"16:9"` | Output aspect ratio |
 | `audio` | string | no | `null` | Path to audio file for assembly (relative to project dir) |
-| `subtitles` | string | no | `null` | Path to subtitle file for Kdenlive export - SRT, VTT, ASS/SSA (relative to project dir) |
+| `subtitles` | string | no | `null` | Path to subtitle file for Kdenlive or Final Cut Pro export - SRT, VTT, ASS/SSA (relative to project dir) |
 | `style_prefix` | string | no | `""` | Visual style description prepended to every scene prompt |
 | `style_reference` | list | no | `[]` | Style reference image paths for Ideogram Character (`image_urls`) |
 | `providers` | object | no | - | AI provider configuration (defaults to Google) |
@@ -54,7 +53,7 @@ audio: "audio.m4a"
 
 ### `subtitles`
 
-Optional path to a subtitle file to include in the Kdenlive export. Supports SRT, WebVTT (.vtt), ASS, and SSA formats. Relative to the project directory. The CLI `--subtitles` flag overrides this value; `--preview` skips subtitles entirely. If the file doesn't exist at export time, a warning is logged and the export proceeds without subtitles.
+Optional path to a subtitle file to include in Kdenlive or Final Cut Pro exports. Supports SRT, WebVTT (.vtt), ASS, and SSA formats. Relative to the project directory. The CLI `--subtitles` flag overrides this value; `--preview` skips subtitles entirely. If the file doesn't exist at export time, a warning is logged and the export proceeds without subtitles.
 
 The subtitle file is converted to Kdenlive-compatible ASS format and written alongside the `.kdenlive` project as `{project}.kdenlive.ass`. ASS/SSA input files are copied directly. The sequence tractor gets a native subtitle track with `avfilter.subtitles` filter, `subtitlesList` metadata, and `hidesubtitle=0`.
 
@@ -124,8 +123,8 @@ providers:
 |-------|------|-------------|
 | `fal-ai/flux-general` | still | Flux with reference image support, LoRAs, ControlNets |
 | `fal-ai/flux-pro/v1.1` | still | Flux Pro 1.1 - high quality text-to-image |
-| `fal-ai/flux-2` | still | Flux 2 - no reference image support |
-| `fal-ai/flux-2/turbo` | still | Flux 2 Turbo - fast, no reference image support |
+| `fal-ai/flux-2` | still | Flux 2 - routes to its edit sibling when references are present |
+| `fal-ai/flux-2/turbo` | still | Flux 2 Turbo - fast; routes to its edit sibling when references are present |
 | `fal-ai/flux-pro/kontext` | still | Kontext - image-to-image (with ref) or text-to-image (without) |
 | `fal-ai/flux-pro/kontext/max/multi` | still | Kontext Max Multi - multiple reference images, model infers associations |
 | `fal-ai/kling-image/o1` | still | Kling O1 Image - multi-character stills with `@ImageN` mapping |
@@ -137,7 +136,7 @@ providers:
 
 **Still options (Flux 1.x):** `seed` (int), `num_inference_steps` (1-50), `guidance_scale` (0-20), `reference_strength` (float).
 
-**Still options (Flux 2):** `seed` (int), `guidance_scale` (float), `acceleration` (string), `enable_prompt_expansion` (bool). No reference image support.
+**Still options (Flux 2):** `seed` (int), `guidance_scale` (float), `acceleration` (string), `enable_prompt_expansion` (bool). Base models use text-to-image; models with an edit sibling route there when references are present.
 
 Safety defaults are injected automatically - see [docs/models.md](models.md#safety-defaults) for what's injected and how to override.
 
@@ -199,7 +198,7 @@ characters:
 - Character IDs are used in scene `characters` lists.
 - Reference images are uploaded to the provider for style-consistent generation.
 - Multiple reference images per character are supported (e.g. front/side/detail views). Veo supports up to 3 asset references.
-- FAL and Replicate providers use only the first reference image and log a warning when multiple are provided.
+- Reference-image handling depends on the selected model. Some models use one reference, while multi-reference models upload all supported images. See [models.md](models.md#reference-images).
 - The reference paths are resolved relative to the project directory.
 - Missing reference files are silently skipped at generation time (not at validation).
 - **Breaking change (v0.29.0):** `reference` must be a list. A bare string value produces a `ConfigError` with migration instructions.
@@ -212,6 +211,7 @@ You can reference characters in scene prompts using `@character_id` (e.g. `@hero
 |-------|---------|-------------|
 | Kling O3 clips | `@hero` -> `@Element1` | Mapped to O3's character element system |
 | Kling O1 Image stills | `@hero` -> `@Image1` | Mapped to O1's image reference system |
+| Flux 2 Pro/Max stills | `@hero` -> `@image1` | Mapped to the Flux edit reference system |
 | Kontext Max Multi stills | `@hero` -> `hero` | `@` stripped; model infers from context |
 | All other models | `@hero` -> `hero` | `@` stripped; name remains as text |
 
@@ -605,6 +605,9 @@ storyboard-gen assemble --audio voice.m4a   # Override audio track
 storyboard-gen kdenlive                              # Export Kdenlive project with Ken Burns effects
 storyboard-gen kdenlive --output my.kdenlive         # Custom output filename
 storyboard-gen kdenlive --subtitles subs.srt         # Include subtitles (SRT, VTT, ASS/SSA)
+storyboard-gen fcpxml                                # Export Final Cut Pro project with Ken Burns effects
+storyboard-gen fcpxml --output my.fcpxml             # Custom output filename
+storyboard-gen fcpxml --subtitles subs.srt           # Include subtitles (SRT, VTT, ASS/SSA)
 storyboard-gen --version                             # Show version
 ```
 
@@ -615,4 +618,10 @@ storyboard-gen --version                             # Show version
 - [models.md](models.md) - full model reference with capabilities, options, and safety defaults
 - [architecture.md](architecture.md) - technical architecture and data flow
 - [VISION.md](VISION.md) - project goals and non-goals
+
+---
+
+## Changelog
+
+- **2.5** (2026-08-27): Documented Final Cut Pro subtitle and command support; corrected Flux 2 reference routing and model-specific reference handling.
 46 symbol replacements

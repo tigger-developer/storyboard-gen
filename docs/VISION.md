@@ -1,4 +1,4 @@
-<!-- Version: 0.4 | Last updated: 2026-02-21 -->
+<!-- Version: 0.5 | Last updated: 2026-08-27 -->
 
 # Vision: storyboard-gen
 
@@ -21,12 +21,19 @@ Separate the creative decisions (storyboard, prompts, character designs, style) 
 3. `storyboard-gen generate` calls the APIs and saves results to `output/`
 4. `storyboard-gen assemble` applies Ken Burns effects and concatenates a quick-preview video
 5. `storyboard-gen kdenlive` exports a complete Kdenlive project for professional editing
+6. `storyboard-gen fcpxml` exports a Final Cut Pro project for professional editing
 
 The optional GUI (`storyboard-gen-gui`) provides visual scene management for steps 3–4 without replacing the CLI.
 
-## Kdenlive export
+## Editor project exports
 
-The `kdenlive` command produces a Kdenlive project file with every scene on the timeline at the correct duration, Ken Burns effects as native Kdenlive transforms, and audio track included. The `.kdenlive` file opens directly in Kdenlive for editing — adjust timing, tweak keyframes, add titles, swap scenes, or re-render at any resolution. This is where AI generation meets a proper video editor.
+The `kdenlive` command produces a Kdenlive project file and `fcpxml` produces a Final Cut Pro project file. Each export places scenes at their configured durations, applies native Ken Burns effects, and includes configured audio and subtitles. The exported project opens in its target editor for timing, keyframe, title, transition, and render work.
+
+---
+
+## Changelog
+
+- **0.5** (2026-08-27): Added Final Cut Pro export to the documented workflow.
 
 ## Non-goals
 

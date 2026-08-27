@@ -4,6 +4,7 @@
 import argparse
 import importlib.resources
 import logging
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -30,33 +31,40 @@ from storyboard_gen.pricing import (
 logger = logging.getLogger(__name__)
 
 
-HELP_EPILOG = """\
-workflow:
-  1. storyboard-gen init [directory]    Scaffold a new project
-  2. Edit project.yaml                  Define scenes, characters, style
-  3. Edit .env                          Configure API credentials
-  4. storyboard-gen generate --all      Generate stills and clips
-  5. storyboard-gen assemble            Merge clips + stills into final video
-  6. storyboard-gen kdenlive            Export Kdenlive project for editing
+_HELP_DOCUMENT_RELATIVE_PATH = Path("docs/storyboard-gen-help.md")
+_README_URL = "https://github.com/tigger-developer/storyboard-gen"
 
-providers:
-  Google    Imagen (stills) + Veo (clips) — default provider
-            Auth: GEMINI_API_KEY or USE_VERTEX=true with GCP credentials
-  FAL.ai    Flux + Kontext models (stills only)
-            Auth: FAL_KEY
-  Replicate Flux models (stills only)
-            Auth: REPLICATE_API_TOKEN
-  Configure in project.yaml 'providers' section or per-scene overrides.
-  Credentials go in .env in your project directory.
 
-project layout:
-  project.yaml    Storyboard definition (scenes, characters, style)
-  .env            API credentials (not committed)
-  references/     Character/style reference images
-  output/         Generated stills, clips, and assembled video
+def _checkout_root() -> Path | None:
+    """Return the repository root when this package runs from a checkout."""
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / ".git").exists() and (
+            candidate / _HELP_DOCUMENT_RELATIVE_PATH
+        ).is_file():
+            return candidate
+    return None
 
-Use 'storyboard-gen <command> --help' for command-specific options.
-"""
+
+def _installed_help_document_path() -> Path:
+    """Return the package-installed copy of the top-level help document."""
+    return Path(sys.prefix) / "share" / "storyboard-gen" / _HELP_DOCUMENT_RELATIVE_PATH
+
+
+def _load_help_epilog() -> str:
+    """Load documented top-level help and insert the applicable README pointer."""
+    checkout_root = _checkout_root()
+    if checkout_root is not None:
+        document_path = checkout_root / _HELP_DOCUMENT_RELATIVE_PATH
+        readme_pointer = str(checkout_root / "README.md")
+    else:
+        document_path = _installed_help_document_path()
+        readme_pointer = _README_URL
+
+    if document_path.is_file():
+        document = document_path.read_text(encoding="utf-8").strip()
+        return document.replace("{README_POINTER}", readme_pointer)
+
+    return f"README: {readme_pointer}"
 
 
 def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -154,7 +162,7 @@ def _add_kdenlive_parser(subparsers: argparse._SubParsersAction) -> None:
         "--output",
         type=str,
         default=None,
-        help="Output filename (default: {title}.kdenlive)",
+        help="Output filename (default: {snake_case_title}.kdenlive)",
     )
     kdenlive_parser.add_argument(
         "--audio",
@@ -197,7 +205,7 @@ def _add_fcpxml_parser(subparsers: argparse._SubParsersAction) -> None:
         "--output",
         type=str,
         default=None,
-        help="Output filename (default: {title}.fcpxml)",
+        help="Output filename (default: {snake_case_title}.fcpxml)",
     )
     fcpxml_parser.add_argument(
         "--audio",
@@ -251,7 +259,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "generate stills and video clips via AI providers, apply Ken Burns "
             "effects, and assemble everything into a final video."
         ),
-        epilog=HELP_EPILOG,
+        epilog=_load_help_epilog(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -296,8 +304,6 @@ def main(argv: list[str] | None = None) -> int:
         Exit code (0 for success, 1 for error).
     """
     if argv is None:
-        import sys
-
         argv = sys.argv[1:]
 
     # Handle --version / -V before argparse requires a subcommand
